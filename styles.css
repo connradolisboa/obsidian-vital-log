@@ -1,0 +1,401 @@
+/* ============================================================
+   Vital Log — Plugin Styles
+   ============================================================ */
+
+/* ── Shared modal chrome ── */
+.vital-log-modal .modal-content {
+  padding: 1.25rem 1.5rem;
+  max-width: 640px;
+  width: 100%;
+}
+
+.vital-log-modal h2 {
+  margin-top: 0;
+  margin-bottom: 1rem;
+  font-size: 1.2rem;
+  font-weight: 600;
+}
+
+/* ── Tab bar (Manage modal) ── */
+.vital-log-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+  margin-bottom: 1rem;
+}
+
+.vital-log-tab {
+  padding: 0.45rem 1rem;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s, border-color 0.15s;
+  background: none;
+  border-top: none;
+  border-left: none;
+  border-right: none;
+}
+
+.vital-log-tab:hover {
+  color: var(--text-normal);
+}
+
+.vital-log-tab.is-active {
+  color: var(--text-accent);
+  border-bottom-color: var(--text-accent);
+}
+
+/* ── Form rows ── */
+.vital-log-form-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.65rem;
+}
+
+.vital-log-form-row label {
+  min-width: 130px;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.vital-log-form-row input,
+.vital-log-form-row select {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ── Inline validation error ── */
+.vital-log-error {
+  color: var(--text-error);
+  font-size: 0.8rem;
+  margin-top: -0.35rem;
+  margin-bottom: 0.5rem;
+  padding-left: 130px;
+}
+
+/* ── Item list (Manage modal) ── */
+.vital-log-item-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 1rem;
+}
+
+.vital-log-item-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: 6px;
+  background: var(--background-secondary);
+}
+
+.vital-log-item-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.vital-log-item-name {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.vital-log-item-meta {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-top: 0.1rem;
+}
+
+.vital-log-item-actions {
+  display: flex;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
+/* ── Expandable sub-rows ── */
+.vital-log-sub-rows {
+  padding: 0.4rem 0.65rem 0.2rem 1.5rem;
+  border-left: 2px solid var(--background-modifier-border);
+  margin: 0.15rem 0 0.3rem 1rem;
+}
+
+.vital-log-sub-row {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  padding: 0.15rem 0;
+}
+
+/* ── Action buttons ── */
+.vital-log-btn {
+  padding: 0.28rem 0.65rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  transition: background 0.12s;
+}
+
+.vital-log-btn:hover {
+  background: var(--background-modifier-hover);
+}
+
+.vital-log-btn.mod-warning {
+  color: var(--text-error);
+  border-color: var(--text-error);
+}
+
+.vital-log-btn.mod-warning:hover {
+  background: rgba(var(--color-red-rgb), 0.1);
+}
+
+.vital-log-btn.mod-cta {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent);
+}
+
+.vital-log-btn.mod-cta:hover {
+  background: var(--interactive-accent-hover);
+}
+
+/* ── Add-row forms (inline inside manage modal) ── */
+.vital-log-inline-form {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  padding: 0.85rem 1rem;
+  margin-bottom: 0.75rem;
+  background: var(--background-primary-alt);
+}
+
+.vital-log-inline-form h4 {
+  margin: 0 0 0.65rem 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.vital-log-inline-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.65rem;
+}
+
+/* ── Pack vitamin line items ── */
+.vital-log-pack-items {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0.5rem 0;
+}
+
+.vital-log-pack-item-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.vital-log-pack-item-row select {
+  flex: 1;
+}
+
+.vital-log-pack-item-row input {
+  width: 80px;
+  flex-shrink: 0;
+}
+
+/* ── History modal ── */
+.vital-log-history-date-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1.1rem;
+}
+
+.vital-log-history-date-row label {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.vital-log-history-section {
+  margin-bottom: 1.2rem;
+}
+
+.vital-log-history-section-title {
+  font-weight: 700;
+  font-size: 0.88rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--background-modifier-border);
+  padding-bottom: 0.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.vital-log-history-group-title {
+  font-weight: 600;
+  font-size: 0.9rem;
+  margin: 0.6rem 0 0.3rem;
+}
+
+.vital-log-history-entry {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.84rem;
+}
+
+.vital-log-history-entry:hover {
+  background: var(--background-modifier-hover);
+}
+
+.vital-log-history-entry-info {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-normal);
+}
+
+.vital-log-history-entry-note {
+  font-style: italic;
+  color: var(--text-muted);
+}
+
+.vital-log-history-entry-actions {
+  display: flex;
+  gap: 0.25rem;
+  flex-shrink: 0;
+}
+
+.vital-log-no-data {
+  color: var(--text-muted);
+  font-style: italic;
+  padding: 1rem 0;
+  text-align: center;
+}
+
+/* ── Confirmation prompt ── */
+.vital-log-confirm-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0.5rem;
+  background: var(--background-modifier-error);
+  border-radius: 4px;
+  font-size: 0.82rem;
+}
+
+.vital-log-confirm-row span {
+  flex: 1;
+}
+
+/* ── Inline edit form inside history ── */
+.vital-log-inline-edit {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 5px;
+  padding: 0.6rem 0.75rem;
+  margin: 0.25rem 0;
+  background: var(--background-primary-alt);
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.vital-log-inline-edit-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.83rem;
+}
+
+.vital-log-inline-edit-row label {
+  min-width: 60px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.vital-log-inline-edit-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.vital-log-inline-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.35rem;
+  margin-top: 0.2rem;
+}
+
+/* ── Log modal ── */
+.vital-log-modal-section {
+  margin-bottom: 1rem;
+}
+
+.vital-log-modal-section label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 0.3rem;
+}
+
+.vital-log-type-selector {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 0.85rem;
+}
+
+.vital-log-type-btn {
+  flex: 1;
+  padding: 0.4rem 0;
+  border-radius: 5px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  transition: all 0.15s;
+}
+
+.vital-log-type-btn:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.vital-log-type-btn.is-active {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent);
+}
+
+/* ── Settings tab ── */
+.vital-log-settings-section {
+  margin-bottom: 1.5rem;
+}
+
+.vital-log-settings-section h3 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin-bottom: 0.2rem;
+  color: var(--text-normal);
+}
+
+.vital-log-settings-helper {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-top: 0.2rem;
+}
+
+.vital-log-manager-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
