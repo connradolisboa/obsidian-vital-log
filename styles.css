@@ -499,6 +499,53 @@
   border-color: var(--interactive-accent);
 }
 
+/* ── Pack/stack contents preview (log modal) ── */
+.vital-log-preview {
+  margin-top: 0.75rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-primary-alt);
+}
+
+.vital-log-preview > label {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 0.5rem;
+}
+
+.vital-log-preview-pack-block {
+  margin-bottom: 0.5rem;
+}
+
+.vital-log-preview-pack-name {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 0.25rem;
+}
+
+.vital-log-preview-name {
+  flex: 1;
+  font-size: 0.88rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vital-log-preview-unit {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.vital-log-pack-item-row--nested {
+  padding-left: 0.75rem;
+}
+
 /* ── Settings tab ── */
 .vital-log-settings-section {
   margin-bottom: 1.5rem;
