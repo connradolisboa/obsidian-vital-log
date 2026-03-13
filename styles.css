@@ -584,22 +584,146 @@
   padding-left: 0.75rem;
 }
 
-/* ── Settings tab ── */
-.vital-log-settings-section {
-  margin-bottom: 1.5rem;
+/* ── Settings tab bar ── */
+.vital-log-settings-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+  margin-bottom: 1.25rem;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
-.vital-log-settings-section h3 {
-  font-size: 0.95rem;
-  font-weight: 700;
-  margin-bottom: 0.2rem;
+.vital-log-settings-tab {
+  padding: 0.55rem 1rem;
+  min-height: 40px;
+  cursor: pointer;
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s, border-color 0.15s;
+  background: none;
+  border-top: none;
+  border-left: none;
+  border-right: none;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.vital-log-settings-tab:hover {
   color: var(--text-normal);
 }
 
+.vital-log-settings-tab.is-active {
+  color: var(--text-accent);
+  border-bottom-color: var(--text-accent);
+}
+
+.vital-log-settings-content {
+  padding-top: 0.25rem;
+}
+
+.vital-log-settings-content h3 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin: 1.25rem 0 0.4rem;
+  color: var(--text-normal);
+}
+
+.vital-log-settings-content h3:first-child {
+  margin-top: 0;
+}
+
 .vital-log-settings-helper {
-  font-size: 0.8rem;
+  font-size: 0.82rem;
   color: var(--text-muted);
-  margin-top: 0.2rem;
+  margin: 0 0 0.75rem;
+}
+
+/* ── Token details (collapsible) ── */
+.vital-log-token-details {
+  margin: 0.25rem 0 0.75rem;
+  font-size: 0.82rem;
+}
+
+.vital-log-token-details summary {
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.8rem;
+  user-select: none;
+}
+
+.vital-log-token-details summary:hover {
+  color: var(--text-normal);
+}
+
+.vital-log-token-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.2rem 0.75rem;
+  margin-top: 0.4rem;
+  padding-left: 0.25rem;
+}
+
+.vital-log-token-row {
+  display: contents;
+}
+
+.vital-log-token-row code {
+  font-size: 0.78rem;
+  color: var(--text-accent);
+  background: var(--background-secondary);
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+.vital-log-token-row span {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+/* ── Empty state ── */
+.vital-log-empty-state {
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: 0.84rem;
+  padding: 0.75rem;
+  text-align: center;
+}
+
+/* ── Modal editor (separate modal) ── */
+.vital-log-modal-editor-modal {
+  padding: 0.5rem 0;
+}
+
+.vital-log-modal-editor-modal h2 {
+  margin: 0 0 1rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.vital-log-editor-section {
+  margin-bottom: 1rem;
+}
+
+.vital-log-editor-section h3 {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin: 0 0 0.5rem;
+  color: var(--text-normal);
+  border-bottom: 1px solid var(--background-modifier-border);
+  padding-bottom: 0.3rem;
+}
+
+.vital-log-editor-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--background-modifier-border);
 }
 
 .vital-log-manager-buttons {

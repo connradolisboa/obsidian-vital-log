@@ -2,7 +2,7 @@
 // Vital Log — Settings Tab
 // ============================================================
 
-import { App, PluginSettingTab, Setting } from 'obsidian';
+import { App, Modal, PluginSettingTab, Setting } from 'obsidian';
 import type VitalLogPlugin from '../main';
 import type { CustomModalConfig, CustomField, CustomFieldType } from './types';
 import { CUSTOM_FIELD_TYPES } from './types';
@@ -16,8 +16,11 @@ function slugify(name: string): string {
     .replace(/^(.)/, (_, c) => c.toLowerCase());
 }
 
+type SettingsTab = 'general' | 'trackers' | 'customModals';
+
 export class VitalLogSettingTab extends PluginSettingTab {
   private plugin: VitalLogPlugin;
+  private activeTab: SettingsTab = 'general';
 
   constructor(app: App, plugin: VitalLogPlugin) {
     super(app, plugin);
@@ -27,14 +30,52 @@ export class VitalLogSettingTab extends PluginSettingTab {
   display(): void {
     const { containerEl } = this;
     containerEl.empty();
-    containerEl.createEl('h2', { text: 'Vital Log Settings' });
+    containerEl.addClass('vital-log-settings');
 
-    // ── Daily note path ────────────────────────────────────
-    new Setting(containerEl)
-      .setName('Daily Note Path Template')
-      .setDesc(
-        'Path template for your daily note. Tokens: {{YYYY}}, {{Q}}, {{YYYY-MM-DD dddd}}'
-      )
+    // ── Tab bar ──────────────────────────────────────────────
+    const tabBar = containerEl.createDiv('vital-log-settings-tabs');
+    const tabs: { id: SettingsTab; label: string }[] = [
+      { id: 'general', label: 'General' },
+      { id: 'trackers', label: 'Trackers' },
+      { id: 'customModals', label: 'Custom Modals' },
+    ];
+
+    for (const tab of tabs) {
+      const btn = tabBar.createEl('button', {
+        text: tab.label,
+        cls: `vital-log-settings-tab${tab.id === this.activeTab ? ' is-active' : ''}`,
+      });
+      btn.addEventListener('click', () => {
+        this.activeTab = tab.id;
+        this.display();
+      });
+    }
+
+    // ── Tab content ──────────────────────────────────────────
+    const content = containerEl.createDiv('vital-log-settings-content');
+
+    switch (this.activeTab) {
+      case 'general':
+        this.renderGeneralTab(content);
+        break;
+      case 'trackers':
+        this.renderTrackersTab(content);
+        break;
+      case 'customModals':
+        this.renderCustomModalsTab(content);
+        break;
+    }
+  }
+
+  // ── General tab ──────────────────────────────────────────────
+
+  private renderGeneralTab(el: HTMLElement): void {
+    // Daily note path
+    el.createEl('h3', { text: 'Daily Note Path' });
+
+    new Setting(el)
+      .setName('Path template')
+      .setDesc('Template path for your daily note.')
       .addText((text) =>
         text
           .setPlaceholder('Calendar/Daily/{{YYYY}}/Q{{Q}}/{{YYYY-MM-DD dddd}}')
@@ -45,19 +86,36 @@ export class VitalLogSettingTab extends PluginSettingTab {
           })
       );
 
-    containerEl.createEl('p', {
-      text: 'Supported tokens: {{YYYY}} = year, {{YY}} = 2-digit year, {{MM}} = month, {{DD}} = day, {{dddd}} = weekday, {{ddd}} = short weekday, {{Q}} = quarter, {{WW}} = ISO week, {{MMMM}} = month name, {{YYYY-MM-DD dddd}} = full date',
-      cls: 'vital-log-settings-helper',
-    });
+    const tokenDetails = el.createEl('details', { cls: 'vital-log-token-details' });
+    tokenDetails.createEl('summary', { text: 'Supported tokens' });
+    const tokenGrid = tokenDetails.createDiv('vital-log-token-grid');
+    const tokens = [
+      ['{{YYYY}}', 'Full year'],
+      ['{{YY}}', '2-digit year'],
+      ['{{MM}}', 'Month (01–12)'],
+      ['{{DD}}', 'Day (01–31)'],
+      ['{{dddd}}', 'Weekday name'],
+      ['{{ddd}}', 'Short weekday'],
+      ['{{Q}}', 'Quarter (1–4)'],
+      ['{{WW}}', 'ISO week'],
+      ['{{MMMM}}', 'Month name'],
+      ['{{YYYY-MM-DD}}', 'Date'],
+      ['{{YYYY-MM-DD dddd}}', 'Date + weekday'],
+      ['{{YYYY-MM}}', 'Year-month'],
+    ];
+    for (const [token, desc] of tokens) {
+      const row = tokenGrid.createDiv('vital-log-token-row');
+      row.createEl('code', { text: token });
+      row.createEl('span', { text: desc });
+    }
 
-    // ── Log format ─────────────────────────────────────────
-    containerEl.createEl('h3', { text: 'Log Format' });
+    // Log format
+    el.createEl('h3', { text: 'Log Format' });
 
-    new Setting(containerEl)
+    new Setting(el)
       .setName('Log mode')
       .setDesc(
-        'perVitamin: each supplement gets its own frontmatter key. ' +
-        'substances: all supplements are written into a single substances[] list with name/amount/unit/time.'
+        'Per-vitamin: each supplement gets its own frontmatter key. Substances: single flat list.'
       )
       .addDropdown((dd) =>
         dd
@@ -70,9 +128,9 @@ export class VitalLogSettingTab extends PluginSettingTab {
           })
       );
 
-    new Setting(containerEl)
+    new Setting(el)
       .setName('Include source field')
-      .setDesc('Record where each entry came from (manual, pack name, stack name).')
+      .setDesc('Record where each entry came from (manual, pack, stack).')
       .addToggle((toggle) =>
         toggle
           .setValue(this.plugin.settings.logSource !== false)
@@ -82,9 +140,9 @@ export class VitalLogSettingTab extends PluginSettingTab {
           })
       );
 
-    new Setting(containerEl)
+    new Setting(el)
       .setName('Log pack entries')
-      .setDesc('Write a packs[] record in the daily note when logging a pack.')
+      .setDesc('Write a packs[] record when logging a pack.')
       .addToggle((toggle) =>
         toggle
           .setValue(this.plugin.settings.logPackEntries !== false)
@@ -94,9 +152,9 @@ export class VitalLogSettingTab extends PluginSettingTab {
           })
       );
 
-    new Setting(containerEl)
+    new Setting(el)
       .setName('Log stack entries')
-      .setDesc('Write a stacks[] record in the daily note when logging a stack.')
+      .setDesc('Write a stacks[] record when logging a stack.')
       .addToggle((toggle) =>
         toggle
           .setValue(this.plugin.settings.logStackEntries !== false)
@@ -106,28 +164,83 @@ export class VitalLogSettingTab extends PluginSettingTab {
           })
       );
 
-    // ── Trackers ──────────────────────────────────────────
-    containerEl.createEl('h3', { text: 'Trackers' });
+    // ── Manage Data ──
+    el.createEl('h3', { text: 'Manage Data' });
 
-    containerEl.createEl('p', {
+    new Setting(el)
+      .setName('Vitamins')
+      .setDesc('Manage your vitamin library.')
+      .addButton((btn) =>
+        btn
+          .setButtonText('Open Manager')
+          .setCta()
+          .onClick(() => {
+            new ManageModal(
+              this.app,
+              this.plugin.settings,
+              () => this.plugin.saveSettings(),
+              'vitamins'
+            ).open();
+          })
+      );
+
+    new Setting(el)
+      .setName('Packs')
+      .setDesc('Manage supplement packs.')
+      .addButton((btn) =>
+        btn
+          .setButtonText('Open Manager')
+          .setCta()
+          .onClick(() => {
+            new ManageModal(
+              this.app,
+              this.plugin.settings,
+              () => this.plugin.saveSettings(),
+              'packs'
+            ).open();
+          })
+      );
+
+    new Setting(el)
+      .setName('Stacks')
+      .setDesc('Manage supplement stacks.')
+      .addButton((btn) =>
+        btn
+          .setButtonText('Open Manager')
+          .setCta()
+          .onClick(() => {
+            new ManageModal(
+              this.app,
+              this.plugin.settings,
+              () => this.plugin.saveSettings(),
+              'stacks'
+            ).open();
+          })
+      );
+  }
+
+  // ── Trackers tab ─────────────────────────────────────────────
+
+  private renderTrackersTab(el: HTMLElement): void {
+    el.createEl('p', {
       text: 'Configure trackers like Mood and Energy. Each tracker gets its own frontmatter key and value range.',
       cls: 'vital-log-settings-helper',
     });
 
-    const trackerList = containerEl.createDiv('vital-log-item-list');
+    const trackerList = el.createDiv('vital-log-item-list');
     for (const tracker of this.plugin.settings.trackers) {
       const row = trackerList.createDiv('vital-log-item-row');
       const info = row.createDiv('vital-log-item-info');
       info.createDiv({ cls: 'vital-log-item-name', text: tracker.displayName });
       info.createDiv({
         cls: 'vital-log-item-meta',
-        text: `Key: ${tracker.propertyKey} · Value: ${tracker.valueName} · Range: ${tracker.min}–${tracker.max}`,
+        text: `${tracker.propertyKey} · ${tracker.valueName} · ${tracker.min}–${tracker.max}`,
       });
       const actions = row.createDiv('vital-log-item-actions');
 
       const editBtn = actions.createEl('button', { text: 'Edit', cls: 'vital-log-btn' });
       editBtn.addEventListener('click', () => {
-        this.renderTrackerEditForm(containerEl, tracker, trackerList);
+        this.renderTrackerEditForm(el, tracker, trackerList);
       });
 
       const delBtn = actions.createEl('button', { text: 'Delete', cls: 'vital-log-btn mod-warning' });
@@ -138,25 +251,30 @@ export class VitalLogSettingTab extends PluginSettingTab {
       });
     }
 
-    new Setting(containerEl)
+    if (this.plugin.settings.trackers.length === 0) {
+      trackerList.createDiv({ cls: 'vital-log-empty-state', text: 'No trackers configured yet.' });
+    }
+
+    new Setting(el)
       .addButton((btn) =>
         btn
           .setButtonText('Add Tracker')
           .setCta()
           .onClick(() => {
-            this.renderTrackerAddForm(containerEl, trackerList);
+            this.renderTrackerAddForm(el, trackerList);
           })
       );
+  }
 
-    // ── Custom Modals ──────────────────────────────────────
-    containerEl.createEl('h3', { text: 'Custom Modals' });
+  // ── Custom Modals tab ────────────────────────────────────────
 
-    containerEl.createEl('p', {
-      text: 'Create custom modals that write properties to any periodic note. Each modal has its own path template and configurable fields.',
+  private renderCustomModalsTab(el: HTMLElement): void {
+    el.createEl('p', {
+      text: 'Create custom modals that write properties to any periodic note.',
       cls: 'vital-log-settings-helper',
     });
 
-    const modalList = containerEl.createDiv('vital-log-item-list');
+    const modalList = el.createDiv('vital-log-item-list');
     for (const modal of this.plugin.settings.customModals) {
       const row = modalList.createDiv('vital-log-item-row');
       const info = row.createDiv('vital-log-item-info');
@@ -169,7 +287,7 @@ export class VitalLogSettingTab extends PluginSettingTab {
 
       const editBtn = actions.createEl('button', { text: 'Edit', cls: 'vital-log-btn' });
       editBtn.addEventListener('click', () => {
-        this.renderModalEditForm(containerEl, modal, modalList);
+        new CustomModalEditorModal(this.app, this.plugin, modal, true, () => this.display()).open();
       });
 
       const delBtn = actions.createEl('button', { text: 'Delete', cls: 'vital-log-btn mod-warning' });
@@ -181,67 +299,26 @@ export class VitalLogSettingTab extends PluginSettingTab {
       });
     }
 
-    new Setting(containerEl)
+    if (this.plugin.settings.customModals.length === 0) {
+      modalList.createDiv({ cls: 'vital-log-empty-state', text: 'No custom modals yet.' });
+    }
+
+    new Setting(el)
       .addButton((btn) =>
         btn
           .setButtonText('Add Custom Modal')
           .setCta()
           .onClick(() => {
-            this.renderModalAddForm(containerEl, modalList);
-          })
-      );
-
-    // ── Manager shortcuts ──────────────────────────────────
-    containerEl.createEl('h3', { text: 'Manage Data' });
-
-    new Setting(containerEl)
-      .setName('Vitamins')
-      .setDesc('Add, edit, or remove vitamins.')
-      .addButton((btn) =>
-        btn
-          .setButtonText('Open Vitamin Manager')
-          .setCta()
-          .onClick(() => {
-            new ManageModal(
-              this.app,
-              this.plugin.settings,
-              () => this.plugin.saveSettings(),
-              'vitamins'
-            ).open();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName('Packs')
-      .setDesc('Add, edit, or remove supplement packs.')
-      .addButton((btn) =>
-        btn
-          .setButtonText('Open Pack Manager')
-          .setCta()
-          .onClick(() => {
-            new ManageModal(
-              this.app,
-              this.plugin.settings,
-              () => this.plugin.saveSettings(),
-              'packs'
-            ).open();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName('Stacks')
-      .setDesc('Add, edit, or remove supplement stacks.')
-      .addButton((btn) =>
-        btn
-          .setButtonText('Open Stack Manager')
-          .setCta()
-          .onClick(() => {
-            new ManageModal(
-              this.app,
-              this.plugin.settings,
-              () => this.plugin.saveSettings(),
-              'stacks'
-            ).open();
+            const newModal: CustomModalConfig = {
+              id: crypto.randomUUID(),
+              displayName: '',
+              icon: 'file-text',
+              notePath: this.plugin.settings.dailyNotePath,
+              useTemplater: false,
+              templatePath: '',
+              fields: [],
+            };
+            new CustomModalEditorModal(this.app, this.plugin, newModal, false, () => this.display()).open();
           })
       );
   }
@@ -347,127 +424,159 @@ export class VitalLogSettingTab extends PluginSettingTab {
       this.display();
     });
   }
+}
 
-  // ── Custom Modal forms ────────────────────────────────────
+// ================================================================
+// Custom Modal Editor — opens as a separate Obsidian Modal
+// ================================================================
 
-  private renderModalAddForm(containerEl: HTMLElement, insertBefore: HTMLElement): void {
-    const modal: CustomModalConfig = {
-      id: crypto.randomUUID(),
-      displayName: '',
-      icon: 'file-text',
-      notePath: this.plugin.settings.dailyNotePath,
-      useTemplater: false,
-      templatePath: '',
-      fields: [],
-    };
-    this.renderModalForm(containerEl, insertBefore, modal, false);
-  }
+class CustomModalEditorModal extends Modal {
+  private plugin: VitalLogPlugin;
+  private modal: CustomModalConfig;
+  private isEdit: boolean;
+  private onSaved: () => void;
 
-  private renderModalEditForm(containerEl: HTMLElement, modal: CustomModalConfig, insertBefore: HTMLElement): void {
-    this.renderModalForm(containerEl, insertBefore, modal, true);
-  }
-
-  private renderModalForm(
-    containerEl: HTMLElement,
-    insertBefore: HTMLElement,
+  constructor(
+    app: App,
+    plugin: VitalLogPlugin,
     modal: CustomModalConfig,
-    isEdit: boolean
-  ): void {
-    const form = containerEl.createDiv('vital-log-inline-form vital-log-modal-editor');
-    insertBefore.parentElement?.insertBefore(form, insertBefore.nextSibling);
-    form.createEl('h4', { text: isEdit ? `Edit: ${modal.displayName}` : 'New Custom Modal' });
+    isEdit: boolean,
+    onSaved: () => void
+  ) {
+    super(app);
+    this.plugin = plugin;
+    // Work on a deep copy so cancel doesn't mutate
+    this.modal = JSON.parse(JSON.stringify(modal));
+    this.isEdit = isEdit;
+    this.onSaved = onSaved;
+  }
 
-    // ── Modal metadata ──
-    const nameRow = form.createDiv('vital-log-form-row');
+  onOpen(): void {
+    const { contentEl } = this;
+    contentEl.addClass('vital-log-modal-editor-modal');
+    this.modalEl.addClass('vital-log-modal');
+
+    contentEl.createEl('h2', {
+      text: this.isEdit ? `Edit: ${this.modal.displayName}` : 'New Custom Modal',
+    });
+
+    // ── Metadata section ──
+    const metaSection = contentEl.createDiv('vital-log-editor-section');
+    metaSection.createEl('h3', { text: 'Modal Settings' });
+
+    const nameRow = metaSection.createDiv('vital-log-form-row');
     nameRow.createEl('label', { text: 'Display Name' });
     const nameInput = nameRow.createEl('input', {
       type: 'text',
       placeholder: 'e.g. Daily Review',
-      value: modal.displayName,
+      value: this.modal.displayName,
     });
 
-    const iconRow = form.createDiv('vital-log-form-row');
+    const iconRow = metaSection.createDiv('vital-log-form-row');
     iconRow.createEl('label', { text: 'Icon' });
     const iconInput = iconRow.createEl('input', {
       type: 'text',
       placeholder: 'e.g. file-text, heart, star',
-      value: modal.icon,
+      value: this.modal.icon,
     });
 
-    const pathRow = form.createDiv('vital-log-form-row');
-    pathRow.createEl('label', { text: 'Note Path Template' });
+    const pathRow = metaSection.createDiv('vital-log-form-row');
+    pathRow.createEl('label', { text: 'Note Path' });
     const pathInput = pathRow.createEl('input', {
       type: 'text',
       placeholder: 'Calendar/Daily/{{YYYY}}/Q{{Q}}/{{YYYY-MM-DD dddd}}',
-      value: modal.notePath,
+      value: this.modal.notePath,
     });
 
-    form.createEl('p', {
-      text: 'Tokens: {{YYYY}}, {{YY}}, {{MM}}, {{DD}}, {{dddd}}, {{ddd}}, {{Q}}, {{WW}}, {{MMMM}}, {{YYYY-MM-DD}}, {{YYYY-MM-DD dddd}}, {{YYYY-MM}}',
-      cls: 'vital-log-settings-helper',
-    });
+    const tokenDetails = metaSection.createEl('details', { cls: 'vital-log-token-details' });
+    tokenDetails.createEl('summary', { text: 'Supported tokens' });
+    const tokenGrid = tokenDetails.createDiv('vital-log-token-grid');
+    const tokens = [
+      ['{{YYYY}}', 'Full year'],
+      ['{{YY}}', '2-digit year'],
+      ['{{MM}}', 'Month (01–12)'],
+      ['{{DD}}', 'Day (01–31)'],
+      ['{{dddd}}', 'Weekday name'],
+      ['{{ddd}}', 'Short weekday'],
+      ['{{Q}}', 'Quarter (1–4)'],
+      ['{{WW}}', 'ISO week'],
+      ['{{MMMM}}', 'Month name'],
+      ['{{YYYY-MM-DD}}', 'Date'],
+      ['{{YYYY-MM-DD dddd}}', 'Date + weekday'],
+      ['{{YYYY-MM}}', 'Year-month'],
+    ];
+    for (const [token, desc] of tokens) {
+      const row = tokenGrid.createDiv('vital-log-token-row');
+      row.createEl('code', { text: token });
+      row.createEl('span', { text: desc });
+    }
 
-    const templaterRow = form.createDiv('vital-log-form-row');
+    const templaterRow = metaSection.createDiv('vital-log-form-row');
     templaterRow.createEl('label', { text: 'Use Templater' });
     const templaterCheckbox = templaterRow.createEl('input', { type: 'checkbox' });
-    templaterCheckbox.checked = modal.useTemplater;
+    templaterCheckbox.checked = this.modal.useTemplater;
 
-    const templatePathRow = form.createDiv('vital-log-form-row');
-    templatePathRow.createEl('label', { text: 'Template File Path' });
+    const templatePathRow = metaSection.createDiv('vital-log-form-row');
+    templatePathRow.createEl('label', { text: 'Template File' });
     const templatePathInput = templatePathRow.createEl('input', {
       type: 'text',
       placeholder: 'Templates/Daily.md',
-      value: modal.templatePath,
+      value: this.modal.templatePath,
     });
-    templatePathRow.style.display = modal.useTemplater ? '' : 'none';
+    templatePathRow.style.display = this.modal.useTemplater ? '' : 'none';
 
     templaterCheckbox.addEventListener('change', () => {
       templatePathRow.style.display = templaterCheckbox.checked ? '' : 'none';
     });
 
     // ── Fields section ──
-    form.createEl('h4', { text: 'Fields', cls: 'vital-log-fields-header' });
+    const fieldsSection = contentEl.createDiv('vital-log-editor-section');
+    fieldsSection.createEl('h3', { text: 'Fields' });
 
-    const fieldListEl = form.createDiv('vital-log-item-list');
-    this.renderFieldList(fieldListEl, modal, form);
+    const fieldListEl = fieldsSection.createDiv('vital-log-item-list');
+    this.renderFieldList(fieldListEl);
 
-    // ── Actions ──
-    const actions = form.createDiv('vital-log-inline-form-actions');
-    const cancelBtn = actions.createEl('button', { text: 'Cancel', cls: 'vital-log-btn' });
-    cancelBtn.addEventListener('click', () => { form.remove(); });
+    // ── Footer actions ──
+    const footer = contentEl.createDiv('vital-log-editor-footer');
+    const cancelBtn = footer.createEl('button', { text: 'Cancel', cls: 'vital-log-btn' });
+    cancelBtn.addEventListener('click', () => this.close());
 
-    const saveBtn = actions.createEl('button', { text: 'Save Modal', cls: 'vital-log-btn mod-cta' });
+    const saveBtn = footer.createEl('button', { text: 'Save Modal', cls: 'vital-log-btn mod-cta' });
     saveBtn.addEventListener('click', async () => {
       const name = nameInput.value.trim();
       if (!name) return;
 
-      modal.displayName = name;
-      modal.icon = iconInput.value.trim() || 'file-text';
-      modal.notePath = pathInput.value.trim();
-      modal.useTemplater = templaterCheckbox.checked;
-      modal.templatePath = templatePathInput.value.trim();
+      this.modal.displayName = name;
+      this.modal.icon = iconInput.value.trim() || 'file-text';
+      this.modal.notePath = pathInput.value.trim();
+      this.modal.useTemplater = templaterCheckbox.checked;
+      this.modal.templatePath = templatePathInput.value.trim();
 
-      if (isEdit) {
-        // Already mutated in-place
+      if (this.isEdit) {
+        const idx = this.plugin.settings.customModals.findIndex((m) => m.id === this.modal.id);
+        if (idx >= 0) {
+          this.plugin.settings.customModals[idx] = this.modal;
+        }
       } else {
-        this.plugin.settings.customModals.push(modal);
+        this.plugin.settings.customModals.push(this.modal);
       }
 
       await this.plugin.saveSettings();
       this.plugin.registerCustomModalCommands();
-      this.display();
+      this.onSaved();
+      this.close();
     });
   }
 
-  private renderFieldList(
-    fieldListEl: HTMLElement,
-    modal: CustomModalConfig,
-    formContainer: HTMLElement
-  ): void {
+  onClose(): void {
+    this.contentEl.empty();
+  }
+
+  private renderFieldList(fieldListEl: HTMLElement): void {
     fieldListEl.empty();
 
-    for (let i = 0; i < modal.fields.length; i++) {
-      const field = modal.fields[i];
+    for (let i = 0; i < this.modal.fields.length; i++) {
+      const field = this.modal.fields[i];
       const row = fieldListEl.createDiv('vital-log-item-row');
       const info = row.createDiv('vital-log-item-info');
       info.createDiv({ cls: 'vital-log-item-name', text: field.displayName });
@@ -477,85 +586,67 @@ export class VitalLogSettingTab extends PluginSettingTab {
       });
       const actions = row.createDiv('vital-log-item-actions');
 
-      // Move up
       if (i > 0) {
-        const upBtn = actions.createEl('button', { text: '↑', cls: 'vital-log-btn' });
+        const upBtn = actions.createEl('button', { text: '\u2191', cls: 'vital-log-btn' });
         upBtn.addEventListener('click', () => {
-          [modal.fields[i - 1], modal.fields[i]] = [modal.fields[i], modal.fields[i - 1]];
-          this.renderFieldList(fieldListEl, modal, formContainer);
+          [this.modal.fields[i - 1], this.modal.fields[i]] = [this.modal.fields[i], this.modal.fields[i - 1]];
+          this.renderFieldList(fieldListEl);
         });
       }
 
-      // Move down
-      if (i < modal.fields.length - 1) {
-        const downBtn = actions.createEl('button', { text: '↓', cls: 'vital-log-btn' });
+      if (i < this.modal.fields.length - 1) {
+        const downBtn = actions.createEl('button', { text: '\u2193', cls: 'vital-log-btn' });
         downBtn.addEventListener('click', () => {
-          [modal.fields[i], modal.fields[i + 1]] = [modal.fields[i + 1], modal.fields[i]];
-          this.renderFieldList(fieldListEl, modal, formContainer);
+          [this.modal.fields[i], this.modal.fields[i + 1]] = [this.modal.fields[i + 1], this.modal.fields[i]];
+          this.renderFieldList(fieldListEl);
         });
       }
 
       const editBtn = actions.createEl('button', { text: 'Edit', cls: 'vital-log-btn' });
       editBtn.addEventListener('click', () => {
-        this.renderFieldEditForm(fieldListEl, modal, field, formContainer);
+        this.renderFieldForm(fieldListEl, field, true);
       });
 
-      const delBtn = actions.createEl('button', { text: '×', cls: 'vital-log-btn mod-warning' });
+      const delBtn = actions.createEl('button', { text: '\u00d7', cls: 'vital-log-btn mod-warning' });
       delBtn.addEventListener('click', () => {
-        modal.fields = modal.fields.filter((f) => f.id !== field.id);
-        this.renderFieldList(fieldListEl, modal, formContainer);
+        this.modal.fields = this.modal.fields.filter((f) => f.id !== field.id);
+        this.renderFieldList(fieldListEl);
       });
     }
 
-    // Add field button
+    if (this.modal.fields.length === 0) {
+      fieldListEl.createDiv({ cls: 'vital-log-empty-state', text: 'No fields yet. Add one below.' });
+    }
+
     const addRow = fieldListEl.createDiv('vital-log-field-add-row');
     const addBtn = addRow.createEl('button', { text: '+ Add Field', cls: 'vital-log-btn mod-cta' });
     addBtn.addEventListener('click', () => {
-      this.renderFieldAddForm(fieldListEl, modal, formContainer);
+      const newField: CustomField = {
+        id: crypto.randomUUID(),
+        propertyKey: '',
+        displayName: '',
+        description: '',
+        fieldType: 'text',
+      };
+      this.renderFieldForm(fieldListEl, newField, false);
     });
   }
 
   private getFieldMeta(field: CustomField): string {
     const parts: string[] = [];
     if (field.fieldType === 'slider' || field.fieldType === 'rating') {
-      parts.push(`${field.min ?? 0}–${field.max ?? 10}`);
+      parts.push(`${field.min ?? 0}\u2013${field.max ?? 10}`);
     }
     if (field.fieldType === 'dropdown' && field.options?.length) {
       parts.push(`${field.options.length} options`);
     }
-    return parts.length > 0 ? ` · ${parts.join(' · ')}` : '';
-  }
-
-  private renderFieldAddForm(
-    fieldListEl: HTMLElement,
-    modal: CustomModalConfig,
-    formContainer: HTMLElement
-  ): void {
-    const newField: CustomField = {
-      id: crypto.randomUUID(),
-      propertyKey: '',
-      displayName: '',
-      description: '',
-      fieldType: 'text',
-    };
-    this.renderFieldForm(fieldListEl, modal, newField, false, formContainer);
-  }
-
-  private renderFieldEditForm(
-    fieldListEl: HTMLElement,
-    modal: CustomModalConfig,
-    field: CustomField,
-    formContainer: HTMLElement
-  ): void {
-    this.renderFieldForm(fieldListEl, modal, field, true, formContainer);
+    return parts.length > 0 ? ` \u00b7 ${parts.join(' \u00b7 ')}` : '';
   }
 
   private renderFieldForm(
     fieldListEl: HTMLElement,
-    modal: CustomModalConfig,
     field: CustomField,
-    isEdit: boolean,
-    formContainer: HTMLElement
+    isEdit: boolean
   ): void {
     const form = fieldListEl.createDiv('vital-log-inline-form');
     form.createEl('h4', { text: isEdit ? `Edit: ${field.displayName}` : 'New Field' });
@@ -576,7 +667,6 @@ export class VitalLogSettingTab extends PluginSettingTab {
       value: field.propertyKey,
     });
 
-    // Auto-slugify display name → property key (only on add)
     if (!isEdit) {
       nameInput.addEventListener('input', () => {
         keyInput.value = slugify(nameInput.value);
@@ -599,7 +689,6 @@ export class VitalLogSettingTab extends PluginSettingTab {
       if (t === field.fieldType) opt.selected = true;
     }
 
-    // Type-specific options container
     const typeOptionsEl = form.createDiv('vital-log-type-options');
     const renderTypeOptions = (type: CustomFieldType) => {
       typeOptionsEl.empty();
@@ -649,7 +738,6 @@ export class VitalLogSettingTab extends PluginSettingTab {
       renderTypeOptions(typeSelect.value as CustomFieldType);
     });
 
-    // Actions
     const actions = form.createDiv('vital-log-inline-form-actions');
     const cancelBtn = actions.createEl('button', { text: 'Cancel', cls: 'vital-log-btn' });
     cancelBtn.addEventListener('click', () => { form.remove(); });
@@ -665,7 +753,6 @@ export class VitalLogSettingTab extends PluginSettingTab {
       field.description = descInput.value.trim();
       field.fieldType = typeSelect.value as CustomFieldType;
 
-      // Read type-specific options
       const minEl = typeOptionsEl.querySelector('[data-field="min"]') as HTMLInputElement | null;
       const maxEl = typeOptionsEl.querySelector('[data-field="max"]') as HTMLInputElement | null;
       const stepEl = typeOptionsEl.querySelector('[data-field="step"]') as HTMLInputElement | null;
@@ -679,11 +766,17 @@ export class VitalLogSettingTab extends PluginSettingTab {
         : undefined;
 
       if (!isEdit) {
-        modal.fields.push(field);
+        this.modal.fields.push(field);
+      } else {
+        // Update in place
+        const idx = this.modal.fields.findIndex((f) => f.id === field.id);
+        if (idx >= 0) {
+          this.modal.fields[idx] = field;
+        }
       }
 
       form.remove();
-      this.renderFieldList(fieldListEl, modal, formContainer);
+      this.renderFieldList(fieldListEl);
     });
   }
 }
