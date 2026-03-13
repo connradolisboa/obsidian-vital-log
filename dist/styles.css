@@ -659,6 +659,272 @@
   border-color: var(--interactive-accent);
 }
 
+/* ── Custom modal date row ── */
+.vital-log-custom-date-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.vital-log-custom-date-row label {
+  font-weight: 600;
+  font-size: 0.9rem;
+  flex-shrink: 0;
+}
+
+.vital-log-custom-date-row input[type="date"] {
+  min-height: 40px;
+  font-size: 1rem;
+}
+
+.vital-log-note-status {
+  font-size: 0.78rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+}
+
+.vital-log-note-status--exists {
+  color: var(--text-success, #4caf50);
+  background: rgba(76, 175, 80, 0.1);
+}
+
+.vital-log-note-status--new {
+  color: var(--text-accent);
+  background: rgba(var(--color-accent-rgb, 124, 77, 255), 0.1);
+}
+
+/* ── Custom modal fields ── */
+.vital-log-custom-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin-bottom: 1rem;
+}
+
+.vital-log-custom-field {
+  margin-bottom: 0.85rem;
+}
+
+.vital-log-custom-field > label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-normal);
+  margin-bottom: 0.25rem;
+}
+
+.vital-log-custom-field-desc {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-bottom: 0.35rem;
+}
+
+.vital-log-custom-input,
+.vital-log-custom-textarea {
+  width: 100%;
+  min-height: 40px;
+  box-sizing: border-box;
+  font-size: 1rem;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+}
+
+.vital-log-custom-textarea {
+  min-height: 80px;
+  resize: vertical;
+  font-family: inherit;
+}
+
+/* ── Slider ── */
+.vital-log-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.vital-log-slider-input {
+  flex: 1;
+  height: 6px;
+  -webkit-appearance: none;
+  appearance: none;
+  border-radius: 3px;
+  background: var(--background-modifier-border);
+  outline: none;
+  cursor: pointer;
+}
+
+.vital-log-slider-input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--interactive-accent);
+  cursor: pointer;
+}
+
+.vital-log-slider-value {
+  min-width: 2.5rem;
+  text-align: center;
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: var(--text-accent);
+}
+
+/* ── Checkbox ── */
+.vital-log-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.vital-log-custom-checkbox {
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+  accent-color: var(--interactive-accent);
+}
+
+.vital-log-checkbox-label {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+/* ── Tags ── */
+.vital-log-tags-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.vital-log-tags-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.vital-log-tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 12px;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  font-size: 0.82rem;
+  font-weight: 500;
+}
+
+.vital-log-tag-remove {
+  background: none;
+  border: none;
+  color: var(--text-on-accent);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0 0.1rem;
+  opacity: 0.7;
+}
+
+.vital-log-tag-remove:hover {
+  opacity: 1;
+}
+
+.vital-log-tags-input-row {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.vital-log-tags-input-row input {
+  flex: 1;
+}
+
+/* ── Chooser modal ── */
+.vital-log-chooser-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.vital-log-chooser-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.75rem 1rem;
+  min-height: 52px;
+  border-radius: 8px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.vital-log-chooser-btn:hover {
+  background: var(--background-modifier-hover);
+  border-color: var(--text-accent);
+}
+
+.vital-log-chooser-btn:active {
+  opacity: 0.75;
+}
+
+.vital-log-chooser-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  color: var(--text-accent);
+}
+
+.vital-log-chooser-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.vital-log-chooser-name {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--text-normal);
+}
+
+.vital-log-chooser-meta {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-top: 0.1rem;
+}
+
+/* ── Settings: modal editor ── */
+.vital-log-modal-editor {
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+.vital-log-fields-header {
+  margin-top: 0.75rem !important;
+  border-top: 1px solid var(--background-modifier-border);
+  padding-top: 0.75rem;
+}
+
+.vital-log-field-add-row {
+  margin-top: 0.5rem;
+}
+
+.vital-log-type-options {
+  margin-top: 0.25rem;
+  padding-left: 0.5rem;
+  border-left: 2px solid var(--background-modifier-border);
+}
+
 /* ── Global input/select sizing on mobile ── */
 @media (max-width: 479px) {
   input[type="text"],

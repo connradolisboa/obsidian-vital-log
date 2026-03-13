@@ -38,6 +38,7 @@ export interface VitalLogSettings {
   packs: Pack[];
   stacks: Stack[];
   trackers: TrackerConfig[];  // mood, energy, etc.
+  customModals: CustomModalConfig[];  // user-defined log modals
   sameFolderPrefix: string;  // reserved for future use
   logMode: 'perVitamin' | 'substances'; // perVitamin: each vitamin gets its own key; substances: all go into substances[]
   logSource: boolean;         // whether to include the source field on entries
@@ -140,6 +141,47 @@ export function isTrackerEntry(v: unknown, valueName: string): v is TrackerEntry
   return typeof o['time'] === 'string' && typeof o[valueName] === 'number';
 }
 
+// ── Custom Modal types ──────────────────────────────────────
+
+export type CustomFieldType =
+  | 'slider'    // outputs number, configurable min/max/step
+  | 'text'      // single-line text input
+  | 'textarea'  // multi-line text box
+  | 'number'    // number input
+  | 'date'      // date picker (outputs "YYYY-MM-DD")
+  | 'checkbox'  // toggle (outputs true/false)
+  | 'dropdown'  // select from options (outputs string)
+  | 'time'      // time picker (outputs "HH:mm")
+  | 'rating'    // button grid (outputs number)
+  | 'tags';     // multi-select tag input (outputs string[])
+
+export interface CustomField {
+  id: string;
+  propertyKey: string;      // frontmatter key, e.g. "dayReview"
+  displayName: string;      // label shown in modal, e.g. "Day Review"
+  description: string;      // helper text, e.g. "Review your day from 1-10"
+  fieldType: CustomFieldType;
+  min?: number;             // slider, rating
+  max?: number;             // slider, rating
+  step?: number;            // slider (default 1)
+  options?: string[];       // dropdown options
+}
+
+export interface CustomModalConfig {
+  id: string;
+  displayName: string;      // e.g. "Daily Review"
+  icon: string;             // Obsidian icon name
+  notePath: string;         // path template, e.g. "Calendar/Daily/{{YYYY}}/Q{{Q}}/{{YYYY-MM-DD dddd}}"
+  useTemplater: boolean;    // trigger Templater on new note creation
+  templatePath: string;     // path to template file for Templater
+  fields: CustomField[];
+}
+
+export const CUSTOM_FIELD_TYPES: CustomFieldType[] = [
+  'slider', 'text', 'textarea', 'number', 'date',
+  'checkbox', 'dropdown', 'time', 'rating', 'tags',
+];
+
 export const SCHEDULING_HINTS = [
   'Morning',
   'Evening',
@@ -159,6 +201,7 @@ export const DEFAULT_SETTINGS: VitalLogSettings = {
     { id: 'mood-default', displayName: 'Mood', propertyKey: 'moodLog', valueName: 'mood', min: 1, max: 5, icon: 'smile' },
     { id: 'energy-default', displayName: 'Energy', propertyKey: 'energyLog', valueName: 'energy', min: 1, max: 5, icon: 'zap' },
   ],
+  customModals: [],
   sameFolderPrefix: '',
   logMode: 'perVitamin',
   logSource: true,

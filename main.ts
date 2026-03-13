@@ -11,9 +11,14 @@ import { LogModal } from './src/logModal';
 import { HistoryModal } from './src/historyModal';
 import { ManageModal } from './src/manageModal';
 import { TrackerModal } from './src/trackerModal';
+import { CustomLogModal } from './src/customLogModal';
+import { CustomModalChooser } from './src/customModalChooser';
 
 export default class VitalLogPlugin extends Plugin {
   settings: VitalLogSettings = DEFAULT_SETTINGS;
+
+  // Track dynamically registered command IDs so we can unregister on change
+  private customModalCommandIds: string[] = [];
 
   private openLogModal(initialType?: 'vitamin' | 'pack' | 'stack'): void {
     new LogModal(
@@ -87,10 +92,56 @@ export default class VitalLogPlugin extends Plugin {
         new ManageModal(this.app, this.settings, () => this.saveSettings()).open();
       },
     });
+
+    // ── Custom modal commands ─────────────────────────────
+    this.addCommand({
+      id: 'choose-log-modal',
+      name: 'Choose Log Modal',
+      callback: () => {
+        new CustomModalChooser(this.app, this.settings, () => this.saveSettings()).open();
+      },
+    });
+
+    this.registerCustomModalCommands();
   }
 
   onunload(): void {
     // Obsidian automatically closes all registered modals and event listeners.
+  }
+
+  /**
+   * Register (or re-register) individual commands for each custom modal.
+   * Called on load and whenever custom modals are added/removed in settings.
+   */
+  registerCustomModalCommands(): void {
+    // Remove previously registered custom modal commands
+    for (const cmdId of this.customModalCommandIds) {
+      // Obsidian doesn't have a public removeCommand API, but we can
+      // delete from the internal command registry
+      const fullId = `${this.manifest.id}:${cmdId}`;
+      if ((this.app as any).commands?.commands?.[fullId]) {
+        delete (this.app as any).commands.commands[fullId];
+      }
+    }
+    this.customModalCommandIds = [];
+
+    // Register a command for each custom modal
+    for (const modal of this.settings.customModals) {
+      const cmdId = `custom-modal-${modal.id}`;
+      this.addCommand({
+        id: cmdId,
+        name: modal.displayName,
+        callback: () => {
+          new CustomLogModal(
+            this.app,
+            this.settings,
+            () => this.saveSettings(),
+            modal
+          ).open();
+        },
+      });
+      this.customModalCommandIds.push(cmdId);
+    }
   }
 
   async loadSettings(): Promise<void> {

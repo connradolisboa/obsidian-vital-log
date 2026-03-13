@@ -116,6 +116,22 @@ export async function readAllFrontmatter(
   return extractFrontmatter(content) ?? {};
 }
 
+/**
+ * Set (overwrite) top-level frontmatter properties.
+ * Existing keys not in `properties` are left untouched.
+ */
+export async function setProperties(
+  app: App,
+  file: TFile,
+  properties: Record<string, unknown>
+): Promise<void> {
+  await processFrontmatter(app, file, (fm) => {
+    for (const [key, value] of Object.entries(properties)) {
+      fm[key] = value;
+    }
+  });
+}
+
 // ── Internal helpers ─────────────────────────────────────────
 
 class AbortError extends Error {
