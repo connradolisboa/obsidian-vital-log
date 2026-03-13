@@ -15,6 +15,22 @@ import { TrackerModal } from './src/trackerModal';
 export default class VitalLogPlugin extends Plugin {
   settings: VitalLogSettings = DEFAULT_SETTINGS;
 
+  private openLogModal(initialType?: 'vitamin' | 'pack' | 'stack'): void {
+    new LogModal(
+      this.app, this.settings, () => this.saveSettings(),
+      initialType,
+      () => this.openTrackerModal()
+    ).open();
+  }
+
+  private openTrackerModal(initialTrackerId?: string): void {
+    new TrackerModal(
+      this.app, this.settings, () => this.saveSettings(),
+      initialTrackerId,
+      () => this.openLogModal()
+    ).open();
+  }
+
   async onload(): Promise<void> {
     await this.loadSettings();
 
@@ -23,45 +39,37 @@ export default class VitalLogPlugin extends Plugin {
 
     // ── Ribbon icon ────────────────────────────────────────
     this.addRibbonIcon('pill', 'Vital Log: Log Supplement', () => {
-      new LogModal(this.app, this.settings, () => this.saveSettings()).open();
+      this.openLogModal();
     });
 
     // ── Commands ───────────────────────────────────────────
     this.addCommand({
       id: 'log-vitamin',
       name: 'Log Vitamin',
-      callback: () => {
-        new LogModal(this.app, this.settings, () => this.saveSettings(), 'vitamin').open();
-      },
+      callback: () => this.openLogModal('vitamin'),
     });
 
     this.addCommand({
       id: 'log-pack',
       name: 'Log Pack',
-      callback: () => {
-        new LogModal(this.app, this.settings, () => this.saveSettings(), 'pack').open();
-      },
+      callback: () => this.openLogModal('pack'),
     });
 
     this.addCommand({
       id: 'log-stack',
       name: 'Log Stack',
-      callback: () => {
-        new LogModal(this.app, this.settings, () => this.saveSettings(), 'stack').open();
-      },
+      callback: () => this.openLogModal('stack'),
     });
 
     // ── Tracker commands ──────────────────────────────────
     this.addRibbonIcon('activity', 'Vital Log: Log Tracker', () => {
-      new TrackerModal(this.app, this.settings, () => this.saveSettings()).open();
+      this.openTrackerModal();
     });
 
     this.addCommand({
       id: 'log-tracker',
       name: 'Log Tracker',
-      callback: () => {
-        new TrackerModal(this.app, this.settings, () => this.saveSettings()).open();
-      },
+      callback: () => this.openTrackerModal(),
     });
 
     this.addCommand({

@@ -15,6 +15,7 @@ declare const moment: (date?: Date | string) => { format: (fmt: string) => strin
 export class TrackerModal extends Modal {
   private settings: VitalLogSettings;
   private saveSettings: () => Promise<void>;
+  private onSwitchToSupplements?: () => void;
 
   // State
   private selectedTrackerId = '';
@@ -26,12 +27,14 @@ export class TrackerModal extends Modal {
     app: App,
     settings: VitalLogSettings,
     saveSettings: () => Promise<void>,
-    initialTrackerId?: string
+    initialTrackerId?: string,
+    onSwitchToSupplements?: () => void
   ) {
     super(app);
     this.settings = settings;
     this.saveSettings = saveSettings;
     this.timeValue = moment().format('HH:mm');
+    this.onSwitchToSupplements = onSwitchToSupplements;
     if (initialTrackerId) {
       this.selectedTrackerId = initialTrackerId;
     } else if (settings.trackers.length > 0) {
@@ -56,7 +59,19 @@ export class TrackerModal extends Modal {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass('vital-log-modal');
-    contentEl.createEl('h2', { text: 'Log Tracker' });
+    const header = contentEl.createDiv('vital-log-modal-header');
+    header.createEl('h2', { text: 'Log Tracker' });
+    if (this.onSwitchToSupplements) {
+      const switchBtn = header.createEl('button', {
+        cls: 'vital-log-switch-btn',
+        attr: { 'aria-label': 'Switch to Supplements' },
+      });
+      switchBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.5 1.5H8.25A2.25 2.25 0 0 0 6 3.75v16.5a2.25 2.25 0 0 0 2.25 2.25h7.5A2.25 2.25 0 0 0 18 20.25V3.75a2.25 2.25 0 0 0-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3m-3 18.75h3"/></svg>';
+      switchBtn.addEventListener('click', () => {
+        this.close();
+        this.onSwitchToSupplements!();
+      });
+    }
 
     if (this.settings.trackers.length === 0) {
       contentEl.createDiv({

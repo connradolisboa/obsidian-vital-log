@@ -17,6 +17,7 @@ type LogType = 'vitamin' | 'pack' | 'stack';
 export class LogModal extends Modal {
   private settings: VitalLogSettings;
   private saveSettings: () => Promise<void>;
+  private onSwitchToTracker?: () => void;
 
   // State
   private logType: LogType;
@@ -37,13 +38,15 @@ export class LogModal extends Modal {
     app: App,
     settings: VitalLogSettings,
     saveSettings: () => Promise<void>,
-    initialType: LogType = 'vitamin'
+    initialType: LogType = 'vitamin',
+    onSwitchToTracker?: () => void
   ) {
     super(app);
     this.settings = settings;
     this.saveSettings = saveSettings;
     this.logType = initialType;
     this.timeValue = moment().format('HH:mm');
+    this.onSwitchToTracker = onSwitchToTracker;
   }
 
   onOpen(): void {
@@ -59,7 +62,19 @@ export class LogModal extends Modal {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass('vital-log-modal');
-    contentEl.createEl('h2', { text: 'Log Supplement' });
+    const header = contentEl.createDiv('vital-log-modal-header');
+    header.createEl('h2', { text: 'Log Supplement' });
+    if (this.onSwitchToTracker) {
+      const switchBtn = header.createEl('button', {
+        cls: 'vital-log-switch-btn',
+        attr: { 'aria-label': 'Switch to Tracker' },
+      });
+      switchBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>';
+      switchBtn.addEventListener('click', () => {
+        this.close();
+        this.onSwitchToTracker!();
+      });
+    }
 
     // ── Type selector ──────────────────────────────────────
     const typeSel = contentEl.createDiv('vital-log-type-selector');

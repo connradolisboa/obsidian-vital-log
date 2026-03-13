@@ -444,6 +444,44 @@
   }
 }
 
+/* ── Modal header with switch button ── */
+.vital-log-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.25rem;
+}
+
+.vital-log-modal-header h2 {
+  margin: 0;
+}
+
+.vital-log-switch-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s;
+  flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.vital-log-switch-btn:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-accent);
+  border-color: var(--text-accent);
+}
+
+.vital-log-switch-btn:active {
+  opacity: 0.75;
+}
+
 /* ── Log modal ── */
 .vital-log-modal-section {
   margin-bottom: 1rem;
