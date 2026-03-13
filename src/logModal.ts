@@ -29,6 +29,9 @@ export class LogModal extends Modal {
   // Per-log amount overrides (keyed by vitaminId for packs; "v:<vitaminId>" or "p:<packId>:<vitaminId>" for stacks)
   private packItemAmounts: Record<string, number> = {};
   private stackItemAmounts: Record<string, number> = {};
+  // Per-log exclusions: vitaminId for pack items; "v:<vitaminId>", "p:<packId>", "p:<packId>:<vitaminId>" for stacks
+  private packItemExcluded: Set<string> = new Set();
+  private stackItemExcluded: Set<string> = new Set();
 
   constructor(
     app: App,
@@ -187,6 +190,7 @@ export class LogModal extends Modal {
     sel.addEventListener('change', () => {
       this.selectedPackId = sel.value;
       this.packItemAmounts = {};
+      this.packItemExcluded = new Set();
       this.render();
     });
   }
@@ -210,6 +214,7 @@ export class LogModal extends Modal {
     sel.addEventListener('change', () => {
       this.selectedStackId = sel.value;
       this.stackItemAmounts = {};
+      this.stackItemExcluded = new Set();
       this.render();
     });
   }
@@ -226,17 +231,36 @@ export class LogModal extends Modal {
       const vitamin = this.settings.vitamins.find((v) => v.id === item.vitaminId);
       if (!vitamin) continue;
 
-      const row = list.createDiv({ cls: 'vital-log-pack-item-row' });
+      const excluded = this.packItemExcluded.has(item.vitaminId);
+      const row = list.createDiv({ cls: 'vital-log-pack-item-row' + (excluded ? ' vital-log-excluded' : '') });
       row.createEl('span', { text: vitamin.displayName, cls: 'vital-log-preview-name' });
-      const amtInput = row.createEl('input', {
-        type: 'number',
-        value: String(this.packItemAmounts[item.vitaminId] ?? item.amount),
-      });
-      row.createEl('span', { text: vitamin.unit, cls: 'vital-log-preview-unit' });
 
-      amtInput.addEventListener('input', () => {
-        const val = parseFloat(amtInput.value);
-        if (!isNaN(val)) this.packItemAmounts[item.vitaminId] = val;
+      if (!excluded) {
+        const amtInput = row.createEl('input', {
+          type: 'number',
+          value: String(this.packItemAmounts[item.vitaminId] ?? item.amount),
+        });
+        row.createEl('span', { text: vitamin.unit, cls: 'vital-log-preview-unit' });
+        amtInput.addEventListener('input', () => {
+          const val = parseFloat(amtInput.value);
+          if (!isNaN(val)) this.packItemAmounts[item.vitaminId] = val;
+        });
+      } else {
+        row.createEl('span', { text: '(skipped)', cls: 'vital-log-preview-unit' });
+      }
+
+      const rmBtn = row.createEl('button', {
+        text: excluded ? 'Restore' : '✕',
+        cls: 'vital-log-btn' + (excluded ? '' : ' mod-warning'),
+      });
+      rmBtn.addEventListener('click', () => {
+        if (excluded) {
+          this.packItemExcluded.delete(item.vitaminId);
+        } else {
+          this.packItemExcluded.add(item.vitaminId);
+          delete this.packItemAmounts[item.vitaminId];
+        }
+        this.render();
       });
     }
   }
@@ -254,44 +278,102 @@ export class LogModal extends Modal {
         if (!vitamin) continue;
 
         const key = `v:${item.vitaminId}`;
+        const excluded = this.stackItemExcluded.has(key);
         const list = preview.createDiv({ cls: 'vital-log-pack-items' });
-        const row = list.createDiv({ cls: 'vital-log-pack-item-row' });
+        const row = list.createDiv({ cls: 'vital-log-pack-item-row' + (excluded ? ' vital-log-excluded' : '') });
         row.createEl('span', { text: vitamin.displayName, cls: 'vital-log-preview-name' });
-        const amtInput = row.createEl('input', {
-          type: 'number',
-          value: String(this.stackItemAmounts[key] ?? (item.amount ?? vitamin.defaultAmount)),
-        });
-        row.createEl('span', { text: vitamin.unit, cls: 'vital-log-preview-unit' });
 
-        amtInput.addEventListener('input', () => {
-          const val = parseFloat(amtInput.value);
-          if (!isNaN(val)) this.stackItemAmounts[key] = val;
+        if (!excluded) {
+          const amtInput = row.createEl('input', {
+            type: 'number',
+            value: String(this.stackItemAmounts[key] ?? (item.amount ?? vitamin.defaultAmount)),
+          });
+          row.createEl('span', { text: vitamin.unit, cls: 'vital-log-preview-unit' });
+          amtInput.addEventListener('input', () => {
+            const val = parseFloat(amtInput.value);
+            if (!isNaN(val)) this.stackItemAmounts[key] = val;
+          });
+        } else {
+          row.createEl('span', { text: '(skipped)', cls: 'vital-log-preview-unit' });
+        }
+
+        const rmBtn = row.createEl('button', {
+          text: excluded ? 'Restore' : '✕',
+          cls: 'vital-log-btn' + (excluded ? '' : ' mod-warning'),
+        });
+        rmBtn.addEventListener('click', () => {
+          if (excluded) {
+            this.stackItemExcluded.delete(key);
+          } else {
+            this.stackItemExcluded.add(key);
+            delete this.stackItemAmounts[key];
+          }
+          this.render();
         });
       } else {
         const pack = this.settings.packs.find((p) => p.id === item.packId);
         if (!pack) continue;
 
-        const packBlock = preview.createDiv({ cls: 'vital-log-preview-pack-block' });
-        packBlock.createEl('div', { text: `Pack: ${pack.displayName}`, cls: 'vital-log-preview-pack-name' });
-        const list = packBlock.createDiv({ cls: 'vital-log-pack-items' });
+        const packKey = `p:${pack.id}`;
+        const packExcluded = this.stackItemExcluded.has(packKey);
+        const packBlock = preview.createDiv({ cls: 'vital-log-preview-pack-block' + (packExcluded ? ' vital-log-excluded' : '') });
+        const packHeader = packBlock.createDiv({ cls: 'vital-log-preview-pack-name' });
+        packHeader.createEl('span', { text: `Pack: ${pack.displayName}` });
 
-        for (const packItem of pack.items) {
-          const vitamin = this.settings.vitamins.find((v) => v.id === packItem.vitaminId);
-          if (!vitamin) continue;
+        const packRmBtn = packHeader.createEl('button', {
+          text: packExcluded ? 'Restore' : '✕',
+          cls: 'vital-log-btn' + (packExcluded ? '' : ' mod-warning'),
+        });
+        packRmBtn.addEventListener('click', () => {
+          if (packExcluded) {
+            this.stackItemExcluded.delete(packKey);
+            // also restore any individually excluded items in this pack
+            pack.items.forEach((pi) => this.stackItemExcluded.delete(`${packKey}:${pi.vitaminId}`));
+          } else {
+            this.stackItemExcluded.add(packKey);
+          }
+          this.render();
+        });
 
-          const key = `p:${pack.id}:${packItem.vitaminId}`;
-          const row = list.createDiv({ cls: 'vital-log-pack-item-row vital-log-pack-item-row--nested' });
-          row.createEl('span', { text: vitamin.displayName, cls: 'vital-log-preview-name' });
-          const amtInput = row.createEl('input', {
-            type: 'number',
-            value: String(this.stackItemAmounts[key] ?? packItem.amount),
-          });
-          row.createEl('span', { text: vitamin.unit, cls: 'vital-log-preview-unit' });
+        if (!packExcluded) {
+          const list = packBlock.createDiv({ cls: 'vital-log-pack-items' });
+          for (const packItem of pack.items) {
+            const vitamin = this.settings.vitamins.find((v) => v.id === packItem.vitaminId);
+            if (!vitamin) continue;
 
-          amtInput.addEventListener('input', () => {
-            const val = parseFloat(amtInput.value);
-            if (!isNaN(val)) this.stackItemAmounts[key] = val;
-          });
+            const key = `${packKey}:${packItem.vitaminId}`;
+            const excluded = this.stackItemExcluded.has(key);
+            const row = list.createDiv({ cls: 'vital-log-pack-item-row vital-log-pack-item-row--nested' + (excluded ? ' vital-log-excluded' : '') });
+            row.createEl('span', { text: vitamin.displayName, cls: 'vital-log-preview-name' });
+
+            if (!excluded) {
+              const amtInput = row.createEl('input', {
+                type: 'number',
+                value: String(this.stackItemAmounts[key] ?? packItem.amount),
+              });
+              row.createEl('span', { text: vitamin.unit, cls: 'vital-log-preview-unit' });
+              amtInput.addEventListener('input', () => {
+                const val = parseFloat(amtInput.value);
+                if (!isNaN(val)) this.stackItemAmounts[key] = val;
+              });
+            } else {
+              row.createEl('span', { text: '(skipped)', cls: 'vital-log-preview-unit' });
+            }
+
+            const rmBtn = row.createEl('button', {
+              text: excluded ? 'Restore' : '✕',
+              cls: 'vital-log-btn' + (excluded ? '' : ' mod-warning'),
+            });
+            rmBtn.addEventListener('click', () => {
+              if (excluded) {
+                this.stackItemExcluded.delete(key);
+              } else {
+                this.stackItemExcluded.add(key);
+                delete this.stackItemAmounts[key];
+              }
+              this.render();
+            });
+          }
         }
       }
     }
@@ -313,47 +395,57 @@ export class LogModal extends Modal {
           amount: this.amountValue || vitamin.defaultAmount,
           note: this.noteValue || undefined,
           source: 'manual',
-        });
+        }, this.settings);
         new Notice(`Logged ${vitamin.displayName} at ${this.timeValue}`);
       } else if (this.logType === 'pack') {
         const pack = this.settings.packs.find((p) => p.id === this.selectedPackId);
         if (!pack) { new Notice('Vital Log: Please select a pack.'); return; }
         const packWithOverrides = {
           ...pack,
-          items: pack.items.map((item) => ({
-            ...item,
-            amount: this.packItemAmounts[item.vitaminId] ?? item.amount,
-          })),
+          items: pack.items
+            .filter((item) => !this.packItemExcluded.has(item.vitaminId))
+            .map((item) => ({
+              ...item,
+              amount: this.packItemAmounts[item.vitaminId] ?? item.amount,
+            })),
         };
         await vm.logPack(this.app, file, packWithOverrides, this.settings, { time: this.timeValue, source: 'manual' });
         new Notice(`Logged pack "${pack.displayName}" at ${this.timeValue}`);
       } else {
         const stack = this.settings.stacks.find((s) => s.id === this.selectedStackId);
         if (!stack) { new Notice('Vital Log: Please select a stack.'); return; }
-        // Build modified stack items with amount overrides for standalone vitamins
+        // Build modified stack items with amount overrides and exclusions for standalone vitamins
         const stackWithOverrides = {
           ...stack,
-          items: stack.items.map((item) => {
-            if (item.type === 'vitamin') {
-              const key = `v:${item.vitaminId}`;
-              return key in this.stackItemAmounts
-                ? { ...item, amount: this.stackItemAmounts[key] }
-                : item;
-            }
-            return item;
-          }),
+          items: stack.items
+            .filter((item) =>
+              item.type === 'vitamin'
+                ? !this.stackItemExcluded.has(`v:${item.vitaminId}`)
+                : !this.stackItemExcluded.has(`p:${item.packId}`)
+            )
+            .map((item) => {
+              if (item.type === 'vitamin') {
+                const key = `v:${item.vitaminId}`;
+                return key in this.stackItemAmounts
+                  ? { ...item, amount: this.stackItemAmounts[key] }
+                  : item;
+              }
+              return item;
+            }),
         };
-        // Build modified settings with overridden pack item amounts
+        // Build modified settings with overridden and excluded pack item amounts
         const settingsWithOverrides = {
           ...this.settings,
           packs: this.settings.packs.map((p) => ({
             ...p,
-            items: p.items.map((pi) => {
-              const key = `p:${p.id}:${pi.vitaminId}`;
-              return key in this.stackItemAmounts
-                ? { ...pi, amount: this.stackItemAmounts[key] }
-                : pi;
-            }),
+            items: p.items
+              .filter((pi) => !this.stackItemExcluded.has(`p:${p.id}:${pi.vitaminId}`))
+              .map((pi) => {
+                const key = `p:${p.id}:${pi.vitaminId}`;
+                return key in this.stackItemAmounts
+                  ? { ...pi, amount: this.stackItemAmounts[key] }
+                  : pi;
+              }),
           })),
         };
         await vm.logStack(this.app, file, stackWithOverrides, settingsWithOverrides, { time: this.timeValue });

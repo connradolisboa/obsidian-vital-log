@@ -8,18 +8,21 @@ import { App, Modal, Notice } from 'obsidian';
 import type {
   VitalLogSettings,
   VitaminEntry,
+  SubstanceEntry,
   PackEntry,
   StackEntry,
+  TrackerEntry,
 } from './types';
-import { isVitaminEntry, isPackEntry, isStackEntry, isArray } from './types';
+import { isVitaminEntry, isSubstanceEntry, isPackEntry, isStackEntry, isTrackerEntry, isArray } from './types';
 import { getDailyNoteIfExists } from './dailyNoteResolver';
 import * as yaml from './yamlManager';
 
 // moment is bundled with Obsidian
 declare const moment: (date?: Date | string) => { format: (fmt: string) => string };
 
-// Keys that Vital Log writes at the root frontmatter level
-const SYSTEM_KEYS = new Set(['packs', 'stacks']);
+// Keys that Vital Log writes at the root frontmatter level (not per-vitamin).
+// Tracker propertyKeys are added dynamically in render().
+const BASE_SYSTEM_KEYS = new Set(['packs', 'stacks', 'substances']);
 
 export class HistoryModal extends Modal {
   private settings: VitalLogSettings;
@@ -79,11 +82,44 @@ export class HistoryModal extends Modal {
       return;
     }
 
+    // Build system keys set (base + tracker propertyKeys)
+    const systemKeys = new Set(BASE_SYSTEM_KEYS);
+    for (const t of this.settings.trackers) {
+      systemKeys.add(t.propertyKey);
+    }
+
+    // ── Tracker sections (mood, energy, etc.) ───────────────
+    for (const tracker of this.settings.trackers) {
+      const trackerEntries = fm[tracker.propertyKey];
+      if (!isArray(trackerEntries) || trackerEntries.length === 0) continue;
+
+      const trackerSection = contentEl.createDiv('vital-log-history-section');
+      trackerSection.createDiv({ cls: 'vital-log-history-section-title', text: tracker.displayName });
+
+      trackerEntries.forEach((raw, idx) => {
+        if (isTrackerEntry(raw, tracker.valueName)) {
+          this.renderTrackerEntryRow(trackerSection, raw as TrackerEntry, idx, tracker);
+        }
+      });
+    }
+
+    // ── Substances section (flat log mode) ─────────────────
+    const substanceEntries = fm['substances'];
+    if (isArray(substanceEntries) && substanceEntries.length > 0) {
+      const substanceSection = contentEl.createDiv('vital-log-history-section');
+      substanceSection.createDiv({ cls: 'vital-log-history-section-title', text: 'Substances' });
+      substanceEntries.forEach((raw, idx) => {
+        if (isSubstanceEntry(raw)) {
+          this.renderSubstanceEntryRow(substanceSection, raw, idx);
+        }
+      });
+    }
+
     // ── Vitamins section ───────────────────────────────────
     const vitaminSection = contentEl.createDiv('vital-log-history-section');
     vitaminSection.createDiv({ cls: 'vital-log-history-section-title', text: 'Vitamins' });
 
-    const vitaminKeysInFm = Object.keys(fm).filter((k) => !SYSTEM_KEYS.has(k));
+    const vitaminKeysInFm = Object.keys(fm).filter((k) => !systemKeys.has(k));
     let anyVitaminShown = false;
 
     for (const key of vitaminKeysInFm) {
@@ -220,6 +256,70 @@ export class HistoryModal extends Modal {
     });
   }
 
+  private renderSubstanceEntryRow(container: HTMLElement, entry: SubstanceEntry, idx: number): void {
+    const row = container.createDiv('vital-log-history-entry');
+
+    const info = row.createDiv('vital-log-history-entry-info');
+    let infoText = `${entry.time}  —  ${entry.name}  ${entry.amount} ${entry.unit}`;
+    if (entry.source) infoText += `  —  source: ${entry.source}`;
+    if (entry.note) infoText += `  — `;
+    info.createSpan({ text: infoText });
+    if (entry.note) {
+      info.createEl('em', { cls: 'vital-log-history-entry-note', text: `"${entry.note}"` });
+    }
+
+    const actions = row.createDiv('vital-log-history-entry-actions');
+    const editBtn = actions.createEl('button', { text: 'Edit', cls: 'vital-log-btn' });
+    const delBtn = actions.createEl('button', { text: 'Delete', cls: 'vital-log-btn mod-warning' });
+
+    editBtn.addEventListener('click', () => {
+      row.remove();
+      this.renderSubstanceEditForm(container, entry, idx);
+    });
+
+    delBtn.addEventListener('click', () => {
+      this.renderDeleteConfirm(row, async () => {
+        await this.deleteEntry('substances', idx);
+      });
+    });
+  }
+
+  private renderSubstanceEditForm(container: HTMLElement, entry: SubstanceEntry, idx: number): void {
+    const form = container.createDiv('vital-log-inline-edit');
+
+    const timeRow = form.createDiv('vital-log-inline-edit-row');
+    timeRow.createEl('label', { text: 'Time' });
+    const timeInput = timeRow.createEl('input', { type: 'text', value: entry.time });
+
+    const amtRow = form.createDiv('vital-log-inline-edit-row');
+    amtRow.createEl('label', { text: 'Amount' });
+    const amtInput = amtRow.createEl('input', { type: 'number', value: String(entry.amount) });
+
+    const noteRow = form.createDiv('vital-log-inline-edit-row');
+    noteRow.createEl('label', { text: 'Note' });
+    const noteInput = noteRow.createEl('input', { type: 'text', value: entry.note ?? '' });
+
+    const actions = form.createDiv('vital-log-inline-edit-actions');
+    const cancelBtn = actions.createEl('button', { text: 'Cancel', cls: 'vital-log-btn' });
+    const saveBtn = actions.createEl('button', { text: 'Save', cls: 'vital-log-btn mod-cta' });
+
+    cancelBtn.addEventListener('click', () => { form.remove(); this.render(); });
+
+    saveBtn.addEventListener('click', async () => {
+      const updated: SubstanceEntry = {
+        name: entry.name,
+        amount: parseFloat(amtInput.value) || entry.amount,
+        unit: entry.unit,
+        time: timeInput.value,
+        source: entry.source,
+        ...(noteInput.value ? { note: noteInput.value } : {}),
+      };
+      await this.editEntry('substances', idx, updated);
+      form.remove();
+      await this.render();
+    });
+  }
+
   private renderPackEntryRow(container: HTMLElement, entry: PackEntry, idx: number): void {
     const row = container.createDiv('vital-log-history-entry');
     const info = row.createDiv('vital-log-history-entry-info');
@@ -243,6 +343,84 @@ export class HistoryModal extends Modal {
     const delBtn = actions.createEl('button', { text: 'Delete', cls: 'vital-log-btn mod-warning' });
     delBtn.addEventListener('click', () => {
       this.renderDeleteConfirm(row, async () => { await this.deleteEntry('stacks', idx); });
+    });
+  }
+
+  private renderTrackerEntryRow(
+    container: HTMLElement,
+    entry: TrackerEntry,
+    idx: number,
+    tracker: import('./types').TrackerConfig
+  ): void {
+    const row = container.createDiv('vital-log-history-entry');
+    const value = entry[tracker.valueName] as number;
+
+    const info = row.createDiv('vital-log-history-entry-info');
+    let infoText = `${entry.time}  —  ${tracker.valueName}: ${value}/${tracker.max}`;
+    if (entry.note) infoText += `  — `;
+    info.createSpan({ text: infoText });
+    if (entry.note) {
+      info.createEl('em', { cls: 'vital-log-history-entry-note', text: `"${entry.note}"` });
+    }
+
+    const actions = row.createDiv('vital-log-history-entry-actions');
+    const editBtn = actions.createEl('button', { text: 'Edit', cls: 'vital-log-btn' });
+    const delBtn = actions.createEl('button', { text: 'Delete', cls: 'vital-log-btn mod-warning' });
+
+    editBtn.addEventListener('click', () => {
+      row.remove();
+      this.renderTrackerEditForm(container, entry, idx, tracker);
+    });
+
+    delBtn.addEventListener('click', () => {
+      this.renderDeleteConfirm(row, async () => {
+        await this.deleteEntry(tracker.propertyKey, idx);
+      });
+    });
+  }
+
+  private renderTrackerEditForm(
+    container: HTMLElement,
+    entry: TrackerEntry,
+    idx: number,
+    tracker: import('./types').TrackerConfig
+  ): void {
+    const form = container.createDiv('vital-log-inline-edit');
+
+    const timeRow = form.createDiv('vital-log-inline-edit-row');
+    timeRow.createEl('label', { text: 'Time' });
+    const timeInput = timeRow.createEl('input', { type: 'text', value: entry.time });
+
+    const valRow = form.createDiv('vital-log-inline-edit-row');
+    valRow.createEl('label', { text: tracker.valueName.charAt(0).toUpperCase() + tracker.valueName.slice(1) });
+    const valInput = valRow.createEl('input', {
+      type: 'number',
+      value: String(entry[tracker.valueName] as number),
+    });
+    valInput.min = String(tracker.min);
+    valInput.max = String(tracker.max);
+
+    const noteRow = form.createDiv('vital-log-inline-edit-row');
+    noteRow.createEl('label', { text: 'Note' });
+    const noteInput = noteRow.createEl('input', { type: 'text', value: entry.note ?? '' });
+
+    const actions = form.createDiv('vital-log-inline-edit-actions');
+    const cancelBtn = actions.createEl('button', { text: 'Cancel', cls: 'vital-log-btn' });
+    const saveBtn = actions.createEl('button', { text: 'Save', cls: 'vital-log-btn mod-cta' });
+
+    cancelBtn.addEventListener('click', () => { form.remove(); this.render(); });
+
+    saveBtn.addEventListener('click', async () => {
+      const val = parseFloat(valInput.value);
+      const clamped = Math.max(tracker.min, Math.min(tracker.max, isNaN(val) ? (entry[tracker.valueName] as number) : val));
+      const updated: Record<string, unknown> = {
+        time: timeInput.value,
+        [tracker.valueName]: clamped,
+      };
+      if (noteInput.value) updated['note'] = noteInput.value;
+      await this.editEntry(tracker.propertyKey, idx, updated);
+      form.remove();
+      await this.render();
     });
   }
 
@@ -272,7 +450,7 @@ export class HistoryModal extends Modal {
     await yaml.removeEntry(this.app, file, propertyKey, idx);
   }
 
-  private async editEntry(propertyKey: string, idx: number, updated: VitaminEntry): Promise<void> {
+  private async editEntry(propertyKey: string, idx: number, updated: VitaminEntry | SubstanceEntry | Record<string, unknown>): Promise<void> {
     const file = getDailyNoteIfExists(this.app, this.settings, this.selectedDate);
     if (!file) return;
     await yaml.editEntry(this.app, file, propertyKey, idx, updated);

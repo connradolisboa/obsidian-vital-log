@@ -11,6 +11,7 @@ import type {
   Stack,
   VitalLogSettings,
   VitaminEntry,
+  SubstanceEntry,
   PackEntry,
   StackEntry,
   StackItemType,
@@ -26,16 +27,31 @@ export async function logVitamin(
   app: App,
   file: TFile,
   vitamin: Vitamin,
-  opts: { time: string; amount: number; note?: string; source?: string }
+  opts: { time: string; amount: number; note?: string; source?: string },
+  settings: VitalLogSettings
 ): Promise<void> {
-  const entry: VitaminEntry = {
-    time: opts.time,
-    amount: opts.amount,
-    unit: vitamin.unit,
-    ...(opts.note ? { note: opts.note } : {}),
-    source: opts.source ?? 'manual',
-  };
-  await yaml.appendEntry(app, file, vitamin.propertyKey, entry);
+  const includeSource = settings.logSource !== false;
+
+  if (settings.logMode === 'substances') {
+    const entry: SubstanceEntry = {
+      name: vitamin.displayName,
+      amount: opts.amount,
+      unit: vitamin.unit,
+      time: opts.time,
+      ...(opts.note ? { note: opts.note } : {}),
+      ...(includeSource && opts.source ? { source: opts.source } : {}),
+    };
+    await yaml.appendEntry(app, file, 'substances', entry);
+  } else {
+    const entry: VitaminEntry = {
+      time: opts.time,
+      amount: opts.amount,
+      unit: vitamin.unit,
+      ...(opts.note ? { note: opts.note } : {}),
+      ...(includeSource ? { source: opts.source ?? 'manual' } : {}),
+    };
+    await yaml.appendEntry(app, file, vitamin.propertyKey, entry);
+  }
 }
 
 /**
@@ -50,10 +66,17 @@ export async function logPack(
   opts: { time: string; source?: string }
 ): Promise<void> {
   const source = opts.source ?? 'manual';
+  const includeSource = settings.logSource !== false;
 
-  // 1. Append pack entry
-  const packEntry: PackEntry = { time: opts.time, name: pack.displayName, source };
-  await yaml.appendEntry(app, file, 'packs', packEntry);
+  // 1. Append pack entry (optional)
+  if (settings.logPackEntries !== false) {
+    const packEntry: PackEntry = {
+      time: opts.time,
+      name: pack.displayName,
+      ...(includeSource ? { source } : {}),
+    };
+    await yaml.appendEntry(app, file, 'packs', packEntry);
+  }
 
   // 2. Append each vitamin entry
   const skipped: string[] = [];
@@ -63,13 +86,11 @@ export async function logPack(
       skipped.push(item.vitaminId);
       continue;
     }
-    const entry: VitaminEntry = {
+    await logVitamin(app, file, vitamin, {
       time: opts.time,
       amount: item.amount,
-      unit: vitamin.unit,
       source: pack.displayName,
-    };
-    await yaml.appendEntry(app, file, vitamin.propertyKey, entry);
+    }, settings);
   }
 
   if (skipped.length > 0) {
@@ -90,9 +111,11 @@ export async function logStack(
   settings: VitalLogSettings,
   opts: { time: string }
 ): Promise<void> {
-  // 1. Append stack entry
-  const stackEntry: StackEntry = { time: opts.time, name: stack.displayName };
-  await yaml.appendEntry(app, file, 'stacks', stackEntry);
+  // 1. Append stack entry (optional)
+  if (settings.logStackEntries !== false) {
+    const stackEntry: StackEntry = { time: opts.time, name: stack.displayName };
+    await yaml.appendEntry(app, file, 'stacks', stackEntry);
+  }
 
   // 2. Process each item
   const skipped: string[] = [];
@@ -137,12 +160,10 @@ async function processStackItem(
       return;
     }
     const amount = item.amount ?? vitamin.defaultAmount;
-    const entry: VitaminEntry = {
+    await logVitamin(app, file, vitamin, {
       time: opts.time,
       amount,
-      unit: vitamin.unit,
       source: stack.displayName,
-    };
-    await yaml.appendEntry(app, file, vitamin.propertyKey, entry);
+    }, settings);
   }
 }

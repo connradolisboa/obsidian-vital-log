@@ -37,7 +37,12 @@ export interface VitalLogSettings {
   vitamins: Vitamin[];
   packs: Pack[];
   stacks: Stack[];
+  trackers: TrackerConfig[];  // mood, energy, etc.
   sameFolderPrefix: string;  // reserved for future use
+  logMode: 'perVitamin' | 'substances'; // perVitamin: each vitamin gets its own key; substances: all go into substances[]
+  logSource: boolean;         // whether to include the source field on entries
+  logPackEntries: boolean;    // whether to write a packs[] entry when logging a pack
+  logStackEntries: boolean;   // whether to write a stacks[] entry when logging a stack
 }
 
 // Shape written to frontmatter per vitamin property (list element)
@@ -47,6 +52,16 @@ export interface VitaminEntry {
   unit: string;
   note?: string;
   source?: string;       // "manual" | pack displayName | stack displayName
+}
+
+// Shape written to frontmatter for substances[] array element (flat log mode)
+export interface SubstanceEntry {
+  name: string;
+  amount: number;
+  unit: string;
+  time: string;          // "HH:mm"
+  source?: string;
+  note?: string;
 }
 
 // Shape written to frontmatter for packs[] array element
@@ -63,6 +78,17 @@ export interface StackEntry {
 }
 
 // ── Type guards ──────────────────────────────────────────────
+
+export function isSubstanceEntry(v: unknown): v is SubstanceEntry {
+  if (typeof v !== 'object' || v === null) return false;
+  const o = v as Record<string, unknown>;
+  return (
+    typeof o['name'] === 'string' &&
+    typeof o['amount'] === 'number' &&
+    typeof o['unit'] === 'string' &&
+    typeof o['time'] === 'string'
+  );
+}
 
 export function isVitaminEntry(v: unknown): v is VitaminEntry {
   if (typeof v !== 'object' || v === null) return false;
@@ -90,6 +116,30 @@ export function isArray(v: unknown): v is unknown[] {
   return Array.isArray(v);
 }
 
+// ── Tracker types (mood, energy, etc.) ──────────────────────
+
+export interface TrackerConfig {
+  id: string;
+  displayName: string;   // e.g. "Mood", "Energy"
+  propertyKey: string;   // frontmatter key, e.g. "moodLog"
+  valueName: string;     // field name inside entries, e.g. "mood", "energy"
+  min: number;           // minimum value (e.g. 1)
+  max: number;           // maximum value (e.g. 5)
+  icon: string;          // Obsidian icon name, e.g. "smile", "zap"
+}
+
+export interface TrackerEntry {
+  time: string;          // "HH:mm"
+  [valueName: string]: string | number | undefined;  // dynamic value field
+  note?: string;
+}
+
+export function isTrackerEntry(v: unknown, valueName: string): v is TrackerEntry {
+  if (typeof v !== 'object' || v === null) return false;
+  const o = v as Record<string, unknown>;
+  return typeof o['time'] === 'string' && typeof o[valueName] === 'number';
+}
+
 export const SCHEDULING_HINTS = [
   'Morning',
   'Evening',
@@ -105,5 +155,13 @@ export const DEFAULT_SETTINGS: VitalLogSettings = {
   vitamins: [],
   packs: [],
   stacks: [],
+  trackers: [
+    { id: 'mood-default', displayName: 'Mood', propertyKey: 'moodLog', valueName: 'mood', min: 1, max: 5, icon: 'smile' },
+    { id: 'energy-default', displayName: 'Energy', propertyKey: 'energyLog', valueName: 'energy', min: 1, max: 5, icon: 'zap' },
+  ],
   sameFolderPrefix: '',
+  logMode: 'perVitamin',
+  logSource: true,
+  logPackEntries: true,
+  logStackEntries: true,
 };

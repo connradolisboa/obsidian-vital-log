@@ -10,6 +10,7 @@ import { VitalLogSettingTab } from './src/settings';
 import { LogModal } from './src/logModal';
 import { HistoryModal } from './src/historyModal';
 import { ManageModal } from './src/manageModal';
+import { TrackerModal } from './src/trackerModal';
 
 export default class VitalLogPlugin extends Plugin {
   settings: VitalLogSettings = DEFAULT_SETTINGS;
@@ -47,6 +48,19 @@ export default class VitalLogPlugin extends Plugin {
       name: 'Log Stack',
       callback: () => {
         new LogModal(this.app, this.settings, () => this.saveSettings(), 'stack').open();
+      },
+    });
+
+    // ── Tracker commands ──────────────────────────────────
+    this.addRibbonIcon('activity', 'Vital Log: Log Tracker', () => {
+      new TrackerModal(this.app, this.settings, () => this.saveSettings()).open();
+    });
+
+    this.addCommand({
+      id: 'log-tracker',
+      name: 'Log Tracker',
+      callback: () => {
+        new TrackerModal(this.app, this.settings, () => this.saveSettings()).open();
       },
     });
 

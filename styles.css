@@ -571,6 +571,56 @@
   margin-top: 0.5rem;
 }
 
+/* ── Tracker value grid ── */
+.vital-log-tracker-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+}
+
+.vital-log-tracker-value-btn {
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: 8px;
+  border: 2px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  cursor: pointer;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  transition: all 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.vital-log-tracker-value-btn--large {
+  flex: 1;
+  min-height: 52px;
+  font-size: 1.3rem;
+}
+
+.vital-log-tracker-value-btn--medium {
+  min-width: 48px;
+  min-height: 48px;
+  font-size: 1.15rem;
+}
+
+.vital-log-tracker-value-btn:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+  border-color: var(--text-muted);
+}
+
+.vital-log-tracker-value-btn:active {
+  opacity: 0.75;
+}
+
+.vital-log-tracker-value-btn.is-selected {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent);
+}
+
 /* ── Global input/select sizing on mobile ── */
 @media (max-width: 479px) {
   input[type="text"],
