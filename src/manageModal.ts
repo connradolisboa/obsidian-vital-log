@@ -96,8 +96,8 @@ export class ManageModal extends Modal {
   private renderVitaminsTab(container: HTMLElement): void {
     const list = container.createDiv('vital-log-item-list');
 
-    for (const vit of this.settings.vitamins) {
-      this.renderVitaminRow(list, vit);
+    for (let i = 0; i < this.settings.vitamins.length; i++) {
+      this.renderVitaminRow(list, this.settings.vitamins[i], i);
     }
     if (this.settings.vitamins.length === 0) {
       list.createDiv({ cls: 'vital-log-no-data', text: 'No vitamins yet.' });
@@ -110,7 +110,7 @@ export class ManageModal extends Modal {
     });
   }
 
-  private renderVitaminRow(container: HTMLElement, vit: Vitamin): void {
+  private renderVitaminRow(container: HTMLElement, vit: Vitamin, index: number): void {
     const row = container.createDiv('vital-log-item-row');
     const info = row.createDiv('vital-log-item-info');
     info.createDiv({ cls: 'vital-log-item-name', text: vit.displayName });
@@ -120,6 +120,24 @@ export class ManageModal extends Modal {
     });
 
     const actions = row.createDiv('vital-log-item-actions');
+
+    if (index > 0) {
+      const upBtn = actions.createEl('button', { text: '\u2191', cls: 'vital-log-btn' });
+      upBtn.addEventListener('click', async () => {
+        [this.settings.vitamins[index - 1], this.settings.vitamins[index]] = [this.settings.vitamins[index], this.settings.vitamins[index - 1]];
+        await this.saveSettings();
+        this.render();
+      });
+    }
+    if (index < this.settings.vitamins.length - 1) {
+      const downBtn = actions.createEl('button', { text: '\u2193', cls: 'vital-log-btn' });
+      downBtn.addEventListener('click', async () => {
+        [this.settings.vitamins[index], this.settings.vitamins[index + 1]] = [this.settings.vitamins[index + 1], this.settings.vitamins[index]];
+        await this.saveSettings();
+        this.render();
+      });
+    }
+
     const editBtn = actions.createEl('button', { text: 'Edit', cls: 'vital-log-btn' });
     const delBtn = actions.createEl('button', { text: 'Delete', cls: 'vital-log-btn mod-warning' });
 
@@ -234,8 +252,8 @@ export class ManageModal extends Modal {
   private renderPacksTab(container: HTMLElement): void {
     const list = container.createDiv('vital-log-item-list');
 
-    for (const pack of this.settings.packs) {
-      this.renderPackRow(list, pack);
+    for (let i = 0; i < this.settings.packs.length; i++) {
+      this.renderPackRow(list, this.settings.packs[i], i);
     }
     if (this.settings.packs.length === 0) {
       list.createDiv({ cls: 'vital-log-no-data', text: 'No packs yet.' });
@@ -248,7 +266,7 @@ export class ManageModal extends Modal {
     });
   }
 
-  private renderPackRow(container: HTMLElement, pack: Pack): void {
+  private renderPackRow(container: HTMLElement, pack: Pack, index: number): void {
     const wrapper = container.createDiv();
     const row = wrapper.createDiv('vital-log-item-row');
     const info = row.createDiv('vital-log-item-info');
@@ -256,6 +274,23 @@ export class ManageModal extends Modal {
     info.createDiv({ cls: 'vital-log-item-meta', text: `${pack.items.length} vitamin(s)` });
 
     const actions = row.createDiv('vital-log-item-actions');
+
+    if (index > 0) {
+      const upBtn = actions.createEl('button', { text: '\u2191', cls: 'vital-log-btn' });
+      upBtn.addEventListener('click', async () => {
+        [this.settings.packs[index - 1], this.settings.packs[index]] = [this.settings.packs[index], this.settings.packs[index - 1]];
+        await this.saveSettings();
+        this.render();
+      });
+    }
+    if (index < this.settings.packs.length - 1) {
+      const downBtn = actions.createEl('button', { text: '\u2193', cls: 'vital-log-btn' });
+      downBtn.addEventListener('click', async () => {
+        [this.settings.packs[index], this.settings.packs[index + 1]] = [this.settings.packs[index + 1], this.settings.packs[index]];
+        await this.saveSettings();
+        this.render();
+      });
+    }
 
     let expanded = false;
     const expandBtn = actions.createEl('button', { text: '▶', cls: 'vital-log-btn' });
@@ -396,8 +431,8 @@ export class ManageModal extends Modal {
   private renderStacksTab(container: HTMLElement): void {
     const list = container.createDiv('vital-log-item-list');
 
-    for (const stack of this.settings.stacks) {
-      this.renderStackRow(list, stack);
+    for (let i = 0; i < this.settings.stacks.length; i++) {
+      this.renderStackRow(list, this.settings.stacks[i], i);
     }
     if (this.settings.stacks.length === 0) {
       list.createDiv({ cls: 'vital-log-no-data', text: 'No stacks yet.' });
@@ -410,7 +445,7 @@ export class ManageModal extends Modal {
     });
   }
 
-  private renderStackRow(container: HTMLElement, stack: Stack): void {
+  private renderStackRow(container: HTMLElement, stack: Stack, index: number): void {
     const row = container.createDiv('vital-log-item-row');
     const info = row.createDiv('vital-log-item-info');
     info.createDiv({ cls: 'vital-log-item-name', text: stack.displayName });
@@ -420,6 +455,24 @@ export class ManageModal extends Modal {
     });
 
     const actions = row.createDiv('vital-log-item-actions');
+
+    if (index > 0) {
+      const upBtn = actions.createEl('button', { text: '\u2191', cls: 'vital-log-btn' });
+      upBtn.addEventListener('click', async () => {
+        [this.settings.stacks[index - 1], this.settings.stacks[index]] = [this.settings.stacks[index], this.settings.stacks[index - 1]];
+        await this.saveSettings();
+        this.render();
+      });
+    }
+    if (index < this.settings.stacks.length - 1) {
+      const downBtn = actions.createEl('button', { text: '\u2193', cls: 'vital-log-btn' });
+      downBtn.addEventListener('click', async () => {
+        [this.settings.stacks[index], this.settings.stacks[index + 1]] = [this.settings.stacks[index + 1], this.settings.stacks[index]];
+        await this.saveSettings();
+        this.render();
+      });
+    }
+
     const editBtn = actions.createEl('button', { text: 'Edit', cls: 'vital-log-btn' });
     const delBtn = actions.createEl('button', { text: 'Delete', cls: 'vital-log-btn mod-warning' });
 

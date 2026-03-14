@@ -228,7 +228,8 @@ export class VitalLogSettingTab extends PluginSettingTab {
     });
 
     const trackerList = el.createDiv('vital-log-item-list');
-    for (const tracker of this.plugin.settings.trackers) {
+    for (let i = 0; i < this.plugin.settings.trackers.length; i++) {
+      const tracker = this.plugin.settings.trackers[i];
       const row = trackerList.createDiv('vital-log-item-row');
       const info = row.createDiv('vital-log-item-info');
       info.createDiv({ cls: 'vital-log-item-name', text: tracker.displayName });
@@ -237,6 +238,25 @@ export class VitalLogSettingTab extends PluginSettingTab {
         text: `${tracker.propertyKey} · ${tracker.valueName} · ${tracker.min}–${tracker.max}`,
       });
       const actions = row.createDiv('vital-log-item-actions');
+
+      if (i > 0) {
+        const upBtn = actions.createEl('button', { text: '\u2191', cls: 'vital-log-btn' });
+        upBtn.addEventListener('click', async () => {
+          const trackers = this.plugin.settings.trackers;
+          [trackers[i - 1], trackers[i]] = [trackers[i], trackers[i - 1]];
+          await this.plugin.saveSettings();
+          this.display();
+        });
+      }
+      if (i < this.plugin.settings.trackers.length - 1) {
+        const downBtn = actions.createEl('button', { text: '\u2193', cls: 'vital-log-btn' });
+        downBtn.addEventListener('click', async () => {
+          const trackers = this.plugin.settings.trackers;
+          [trackers[i], trackers[i + 1]] = [trackers[i + 1], trackers[i]];
+          await this.plugin.saveSettings();
+          this.display();
+        });
+      }
 
       const editBtn = actions.createEl('button', { text: 'Edit', cls: 'vital-log-btn' });
       editBtn.addEventListener('click', () => {
@@ -275,7 +295,8 @@ export class VitalLogSettingTab extends PluginSettingTab {
     });
 
     const modalList = el.createDiv('vital-log-item-list');
-    for (const modal of this.plugin.settings.customModals) {
+    for (let i = 0; i < this.plugin.settings.customModals.length; i++) {
+      const modal = this.plugin.settings.customModals[i];
       const row = modalList.createDiv('vital-log-item-row');
       const info = row.createDiv('vital-log-item-info');
       info.createDiv({ cls: 'vital-log-item-name', text: modal.displayName });
@@ -284,6 +305,25 @@ export class VitalLogSettingTab extends PluginSettingTab {
         text: `${modal.fields.length} field${modal.fields.length !== 1 ? 's' : ''} · ${modal.notePath || '(no path)'}`,
       });
       const actions = row.createDiv('vital-log-item-actions');
+
+      if (i > 0) {
+        const upBtn = actions.createEl('button', { text: '\u2191', cls: 'vital-log-btn' });
+        upBtn.addEventListener('click', async () => {
+          const modals = this.plugin.settings.customModals;
+          [modals[i - 1], modals[i]] = [modals[i], modals[i - 1]];
+          await this.plugin.saveSettings();
+          this.display();
+        });
+      }
+      if (i < this.plugin.settings.customModals.length - 1) {
+        const downBtn = actions.createEl('button', { text: '\u2193', cls: 'vital-log-btn' });
+        downBtn.addEventListener('click', async () => {
+          const modals = this.plugin.settings.customModals;
+          [modals[i], modals[i + 1]] = [modals[i + 1], modals[i]];
+          await this.plugin.saveSettings();
+          this.display();
+        });
+      }
 
       const editBtn = actions.createEl('button', { text: 'Edit', cls: 'vital-log-btn' });
       editBtn.addEventListener('click', () => {

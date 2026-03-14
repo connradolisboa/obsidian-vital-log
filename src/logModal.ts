@@ -394,6 +394,20 @@ export class LogModal extends Modal {
     }
   }
 
+  private resetAfterLog(): void {
+    this.selectedVitaminId = '';
+    this.selectedPackId = '';
+    this.selectedStackId = '';
+    this.amountValue = 0;
+    this.noteValue = '';
+    this.packItemAmounts = {};
+    this.stackItemAmounts = {};
+    this.packItemExcluded = new Set();
+    this.stackItemExcluded = new Set();
+    this.timeValue = moment().format('HH:mm');
+    this.render();
+  }
+
   private async doLog(): Promise<void> {
     try {
       const file = await resolveDailyNote(this.app, this.settings);
@@ -412,6 +426,8 @@ export class LogModal extends Modal {
           source: 'manual',
         }, this.settings);
         new Notice(`Logged ${vitamin.displayName} at ${this.timeValue}`);
+        this.resetAfterLog();
+        return;
       } else if (this.logType === 'pack') {
         const pack = this.settings.packs.find((p) => p.id === this.selectedPackId);
         if (!pack) { new Notice('Vital Log: Please select a pack.'); return; }
@@ -426,6 +442,8 @@ export class LogModal extends Modal {
         };
         await vm.logPack(this.app, file, packWithOverrides, this.settings, { time: this.timeValue, source: 'manual' });
         new Notice(`Logged pack "${pack.displayName}" at ${this.timeValue}`);
+        this.resetAfterLog();
+        return;
       } else {
         const stack = this.settings.stacks.find((s) => s.id === this.selectedStackId);
         if (!stack) { new Notice('Vital Log: Please select a stack.'); return; }
@@ -465,9 +483,9 @@ export class LogModal extends Modal {
         };
         await vm.logStack(this.app, file, stackWithOverrides, settingsWithOverrides, { time: this.timeValue });
         new Notice(`Logged stack "${stack.displayName}" at ${this.timeValue}`);
+        this.resetAfterLog();
+        return;
       }
-
-      this.close();
     } catch (err) {
       console.error('Vital Log logModal:', err);
       if (err instanceof Error && err.name !== 'AbortError') {

@@ -188,7 +188,10 @@ export class TrackerModal extends Modal {
       });
 
       new Notice(`Logged ${tracker.displayName}: ${this.selectedValue} at ${this.timeValue}`);
-      this.close();
+      this.selectedValue = null;
+      this.noteValue = '';
+      this.timeValue = moment().format('HH:mm');
+      this.render();
     } catch (err) {
       console.error('Vital Log trackerModal:', err);
       if (err instanceof Error && err.name !== 'AbortError') {

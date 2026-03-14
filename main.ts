@@ -94,6 +94,10 @@ export default class VitalLogPlugin extends Plugin {
     });
 
     // ── Custom modal commands ─────────────────────────────
+    this.addRibbonIcon('layout-grid', 'Vital Log: Custom Modals', () => {
+      new CustomModalChooser(this.app, this.settings, () => this.saveSettings()).open();
+    });
+
     this.addCommand({
       id: 'choose-log-modal',
       name: 'Choose Log Modal',
