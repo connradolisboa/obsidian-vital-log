@@ -10,7 +10,7 @@ import { resolveDailyNote } from './dailyNoteResolver';
 import * as vm from './vitaminManager';
 
 // moment is bundled with Obsidian
-declare const moment: (date?: Date | string) => { format: (fmt: string) => string };
+declare const moment: (date?: Date | string) => { format: (fmt: string) => string; toDate: () => Date };
 
 type LogType = 'vitamin' | 'pack' | 'stack';
 
@@ -24,6 +24,7 @@ export class LogModal extends Modal {
   private selectedVitaminId = '';
   private selectedPackId = '';
   private selectedStackId = '';
+  private dateValue = '';
   private timeValue = '';
   private amountValue = 0;
   private noteValue = '';
@@ -45,6 +46,7 @@ export class LogModal extends Modal {
     this.settings = settings;
     this.saveSettings = saveSettings;
     this.logType = initialType;
+    this.dateValue = moment().format('YYYY-MM-DD');
     this.timeValue = moment().format('HH:mm');
     this.onSwitchToTracker = onSwitchToTracker;
   }
@@ -106,12 +108,21 @@ export class LogModal extends Modal {
       if (this.selectedStackId) this.renderStackPreview(pickerSection);
     }
 
+    // ── Date field ─────────────────────────────────────────
+    const dateSection = contentEl.createDiv('vital-log-modal-section');
+    dateSection.createEl('label', { text: 'Date' });
+    const dateInput = dateSection.createEl('input', { type: 'date', value: this.dateValue });
+    dateInput.style.width = '100%';
+    dateInput.addEventListener('change', () => {
+      this.dateValue = dateInput.value;
+    });
+
     // ── Time field ─────────────────────────────────────────
     const timeSection = contentEl.createDiv('vital-log-modal-section');
-    timeSection.createEl('label', { text: 'Time (HH:mm)' });
-    const timeInput = timeSection.createEl('input', { type: 'text', value: this.timeValue });
+    timeSection.createEl('label', { text: 'Time' });
+    const timeInput = timeSection.createEl('input', { type: 'time', value: this.timeValue });
     timeInput.style.width = '100%';
-    timeInput.addEventListener('input', () => {
+    timeInput.addEventListener('change', () => {
       this.timeValue = timeInput.value;
     });
 
@@ -156,8 +167,8 @@ export class LogModal extends Modal {
 
     const logBtn = btnRow.createEl('button', { text: 'Log', cls: 'vital-log-btn mod-cta' });
     logBtn.addEventListener('click', async () => {
-      if (!/^\d{2}:\d{2}$/.test(this.timeValue)) {
-        timeError.textContent = 'Time must be in HH:mm format (e.g. 08:30)';
+      if (!this.timeValue || !/^\d{2}:\d{2}$/.test(this.timeValue)) {
+        timeError.textContent = 'Please select a valid time.';
         timeError.style.display = 'block';
         return;
       }
@@ -404,13 +415,15 @@ export class LogModal extends Modal {
     this.stackItemAmounts = {};
     this.packItemExcluded = new Set();
     this.stackItemExcluded = new Set();
+    this.dateValue = moment().format('YYYY-MM-DD');
     this.timeValue = moment().format('HH:mm');
     this.render();
   }
 
   private async doLog(): Promise<void> {
     try {
-      const file = await resolveDailyNote(this.app, this.settings);
+      const targetDate = this.dateValue ? moment(this.dateValue).toDate() : new Date();
+      const file = await resolveDailyNote(this.app, this.settings, targetDate);
       if (!file) {
         new Notice('Vital Log: Could not resolve daily note.');
         return;
