@@ -277,7 +277,7 @@ export class LogModal extends Modal {
 
       const rmBtn = row.createEl('button', {
         text: excluded ? 'Restore' : '✕',
-        cls: 'vital-log-btn' + (excluded ? '' : ' mod-warning'),
+        cls: 'vital-log-btn mod-compact' + (excluded ? '' : ' mod-warning'),
       });
       rmBtn.addEventListener('click', () => {
         if (excluded) {
@@ -325,7 +325,7 @@ export class LogModal extends Modal {
 
         const rmBtn = row.createEl('button', {
           text: excluded ? 'Restore' : '✕',
-          cls: 'vital-log-btn' + (excluded ? '' : ' mod-warning'),
+          cls: 'vital-log-btn mod-compact' + (excluded ? '' : ' mod-warning'),
         });
         rmBtn.addEventListener('click', () => {
           if (excluded) {
@@ -348,7 +348,7 @@ export class LogModal extends Modal {
 
         const packRmBtn = packHeader.createEl('button', {
           text: packExcluded ? 'Restore' : '✕',
-          cls: 'vital-log-btn' + (packExcluded ? '' : ' mod-warning'),
+          cls: 'vital-log-btn mod-compact' + (packExcluded ? '' : ' mod-warning'),
         });
         packRmBtn.addEventListener('click', () => {
           if (packExcluded) {
@@ -388,7 +388,7 @@ export class LogModal extends Modal {
 
             const rmBtn = row.createEl('button', {
               text: excluded ? 'Restore' : '✕',
-              cls: 'vital-log-btn' + (excluded ? '' : ' mod-warning'),
+              cls: 'vital-log-btn mod-compact' + (excluded ? '' : ' mod-warning'),
             });
             rmBtn.addEventListener('click', () => {
               if (excluded) {

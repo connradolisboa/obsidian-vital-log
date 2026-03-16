@@ -122,7 +122,7 @@ export class ManageModal extends Modal {
     const actions = row.createDiv('vital-log-item-actions');
 
     if (index > 0) {
-      const upBtn = actions.createEl('button', { text: '\u2191', cls: 'vital-log-btn' });
+      const upBtn = actions.createEl('button', { text: '\u2191', cls: 'vital-log-btn mod-compact' });
       upBtn.addEventListener('click', async () => {
         [this.settings.vitamins[index - 1], this.settings.vitamins[index]] = [this.settings.vitamins[index], this.settings.vitamins[index - 1]];
         await this.saveSettings();
@@ -130,7 +130,7 @@ export class ManageModal extends Modal {
       });
     }
     if (index < this.settings.vitamins.length - 1) {
-      const downBtn = actions.createEl('button', { text: '\u2193', cls: 'vital-log-btn' });
+      const downBtn = actions.createEl('button', { text: '\u2193', cls: 'vital-log-btn mod-compact' });
       downBtn.addEventListener('click', async () => {
         [this.settings.vitamins[index], this.settings.vitamins[index + 1]] = [this.settings.vitamins[index + 1], this.settings.vitamins[index]];
         await this.saveSettings();
@@ -138,8 +138,8 @@ export class ManageModal extends Modal {
       });
     }
 
-    const editBtn = actions.createEl('button', { text: 'Edit', cls: 'vital-log-btn' });
-    const delBtn = actions.createEl('button', { text: 'Delete', cls: 'vital-log-btn mod-warning' });
+    const editBtn = actions.createEl('button', { text: 'Edit', cls: 'vital-log-btn mod-compact' });
+    const delBtn = actions.createEl('button', { text: '✕', cls: 'vital-log-btn mod-compact mod-warning', attr: { 'aria-label': 'Delete' } });
 
     editBtn.addEventListener('click', () => {
       const form = createDiv();
@@ -276,7 +276,7 @@ export class ManageModal extends Modal {
     const actions = row.createDiv('vital-log-item-actions');
 
     if (index > 0) {
-      const upBtn = actions.createEl('button', { text: '\u2191', cls: 'vital-log-btn' });
+      const upBtn = actions.createEl('button', { text: '\u2191', cls: 'vital-log-btn mod-compact' });
       upBtn.addEventListener('click', async () => {
         [this.settings.packs[index - 1], this.settings.packs[index]] = [this.settings.packs[index], this.settings.packs[index - 1]];
         await this.saveSettings();
@@ -284,7 +284,7 @@ export class ManageModal extends Modal {
       });
     }
     if (index < this.settings.packs.length - 1) {
-      const downBtn = actions.createEl('button', { text: '\u2193', cls: 'vital-log-btn' });
+      const downBtn = actions.createEl('button', { text: '\u2193', cls: 'vital-log-btn mod-compact' });
       downBtn.addEventListener('click', async () => {
         [this.settings.packs[index], this.settings.packs[index + 1]] = [this.settings.packs[index + 1], this.settings.packs[index]];
         await this.saveSettings();
@@ -293,7 +293,7 @@ export class ManageModal extends Modal {
     }
 
     let expanded = false;
-    const expandBtn = actions.createEl('button', { text: '▶', cls: 'vital-log-btn' });
+    const expandBtn = actions.createEl('button', { text: '▶', cls: 'vital-log-btn mod-compact' });
     const subRows = wrapper.createDiv('vital-log-sub-rows');
     subRows.style.display = 'none';
 
@@ -311,8 +311,8 @@ export class ManageModal extends Modal {
       expandBtn.textContent = expanded ? '▼' : '▶';
     });
 
-    const editBtn = actions.createEl('button', { text: 'Edit', cls: 'vital-log-btn' });
-    const delBtn = actions.createEl('button', { text: 'Delete', cls: 'vital-log-btn mod-warning' });
+    const editBtn = actions.createEl('button', { text: 'Edit', cls: 'vital-log-btn mod-compact' });
+    const delBtn = actions.createEl('button', { text: '✕', cls: 'vital-log-btn mod-compact mod-warning', attr: { 'aria-label': 'Delete' } });
 
     editBtn.addEventListener('click', () => {
       wrapper.remove();
@@ -378,7 +378,7 @@ export class ManageModal extends Modal {
           currentItems[idx].amount = parseFloat(amtInput.value) || 0;
         });
 
-        const rmBtn = row.createEl('button', { text: '✕', cls: 'vital-log-btn mod-warning' });
+        const rmBtn = row.createEl('button', { text: '✕', cls: 'vital-log-btn mod-compact mod-warning' });
         rmBtn.addEventListener('click', () => { currentItems.splice(idx, 1); renderItems(); });
       });
     };
@@ -457,7 +457,7 @@ export class ManageModal extends Modal {
     const actions = row.createDiv('vital-log-item-actions');
 
     if (index > 0) {
-      const upBtn = actions.createEl('button', { text: '\u2191', cls: 'vital-log-btn' });
+      const upBtn = actions.createEl('button', { text: '\u2191', cls: 'vital-log-btn mod-compact' });
       upBtn.addEventListener('click', async () => {
         [this.settings.stacks[index - 1], this.settings.stacks[index]] = [this.settings.stacks[index], this.settings.stacks[index - 1]];
         await this.saveSettings();
@@ -465,7 +465,7 @@ export class ManageModal extends Modal {
       });
     }
     if (index < this.settings.stacks.length - 1) {
-      const downBtn = actions.createEl('button', { text: '\u2193', cls: 'vital-log-btn' });
+      const downBtn = actions.createEl('button', { text: '\u2193', cls: 'vital-log-btn mod-compact' });
       downBtn.addEventListener('click', async () => {
         [this.settings.stacks[index], this.settings.stacks[index + 1]] = [this.settings.stacks[index + 1], this.settings.stacks[index]];
         await this.saveSettings();
@@ -473,8 +473,8 @@ export class ManageModal extends Modal {
       });
     }
 
-    const editBtn = actions.createEl('button', { text: 'Edit', cls: 'vital-log-btn' });
-    const delBtn = actions.createEl('button', { text: 'Delete', cls: 'vital-log-btn mod-warning' });
+    const editBtn = actions.createEl('button', { text: 'Edit', cls: 'vital-log-btn mod-compact' });
+    const delBtn = actions.createEl('button', { text: '✕', cls: 'vital-log-btn mod-compact mod-warning', attr: { 'aria-label': 'Delete' } });
 
     editBtn.addEventListener('click', () => {
       row.remove();
@@ -593,7 +593,7 @@ export class ManageModal extends Modal {
           }
         });
 
-        const rmBtn = row.createEl('button', { text: '✕', cls: 'vital-log-btn mod-warning' });
+        const rmBtn = row.createEl('button', { text: '✕', cls: 'vital-log-btn mod-compact mod-warning' });
         rmBtn.addEventListener('click', () => { currentItems.splice(idx, 1); renderStackItems(); });
       });
     };

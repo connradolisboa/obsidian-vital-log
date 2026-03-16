@@ -213,8 +213,7 @@ function splitFrontmatter(content: string): SplitFrontmatter | null {
   if (closeIndex === -1) return null;
 
   const yaml = content.slice(afterFirst + 1, closeIndex);
-  const body = content.slice(closeIndex + 4); // skip "\n---"
-  // body may start with \n — preserve it
+  const body = content.slice(closeIndex + 5); // skip "\n---\n"
   return { yaml, body };
 }
 

@@ -201,8 +201,8 @@ export class HistoryModal extends Modal {
     }
 
     const actions = row.createDiv('vital-log-history-entry-actions');
-    const editBtn = actions.createEl('button', { text: 'Edit', cls: 'vital-log-btn' });
-    const delBtn = actions.createEl('button', { text: 'Delete', cls: 'vital-log-btn mod-warning' });
+    const editBtn = actions.createEl('button', { text: 'Edit', cls: 'vital-log-btn mod-compact' });
+    const delBtn = actions.createEl('button', { text: '✕', cls: 'vital-log-btn mod-compact mod-warning', attr: { 'aria-label': 'Delete' } });
 
     editBtn.addEventListener('click', () => {
       row.remove();
@@ -269,8 +269,8 @@ export class HistoryModal extends Modal {
     }
 
     const actions = row.createDiv('vital-log-history-entry-actions');
-    const editBtn = actions.createEl('button', { text: 'Edit', cls: 'vital-log-btn' });
-    const delBtn = actions.createEl('button', { text: 'Delete', cls: 'vital-log-btn mod-warning' });
+    const editBtn = actions.createEl('button', { text: 'Edit', cls: 'vital-log-btn mod-compact' });
+    const delBtn = actions.createEl('button', { text: '✕', cls: 'vital-log-btn mod-compact mod-warning', attr: { 'aria-label': 'Delete' } });
 
     editBtn.addEventListener('click', () => {
       row.remove();
@@ -328,7 +328,7 @@ export class HistoryModal extends Modal {
     info.createSpan({ text: infoText });
 
     const actions = row.createDiv('vital-log-history-entry-actions');
-    const delBtn = actions.createEl('button', { text: 'Delete', cls: 'vital-log-btn mod-warning' });
+    const delBtn = actions.createEl('button', { text: '✕', cls: 'vital-log-btn mod-compact mod-warning', attr: { 'aria-label': 'Delete' } });
     delBtn.addEventListener('click', () => {
       this.renderDeleteConfirm(row, async () => { await this.deleteEntry('packs', idx); });
     });
@@ -340,7 +340,7 @@ export class HistoryModal extends Modal {
     info.createSpan({ text: `${entry.time}  —  ${entry.name}` });
 
     const actions = row.createDiv('vital-log-history-entry-actions');
-    const delBtn = actions.createEl('button', { text: 'Delete', cls: 'vital-log-btn mod-warning' });
+    const delBtn = actions.createEl('button', { text: '✕', cls: 'vital-log-btn mod-compact mod-warning', attr: { 'aria-label': 'Delete' } });
     delBtn.addEventListener('click', () => {
       this.renderDeleteConfirm(row, async () => { await this.deleteEntry('stacks', idx); });
     });
@@ -364,8 +364,8 @@ export class HistoryModal extends Modal {
     }
 
     const actions = row.createDiv('vital-log-history-entry-actions');
-    const editBtn = actions.createEl('button', { text: 'Edit', cls: 'vital-log-btn' });
-    const delBtn = actions.createEl('button', { text: 'Delete', cls: 'vital-log-btn mod-warning' });
+    const editBtn = actions.createEl('button', { text: 'Edit', cls: 'vital-log-btn mod-compact' });
+    const delBtn = actions.createEl('button', { text: '✕', cls: 'vital-log-btn mod-compact mod-warning', attr: { 'aria-label': 'Delete' } });
 
     editBtn.addEventListener('click', () => {
       row.remove();
@@ -427,8 +427,8 @@ export class HistoryModal extends Modal {
   private renderDeleteConfirm(row: HTMLElement, onConfirm: () => Promise<void>): void {
     const confirm = row.createDiv('vital-log-confirm-row');
     confirm.createEl('span', { text: 'Remove this entry?' });
-    const cancelBtn = confirm.createEl('button', { text: 'Cancel', cls: 'vital-log-btn' });
-    const removeBtn = confirm.createEl('button', { text: 'Remove', cls: 'vital-log-btn mod-warning' });
+    const cancelBtn = confirm.createEl('button', { text: 'Cancel', cls: 'vital-log-btn mod-compact' });
+    const removeBtn = confirm.createEl('button', { text: 'Remove', cls: 'vital-log-btn mod-compact mod-warning' });
 
     cancelBtn.addEventListener('click', () => confirm.remove());
     removeBtn.addEventListener('click', async () => {
