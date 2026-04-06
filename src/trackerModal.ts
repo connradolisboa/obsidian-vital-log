@@ -22,6 +22,7 @@ export class TrackerModal extends Modal {
   private selectedValue: number | null = null;
   private timeValue = '';
   private noteValue = '';
+  private appendToNote: boolean;
 
   constructor(
     app: App,
@@ -34,6 +35,7 @@ export class TrackerModal extends Modal {
     this.settings = settings;
     this.saveSettings = saveSettings;
     this.timeValue = moment().format('HH:mm');
+    this.appendToNote = settings.appendToNoteDefault_trackers === true;
     this.onSwitchToSupplements = onSwitchToSupplements;
     if (initialTrackerId) {
       this.selectedTrackerId = initialTrackerId;
@@ -49,6 +51,7 @@ export class TrackerModal extends Modal {
 
   onClose(): void {
     this.contentEl.empty();
+    this.appendToNote = this.settings.appendToNoteDefault_trackers === true;
   }
 
   private get tracker(): TrackerConfig | undefined {
@@ -149,6 +152,16 @@ export class TrackerModal extends Modal {
       this.noteValue = noteInput.value;
     });
 
+    // ── Append to note toggle ────────────────────────────────
+    const appendSection = contentEl.createDiv('vital-log-modal-section vital-log-append-section');
+    const appendLabel = appendSection.createEl('label', { cls: 'vital-log-append-label' });
+    const appendCheckbox = appendLabel.createEl('input', { type: 'checkbox' });
+    appendCheckbox.checked = this.appendToNote;
+    appendLabel.createSpan({ text: ' Also add to note content' });
+    appendCheckbox.addEventListener('change', () => {
+      this.appendToNote = appendCheckbox.checked;
+    });
+
     // ── Action buttons ──────────────────────────────────────
     const btnRow = contentEl.createDiv({ cls: 'vital-log-inline-form-actions' });
     const cancelBtn = btnRow.createEl('button', { text: 'Cancel', cls: 'vital-log-btn' });
@@ -185,7 +198,8 @@ export class TrackerModal extends Modal {
         time: this.timeValue,
         value: this.selectedValue,
         note: this.noteValue || undefined,
-      });
+        appendToNote: this.appendToNote,
+      }, this.settings);
 
       new Notice(`Logged ${tracker.displayName}: ${this.selectedValue} at ${this.timeValue}`);
       this.selectedValue = null;

@@ -44,6 +44,10 @@ export interface VitalLogSettings {
   logSource: boolean;         // whether to include the source field on entries
   logPackEntries: boolean;    // whether to write a packs[] entry when logging a pack
   logStackEntries: boolean;   // whether to write a stacks[] entry when logging a stack
+  appendToNoteDefault_supplements: boolean; // default state of "append to note content" checkbox in log modal
+  appendToNoteDefault_trackers: boolean;    // default state of "append to note content" checkbox in tracker modal
+  noteContentTemplate_supplements: string; // template for supplement note lines. Tokens: {time} {name} {amount} {unit} {note}
+  noteContentTemplate_trackers: string;    // template for tracker note lines. Tokens: {time} {name} {value} {note}
 }
 
 // Shape written to frontmatter per vitamin property (list element)
@@ -207,4 +211,8 @@ export const DEFAULT_SETTINGS: VitalLogSettings = {
   logSource: true,
   logPackEntries: true,
   logStackEntries: true,
+  appendToNoteDefault_supplements: false,
+  appendToNoteDefault_trackers: false,
+  noteContentTemplate_supplements: '- {time} {name} {amount}{unit}',
+  noteContentTemplate_trackers: '- {time} {name}: {value}',
 };

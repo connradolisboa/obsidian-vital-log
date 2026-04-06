@@ -164,6 +164,59 @@ export class VitalLogSettingTab extends PluginSettingTab {
           })
       );
 
+    // ── Note Content ──
+    el.createEl('h3', { text: 'Note Content' });
+
+    new Setting(el)
+      .setName('Append supplements to note content (default on)')
+      .setDesc('Default state of the "Also add to note" checkbox when logging vitamins, packs, or stacks.')
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.appendToNoteDefault_supplements === true)
+          .onChange(async (value) => {
+            this.plugin.settings.appendToNoteDefault_supplements = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(el)
+      .setName('Supplement note line template')
+      .setDesc('Template for lines added to note content when logging vitamins, packs, or stacks. Available tokens: {time} {name} {amount} {unit} {note}. For stacks, {name} is the list of items. For packs, {amount} and {unit} are empty.')
+      .addText((text) =>
+        text
+          .setPlaceholder('- {time} {name} {amount}{unit}')
+          .setValue(this.plugin.settings.noteContentTemplate_supplements ?? '- {time} {name} {amount}{unit}')
+          .onChange(async (value) => {
+            this.plugin.settings.noteContentTemplate_supplements = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(el)
+      .setName('Append trackers to note content (default on)')
+      .setDesc('Default state of the "Also add to note" checkbox when logging trackers.')
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.appendToNoteDefault_trackers === true)
+          .onChange(async (value) => {
+            this.plugin.settings.appendToNoteDefault_trackers = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(el)
+      .setName('Tracker note line template')
+      .setDesc('Template for lines added to note content when logging trackers. Available tokens: {time} {name} {value} {note}.')
+      .addText((text) =>
+        text
+          .setPlaceholder('- {time} {name}: {value}')
+          .setValue(this.plugin.settings.noteContentTemplate_trackers ?? '- {time} {name}: {value}')
+          .onChange(async (value) => {
+            this.plugin.settings.noteContentTemplate_trackers = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
     // ── Manage Data ──
     el.createEl('h3', { text: 'Manage Data' });
 

@@ -28,6 +28,7 @@ export class LogModal extends Modal {
   private timeValue = '';
   private amountValue = 0;
   private noteValue = '';
+  private appendToNote: boolean;
   // Per-log amount overrides (keyed by vitaminId for packs; "v:<vitaminId>" or "p:<packId>:<vitaminId>" for stacks)
   private packItemAmounts: Record<string, number> = {};
   private stackItemAmounts: Record<string, number> = {};
@@ -48,6 +49,7 @@ export class LogModal extends Modal {
     this.logType = initialType;
     this.dateValue = moment().format('YYYY-MM-DD');
     this.timeValue = moment().format('HH:mm');
+    this.appendToNote = settings.appendToNoteDefault_supplements === true;
     this.onSwitchToTracker = onSwitchToTracker;
   }
 
@@ -58,6 +60,7 @@ export class LogModal extends Modal {
 
   onClose(): void {
     this.contentEl.empty();
+    this.appendToNote = this.settings.appendToNoteDefault_supplements === true;
   }
 
   private render(): void {
@@ -158,6 +161,16 @@ export class LogModal extends Modal {
     noteInput.style.width = '100%';
     noteInput.addEventListener('input', () => {
       this.noteValue = noteInput.value;
+    });
+
+    // ── Append to note toggle ──────────────────────────────
+    const appendSection = contentEl.createDiv('vital-log-modal-section vital-log-append-section');
+    const appendLabel = appendSection.createEl('label', { cls: 'vital-log-append-label' });
+    const appendCheckbox = appendLabel.createEl('input', { type: 'checkbox' });
+    appendCheckbox.checked = this.appendToNote;
+    appendLabel.createSpan({ text: ' Also add to note content' });
+    appendCheckbox.addEventListener('change', () => {
+      this.appendToNote = appendCheckbox.checked;
     });
 
     // ── Log button ─────────────────────────────────────────
@@ -437,6 +450,7 @@ export class LogModal extends Modal {
           amount: this.amountValue || vitamin.defaultAmount,
           note: this.noteValue || undefined,
           source: 'manual',
+          appendToNote: this.appendToNote,
         }, this.settings);
         new Notice(`Logged ${vitamin.displayName} at ${this.timeValue}`);
         this.resetAfterLog();
@@ -453,7 +467,7 @@ export class LogModal extends Modal {
               amount: this.packItemAmounts[item.vitaminId] ?? item.amount,
             })),
         };
-        await vm.logPack(this.app, file, packWithOverrides, this.settings, { time: this.timeValue, source: 'manual' });
+        await vm.logPack(this.app, file, packWithOverrides, this.settings, { time: this.timeValue, source: 'manual', appendToNote: this.appendToNote });
         new Notice(`Logged pack "${pack.displayName}" at ${this.timeValue}`);
         this.resetAfterLog();
         return;
@@ -494,7 +508,7 @@ export class LogModal extends Modal {
               }),
           })),
         };
-        await vm.logStack(this.app, file, stackWithOverrides, settingsWithOverrides, { time: this.timeValue });
+        await vm.logStack(this.app, file, stackWithOverrides, settingsWithOverrides, { time: this.timeValue, appendToNote: this.appendToNote });
         new Notice(`Logged stack "${stack.displayName}" at ${this.timeValue}`);
         this.resetAfterLog();
         return;

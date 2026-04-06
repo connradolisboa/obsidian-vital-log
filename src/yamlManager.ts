@@ -132,6 +132,21 @@ export async function setProperties(
   });
 }
 
+/**
+ * Append a line of text to the note body (after the frontmatter).
+ * The line is appended at the end of the file, preceded by a newline if needed.
+ */
+export async function appendLineToBody(
+  app: App,
+  file: TFile,
+  line: string
+): Promise<void> {
+  await app.vault.process(file, (content: string) => {
+    const trimmed = content.trimEnd();
+    return trimmed + '\n' + line + '\n';
+  });
+}
+
 // ── Internal helpers ─────────────────────────────────────────
 
 class AbortError extends Error {
