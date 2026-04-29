@@ -1,13 +1,19 @@
 // ============================================================
 // Vital Log — Custom Log Modal
-// Dynamic modal that renders user-configured fields and
-// writes/updates top-level frontmatter properties on any note.
+// Dynamic modal that renders user-configured fields and tally
+// counters, writing/updating frontmatter on any note.
 // ============================================================
 
 import { App, Modal, Notice, TFile, setIcon } from 'obsidian';
-import type { VitalLogSettings, CustomModalConfig, CustomField } from './types';
+import type {
+  VitalLogSettings,
+  CustomModalConfig,
+  CustomField,
+  TallyCounterConfig,
+} from './types';
 import { resolveNote, getNoteIfExists } from './dailyNoteResolver';
 import * as yaml from './yamlManager';
+import * as tally from './tallyManager';
 
 // moment is bundled with Obsidian
 declare const moment: (date?: Date | string) => {
@@ -20,10 +26,16 @@ export class CustomLogModal extends Modal {
   private saveSettings: () => Promise<void>;
   private config: CustomModalConfig;
 
-  // State
+  // Custom field state
   private selectedDate: Date;
   private fieldValues: Map<string, unknown> = new Map();
   private loading = false;
+
+  // Tally counter state
+  private tallyValues: Map<string, number> = new Map();   // tallyCounterId → current value
+  private tallyNotes: Map<string, string> = new Map();    // tallyCounterId → current note
+  private appendTallies: boolean = false;
+  private tallyNotesSaved = false;
 
   constructor(
     app: App,
@@ -37,6 +49,7 @@ export class CustomLogModal extends Modal {
     this.saveSettings = saveSettings;
     this.config = config;
     this.selectedDate = initialDate ?? new Date();
+    this.appendTallies = settings.appendToNoteDefault_tallies ?? false;
   }
 
   async onOpen(): Promise<void> {
@@ -45,6 +58,13 @@ export class CustomLogModal extends Modal {
   }
 
   onClose(): void {
+    // Save any unsaved tally notes (fire-and-forget safety net)
+    if (!this.tallyNotesSaved) {
+      const file = getNoteIfExists(this.app, this.config.notePath, this.selectedDate);
+      if (file) {
+        void this.persistTallyNotes(file);
+      }
+    }
     this.contentEl.empty();
   }
 
@@ -52,12 +72,17 @@ export class CustomLogModal extends Modal {
 
   private async loadAndRender(): Promise<void> {
     this.loading = true;
+    this.tallyNotesSaved = false;
     this.render();
 
     const file = getNoteIfExists(this.app, this.config.notePath, this.selectedDate);
     if (file) {
       const fm = await yaml.readAllFrontmatter(this.app, file);
-      for (const field of this.config.fields) {
+
+      // Load custom field values
+      for (const item of this.config.items) {
+        if (item.type !== 'field') continue;
+        const field = item.field;
         const val = fm[field.propertyKey];
         if (val !== undefined && val !== null) {
           this.fieldValues.set(field.id, val);
@@ -65,9 +90,26 @@ export class CustomLogModal extends Modal {
           this.fieldValues.delete(field.id);
         }
       }
+
+      // Load tally values and notes
+      for (const item of this.config.items) {
+        if (item.type !== 'tally') continue;
+        const config = this.settings.tallyCounters.find((t) => t.id === item.tallyCounterId);
+        if (!config) continue;
+        const entry = await yaml.readTallyEntry(this.app, file, config.propertyKey);
+        this.tallyValues.set(item.tallyCounterId, entry.value);
+        this.tallyNotes.set(item.tallyCounterId, entry.note ?? '');
+      }
     } else {
-      // No note yet — clear pre-fill
       this.fieldValues.clear();
+      // Keep tally state as-is (defaults to 0 / empty note)
+      for (const item of this.config.items) {
+        if (item.type !== 'tally') continue;
+        if (!this.tallyValues.has(item.tallyCounterId)) {
+          this.tallyValues.set(item.tallyCounterId, 0);
+          this.tallyNotes.set(item.tallyCounterId, '');
+        }
+      }
     }
 
     this.loading = false;
@@ -116,7 +158,7 @@ export class CustomLogModal extends Modal {
       statusEl.addClass('vital-log-note-status--new');
     }
 
-    if (this.config.fields.length === 0) {
+    if (this.config.items.length === 0) {
       contentEl.createDiv({
         cls: 'vital-log-no-data',
         text: 'No fields configured for this modal. Add some in Settings → Vital Log.',
@@ -124,10 +166,35 @@ export class CustomLogModal extends Modal {
       return;
     }
 
-    // Fields
+    // Items (fields + tally counters, interleaved in configured order)
     const fieldsContainer = contentEl.createDiv('vital-log-custom-fields');
-    for (const field of this.config.fields) {
-      this.renderField(fieldsContainer, field);
+    let hasTallies = false;
+    for (const item of this.config.items) {
+      if (item.type === 'field') {
+        this.renderField(fieldsContainer, item.field);
+      } else if (item.type === 'tally') {
+        const config = this.settings.tallyCounters.find((t) => t.id === item.tallyCounterId);
+        if (config) {
+          this.renderTallyCounter(fieldsContainer, config);
+          hasTallies = true;
+        }
+      }
+    }
+
+    // Append-to-note checkbox for tallies
+    if (hasTallies) {
+      const appendRow = contentEl.createDiv('vital-log-append-row');
+      const appendCheckbox = appendRow.createEl('input', { type: 'checkbox' });
+      appendCheckbox.checked = this.appendTallies;
+      appendCheckbox.id = 'vital-log-append-tallies';
+      const appendLabel = appendRow.createEl('label', {
+        text: 'Also add tallies to note content',
+        cls: 'vital-log-append-label',
+      });
+      appendLabel.htmlFor = 'vital-log-append-tallies';
+      appendCheckbox.addEventListener('change', () => {
+        this.appendTallies = appendCheckbox.checked;
+      });
     }
 
     // Action buttons
@@ -137,6 +204,67 @@ export class CustomLogModal extends Modal {
 
     const saveBtn = btnRow.createEl('button', { text: 'Save', cls: 'vital-log-btn mod-cta' });
     saveBtn.addEventListener('click', () => this.doSave());
+  }
+
+  // ── Render tally counter ──────────────────────────────────
+
+  private renderTallyCounter(container: HTMLElement, config: TallyCounterConfig): void {
+    const section = container.createDiv('vital-log-tally-item');
+
+    section.createEl('label', { text: config.displayName, cls: 'vital-log-tally-label' });
+
+    const controls = section.createDiv('vital-log-tally-controls');
+
+    const decBtn = controls.createEl('button', {
+      text: `-${config.step}`,
+      cls: 'vital-log-btn vital-log-tally-btn',
+    });
+
+    const currentValue = this.tallyValues.get(config.id) ?? 0;
+    const valueEl = controls.createDiv({ cls: 'vital-log-tally-value' });
+    valueEl.setText(`${currentValue} / ${config.target}`);
+    if (currentValue >= config.target) valueEl.addClass('vital-log-tally-at-target');
+
+    const incBtn = controls.createEl('button', {
+      text: `+${config.step}`,
+      cls: 'vital-log-btn vital-log-tally-btn',
+    });
+
+    const updateValueDisplay = (newValue: number) => {
+      valueEl.setText(`${newValue} / ${config.target}`);
+      if (newValue >= config.target) valueEl.addClass('vital-log-tally-at-target');
+      else valueEl.removeClass('vital-log-tally-at-target');
+    };
+
+    const handleStep = async (delta: number) => {
+      const prev = this.tallyValues.get(config.id) ?? 0;
+      const next = prev + delta;
+      this.tallyValues.set(config.id, next);
+      updateValueDisplay(next);
+      // Write value immediately to frontmatter
+      try {
+        const file = await resolveNote(this.app, this.config.notePath, this.selectedDate);
+        if (file) {
+          await tally.updateTallyValue(this.app, file, config, next);
+        }
+      } catch (err) {
+        console.error('Vital Log tally increment:', err);
+      }
+    };
+
+    decBtn.addEventListener('click', () => handleStep(-config.step));
+    incBtn.addEventListener('click', () => handleStep(config.step));
+
+    // Note textarea
+    const noteTextarea = section.createEl('textarea', {
+      placeholder: 'Add a note…',
+      cls: 'vital-log-tally-note',
+    });
+    noteTextarea.value = this.tallyNotes.get(config.id) ?? '';
+    noteTextarea.rows = 2;
+    noteTextarea.addEventListener('input', () => {
+      this.tallyNotes.set(config.id, noteTextarea.value);
+    });
   }
 
   // ── Render individual field by type ───────────────────────
@@ -303,8 +431,7 @@ export class CustomLogModal extends Modal {
     const select = container.createEl('select');
     select.addClass('vital-log-custom-input');
 
-    // Empty option
-    const emptyOpt = select.createEl('option', { value: '', text: '— Select —' });
+    select.createEl('option', { value: '', text: '— Select —' });
 
     for (const opt of field.options ?? []) {
       const optEl = select.createEl('option', { value: opt, text: opt });
@@ -366,7 +493,6 @@ export class CustomLogModal extends Modal {
 
     const wrapper = container.createDiv('vital-log-tags-wrapper');
 
-    // Render existing tags as chips
     const chipRow = wrapper.createDiv('vital-log-tags-chips');
     for (let i = 0; i < tags.length; i++) {
       const chip = chipRow.createDiv({ cls: 'vital-log-tag-chip' });
@@ -379,7 +505,6 @@ export class CustomLogModal extends Modal {
       });
     }
 
-    // Input for adding new tags
     const inputRow = wrapper.createDiv('vital-log-tags-input-row');
     const input = inputRow.createEl('input', {
       type: 'text',
@@ -412,7 +537,6 @@ export class CustomLogModal extends Modal {
 
   private async doSave(): Promise<void> {
     try {
-      // Resolve or create the note
       let file = getNoteIfExists(this.app, this.config.notePath, this.selectedDate);
       const isNewNote = !file;
 
@@ -423,23 +547,38 @@ export class CustomLogModal extends Modal {
           return;
         }
 
-        // Trigger Templater if configured
         if (isNewNote && this.config.useTemplater && this.config.templatePath) {
           await this.triggerTemplater(file);
         }
       }
 
-      // Build properties object
+      // Save custom field values
       const properties: Record<string, unknown> = {};
-      for (const field of this.config.fields) {
-        const val = this.fieldValues.get(field.id);
+      for (const item of this.config.items) {
+        if (item.type !== 'field') continue;
+        const val = this.fieldValues.get(item.field.id);
         if (val !== undefined) {
-          properties[field.propertyKey] = val;
+          properties[item.field.propertyKey] = val;
         }
       }
-
       if (Object.keys(properties).length > 0) {
         await yaml.setProperties(this.app, file, properties);
+      }
+
+      // Save tally notes
+      await this.persistTallyNotes(file);
+      this.tallyNotesSaved = true;
+
+      // Append tallies to note body if requested
+      if (this.appendTallies) {
+        const template = this.settings.noteContentTemplate_tallies ?? '- {name}: {value}/{target}';
+        for (const item of this.config.items) {
+          if (item.type !== 'tally') continue;
+          const config = this.settings.tallyCounters.find((t) => t.id === item.tallyCounterId);
+          if (!config) continue;
+          const entry = await yaml.readTallyEntry(this.app, file, config.propertyKey);
+          await tally.appendTallyToNote(this.app, file, config, entry, template);
+        }
       }
 
       new Notice(`${this.config.displayName} saved!`);
@@ -452,11 +591,22 @@ export class CustomLogModal extends Modal {
     }
   }
 
+  private async persistTallyNotes(file: TFile): Promise<void> {
+    for (const item of this.config.items) {
+      if (item.type !== 'tally') continue;
+      const config = this.settings.tallyCounters.find((t) => t.id === item.tallyCounterId);
+      if (!config) continue;
+      const note = this.tallyNotes.get(item.tallyCounterId);
+      if (note !== undefined) {
+        await tally.saveTallyNote(this.app, file, config, note);
+      }
+    }
+  }
+
   // ── Templater integration ─────────────────────────────────
 
   private async triggerTemplater(file: TFile): Promise<void> {
     try {
-      // Access Templater plugin via Obsidian's plugin registry
       const templater = (this.app as any).plugins?.plugins?.['templater-obsidian'];
       if (!templater) {
         new Notice('Vital Log: Templater plugin not found. Skipping template.');
@@ -469,7 +619,6 @@ export class CustomLogModal extends Modal {
         return;
       }
 
-      // Use Templater's API to apply the template
       if (templater.templater?.overwrite_file_commands) {
         await templater.templater.overwrite_file_commands(file);
       } else if (templater.templater?.write_template_to_file) {

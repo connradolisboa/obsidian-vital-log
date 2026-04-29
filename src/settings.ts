@@ -4,7 +4,7 @@
 
 import { App, Modal, PluginSettingTab, Setting } from 'obsidian';
 import type VitalLogPlugin from '../main';
-import type { CustomModalConfig, CustomField, CustomFieldType } from './types';
+import type { CustomModalConfig, CustomField, CustomFieldType, TallyCounterConfig, CustomModalItem } from './types';
 import { CUSTOM_FIELD_TYPES } from './types';
 import { ManageModal } from './manageModal';
 
@@ -16,7 +16,7 @@ function slugify(name: string): string {
     .replace(/^(.)/, (_, c) => c.toLowerCase());
 }
 
-type SettingsTab = 'general' | 'trackers' | 'customModals';
+type SettingsTab = 'general' | 'trackers' | 'tallyCounters' | 'customModals';
 
 export class VitalLogSettingTab extends PluginSettingTab {
   private plugin: VitalLogPlugin;
@@ -37,6 +37,7 @@ export class VitalLogSettingTab extends PluginSettingTab {
     const tabs: { id: SettingsTab; label: string }[] = [
       { id: 'general', label: 'General' },
       { id: 'trackers', label: 'Trackers' },
+      { id: 'tallyCounters', label: 'Tally Counters' },
       { id: 'customModals', label: 'Custom Modals' },
     ];
 
@@ -60,6 +61,9 @@ export class VitalLogSettingTab extends PluginSettingTab {
         break;
       case 'trackers':
         this.renderTrackersTab(content);
+        break;
+      case 'tallyCounters':
+        this.renderTallyCountersTab(content);
         break;
       case 'customModals':
         this.renderCustomModalsTab(content);
@@ -217,6 +221,31 @@ export class VitalLogSettingTab extends PluginSettingTab {
           })
       );
 
+    new Setting(el)
+      .setName('Append tally counters to note content (default on)')
+      .setDesc('Default state of the "Also add tallies to note" checkbox in custom modals.')
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.appendToNoteDefault_tallies === true)
+          .onChange(async (value) => {
+            this.plugin.settings.appendToNoteDefault_tallies = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(el)
+      .setName('Tally note line template')
+      .setDesc('Template for lines added to note content when saving tally counters. Available tokens: {name} {value} {target}.')
+      .addText((text) =>
+        text
+          .setPlaceholder('- {name}: {value}/{target}')
+          .setValue(this.plugin.settings.noteContentTemplate_tallies ?? '- {name}: {value}/{target}')
+          .onChange(async (value) => {
+            this.plugin.settings.noteContentTemplate_tallies = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
     // ── Manage Data ──
     el.createEl('h3', { text: 'Manage Data' });
 
@@ -355,7 +384,7 @@ export class VitalLogSettingTab extends PluginSettingTab {
       info.createDiv({ cls: 'vital-log-item-name', text: modal.displayName });
       info.createDiv({
         cls: 'vital-log-item-meta',
-        text: `${modal.fields.length} field${modal.fields.length !== 1 ? 's' : ''} · ${modal.notePath || '(no path)'}`,
+        text: `${modal.items.length} item${modal.items.length !== 1 ? 's' : ''} · ${modal.notePath || '(no path)'}`,
       });
       const actions = row.createDiv('vital-log-item-actions');
 
@@ -409,11 +438,176 @@ export class VitalLogSettingTab extends PluginSettingTab {
               notePath: this.plugin.settings.dailyNotePath,
               useTemplater: false,
               templatePath: '',
-              fields: [],
+              items: [],
             };
             new CustomModalEditorModal(this.app, this.plugin, newModal, false, () => this.display()).open();
           })
       );
+  }
+
+  // ── Tally Counters tab ───────────────────────────────────────
+
+  private renderTallyCountersTab(el: HTMLElement): void {
+    el.createEl('p', {
+      text: 'Define tally counters for daily counts (e.g. outreach calls). Each counter tracks a single value + note per day.',
+      cls: 'vital-log-settings-helper',
+    });
+
+    const tallyList = el.createDiv('vital-log-item-list');
+    const tallies = this.plugin.settings.tallyCounters ?? [];
+
+    for (let i = 0; i < tallies.length; i++) {
+      const t = tallies[i];
+      const row = tallyList.createDiv('vital-log-item-row');
+      const info = row.createDiv('vital-log-item-info');
+      info.createDiv({ cls: 'vital-log-item-name', text: t.displayName });
+      info.createDiv({
+        cls: 'vital-log-item-meta',
+        text: `${t.propertyKey} · target ${t.target} · step ${t.step}`,
+      });
+      const actions = row.createDiv('vital-log-item-actions');
+
+      if (i > 0) {
+        const upBtn = actions.createEl('button', { text: '↑', cls: 'vital-log-btn' });
+        upBtn.addEventListener('click', async () => {
+          [tallies[i - 1], tallies[i]] = [tallies[i], tallies[i - 1]];
+          await this.plugin.saveSettings();
+          this.display();
+        });
+      }
+      if (i < tallies.length - 1) {
+        const downBtn = actions.createEl('button', { text: '↓', cls: 'vital-log-btn' });
+        downBtn.addEventListener('click', async () => {
+          [tallies[i], tallies[i + 1]] = [tallies[i + 1], tallies[i]];
+          await this.plugin.saveSettings();
+          this.display();
+        });
+      }
+
+      const editBtn = actions.createEl('button', { text: 'Edit', cls: 'vital-log-btn' });
+      editBtn.addEventListener('click', () => {
+        this.renderTallyEditForm(el, t, tallyList);
+      });
+
+      const delBtn = actions.createEl('button', { text: 'Delete', cls: 'vital-log-btn mod-warning' });
+      delBtn.addEventListener('click', async () => {
+        this.plugin.settings.tallyCounters = tallies.filter((tc) => tc.id !== t.id);
+        await this.plugin.saveSettings();
+        this.display();
+      });
+    }
+
+    if (tallies.length === 0) {
+      tallyList.createDiv({ cls: 'vital-log-empty-state', text: 'No tally counters configured yet.' });
+    }
+
+    new Setting(el)
+      .addButton((btn) =>
+        btn
+          .setButtonText('Add Tally Counter')
+          .setCta()
+          .onClick(() => {
+            this.renderTallyAddForm(el, tallyList);
+          })
+      );
+  }
+
+  private renderTallyAddForm(containerEl: HTMLElement, insertBefore: HTMLElement): void {
+    const form = containerEl.createDiv('vital-log-inline-form');
+    insertBefore.parentElement?.insertBefore(form, insertBefore.nextSibling);
+    form.createEl('h4', { text: 'New Tally Counter' });
+
+    const nameRow = form.createDiv('vital-log-form-row');
+    nameRow.createEl('label', { text: 'Display Name' });
+    const nameInput = nameRow.createEl('input', { type: 'text', placeholder: 'e.g. Outreach' });
+
+    const keyRow = form.createDiv('vital-log-form-row');
+    keyRow.createEl('label', { text: 'Property Key' });
+    const keyInput = keyRow.createEl('input', { type: 'text', placeholder: 'e.g. outreachTally' });
+
+    nameInput.addEventListener('input', () => {
+      keyInput.value = slugify(nameInput.value) + 'Tally';
+    });
+
+    const targetRow = form.createDiv('vital-log-form-row');
+    targetRow.createEl('label', { text: 'Target' });
+    const targetInput = targetRow.createEl('input', { type: 'number', value: '10' });
+
+    const stepRow = form.createDiv('vital-log-form-row');
+    stepRow.createEl('label', { text: 'Step' });
+    const stepInput = stepRow.createEl('input', { type: 'number', value: '1' });
+
+    const actions = form.createDiv('vital-log-inline-form-actions');
+    const cancelBtn = actions.createEl('button', { text: 'Cancel', cls: 'vital-log-btn' });
+    cancelBtn.addEventListener('click', () => { form.remove(); });
+
+    const saveBtn = actions.createEl('button', { text: 'Save', cls: 'vital-log-btn mod-cta' });
+    saveBtn.addEventListener('click', async () => {
+      const name = nameInput.value.trim();
+      const key = keyInput.value.trim();
+      if (!name || !key) return;
+
+      const existing = (this.plugin.settings.tallyCounters ?? []);
+      if (existing.some((t) => t.propertyKey === key)) {
+        keyInput.style.outline = '2px solid var(--text-error)';
+        return;
+      }
+
+      if (!this.plugin.settings.tallyCounters) this.plugin.settings.tallyCounters = [];
+      this.plugin.settings.tallyCounters.push({
+        id: crypto.randomUUID(),
+        displayName: name,
+        propertyKey: key,
+        target: parseInt(targetInput.value) || 10,
+        step: Math.max(1, parseInt(stepInput.value) || 1),
+      });
+      await this.plugin.saveSettings();
+      this.display();
+    });
+  }
+
+  private renderTallyEditForm(
+    containerEl: HTMLElement,
+    t: TallyCounterConfig,
+    insertBefore: HTMLElement
+  ): void {
+    const form = containerEl.createDiv('vital-log-inline-form');
+    insertBefore.parentElement?.insertBefore(form, insertBefore.nextSibling);
+    form.createEl('h4', { text: `Edit: ${t.displayName}` });
+
+    const nameRow = form.createDiv('vital-log-form-row');
+    nameRow.createEl('label', { text: 'Display Name' });
+    const nameInput = nameRow.createEl('input', { type: 'text', value: t.displayName });
+
+    const keyRow = form.createDiv('vital-log-form-row');
+    keyRow.createEl('label', { text: 'Property Key' });
+    const keyInput = keyRow.createEl('input', { type: 'text', value: t.propertyKey });
+
+    const targetRow = form.createDiv('vital-log-form-row');
+    targetRow.createEl('label', { text: 'Target' });
+    const targetInput = targetRow.createEl('input', { type: 'number', value: String(t.target) });
+
+    const stepRow = form.createDiv('vital-log-form-row');
+    stepRow.createEl('label', { text: 'Step' });
+    const stepInput = stepRow.createEl('input', { type: 'number', value: String(t.step) });
+
+    const actions = form.createDiv('vital-log-inline-form-actions');
+    const cancelBtn = actions.createEl('button', { text: 'Cancel', cls: 'vital-log-btn' });
+    cancelBtn.addEventListener('click', () => { form.remove(); });
+
+    const saveBtn = actions.createEl('button', { text: 'Save', cls: 'vital-log-btn mod-cta' });
+    saveBtn.addEventListener('click', async () => {
+      const name = nameInput.value.trim();
+      const key = keyInput.value.trim();
+      if (!name || !key) return;
+
+      t.displayName = name;
+      t.propertyKey = key;
+      t.target = parseInt(targetInput.value) || 10;
+      t.step = Math.max(1, parseInt(stepInput.value) || 1);
+      await this.plugin.saveSettings();
+      this.display();
+    });
   }
 
   // ── Tracker forms ─────────────────────────────────────────
@@ -667,53 +861,68 @@ class CustomModalEditorModal extends Modal {
 
   private renderFieldList(fieldListEl: HTMLElement): void {
     fieldListEl.empty();
+    const items = this.modal.items;
 
-    for (let i = 0; i < this.modal.fields.length; i++) {
-      const field = this.modal.fields[i];
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
       const row = fieldListEl.createDiv('vital-log-item-row');
       const info = row.createDiv('vital-log-item-info');
-      info.createDiv({ cls: 'vital-log-item-name', text: field.displayName });
-      info.createDiv({
-        cls: 'vital-log-item-meta',
-        text: `${field.propertyKey} · ${field.fieldType}${this.getFieldMeta(field)}`,
-      });
+
+      if (item.type === 'field') {
+        const field = item.field;
+        info.createDiv({ cls: 'vital-log-item-name', text: field.displayName });
+        info.createDiv({
+          cls: 'vital-log-item-meta',
+          text: `${field.propertyKey} · ${field.fieldType}${this.getFieldMeta(field)}`,
+        });
+      } else {
+        const tc = this.plugin.settings.tallyCounters?.find((t) => t.id === item.tallyCounterId);
+        info.createDiv({ cls: 'vital-log-item-name', text: tc?.displayName ?? '(deleted tally)' });
+        info.createDiv({
+          cls: 'vital-log-item-meta',
+          text: tc ? `${tc.propertyKey} · tally · target ${tc.target}` : item.tallyCounterId,
+        });
+      }
+
       const actions = row.createDiv('vital-log-item-actions');
 
       if (i > 0) {
         const upBtn = actions.createEl('button', { text: '\u2191', cls: 'vital-log-btn' });
         upBtn.addEventListener('click', () => {
-          [this.modal.fields[i - 1], this.modal.fields[i]] = [this.modal.fields[i], this.modal.fields[i - 1]];
+          [items[i - 1], items[i]] = [items[i], items[i - 1]];
           this.renderFieldList(fieldListEl);
         });
       }
-
-      if (i < this.modal.fields.length - 1) {
+      if (i < items.length - 1) {
         const downBtn = actions.createEl('button', { text: '\u2193', cls: 'vital-log-btn' });
         downBtn.addEventListener('click', () => {
-          [this.modal.fields[i], this.modal.fields[i + 1]] = [this.modal.fields[i + 1], this.modal.fields[i]];
+          [items[i], items[i + 1]] = [items[i + 1], items[i]];
           this.renderFieldList(fieldListEl);
         });
       }
 
-      const editBtn = actions.createEl('button', { text: 'Edit', cls: 'vital-log-btn' });
-      editBtn.addEventListener('click', () => {
-        this.renderFieldForm(fieldListEl, field, true);
-      });
+      if (item.type === 'field') {
+        const editBtn = actions.createEl('button', { text: 'Edit', cls: 'vital-log-btn' });
+        editBtn.addEventListener('click', () => {
+          this.renderFieldForm(fieldListEl, item.field, true);
+        });
+      }
 
       const delBtn = actions.createEl('button', { text: '\u00d7', cls: 'vital-log-btn mod-warning' });
       delBtn.addEventListener('click', () => {
-        this.modal.fields = this.modal.fields.filter((f) => f.id !== field.id);
+        this.modal.items.splice(i, 1);
         this.renderFieldList(fieldListEl);
       });
     }
 
-    if (this.modal.fields.length === 0) {
-      fieldListEl.createDiv({ cls: 'vital-log-empty-state', text: 'No fields yet. Add one below.' });
+    if (items.length === 0) {
+      fieldListEl.createDiv({ cls: 'vital-log-empty-state', text: 'No items yet. Add fields or tally counters below.' });
     }
 
     const addRow = fieldListEl.createDiv('vital-log-field-add-row');
-    const addBtn = addRow.createEl('button', { text: '+ Add Field', cls: 'vital-log-btn mod-cta' });
-    addBtn.addEventListener('click', () => {
+
+    const addFieldBtn = addRow.createEl('button', { text: '+ Add Field', cls: 'vital-log-btn mod-cta' });
+    addFieldBtn.addEventListener('click', () => {
       const newField: CustomField = {
         id: crypto.randomUUID(),
         propertyKey: '',
@@ -722,6 +931,45 @@ class CustomModalEditorModal extends Modal {
         fieldType: 'text',
       };
       this.renderFieldForm(fieldListEl, newField, false);
+    });
+
+    const availableTallies = (this.plugin.settings.tallyCounters ?? []).filter(
+      (tc) => !this.modal.items.some((it) => it.type === 'tally' && it.tallyCounterId === tc.id)
+    );
+    if (availableTallies.length > 0) {
+      const addTallyBtn = addRow.createEl('button', { text: '+ Add Tally Counter', cls: 'vital-log-btn' });
+      addTallyBtn.addEventListener('click', () => {
+        this.renderTallyPickerForm(fieldListEl, availableTallies);
+      });
+    } else if ((this.plugin.settings.tallyCounters ?? []).length === 0) {
+      addRow.createEl('span', {
+        cls: 'vital-log-item-meta',
+        text: ' \u00b7 No tally counters defined yet. Add them in the Tally Counters tab.',
+      });
+    }
+  }
+
+  private renderTallyPickerForm(fieldListEl: HTMLElement, available: TallyCounterConfig[]): void {
+    const form = fieldListEl.createDiv('vital-log-inline-form');
+    form.createEl('h4', { text: 'Add Tally Counter' });
+
+    const row = form.createDiv('vital-log-form-row');
+    row.createEl('label', { text: 'Tally Counter' });
+    const select = row.createEl('select');
+    for (const tc of available) {
+      select.createEl('option', { value: tc.id, text: `${tc.displayName} (${tc.propertyKey})` });
+    }
+
+    const actions = form.createDiv('vital-log-inline-form-actions');
+    const cancelBtn = actions.createEl('button', { text: 'Cancel', cls: 'vital-log-btn' });
+    cancelBtn.addEventListener('click', () => { form.remove(); });
+
+    const addBtn = actions.createEl('button', { text: 'Add', cls: 'vital-log-btn mod-cta' });
+    addBtn.addEventListener('click', () => {
+      if (!select.value) return;
+      this.modal.items.push({ type: 'tally', tallyCounterId: select.value });
+      form.remove();
+      this.renderFieldList(fieldListEl);
     });
   }
 
@@ -859,12 +1107,12 @@ class CustomModalEditorModal extends Modal {
         : undefined;
 
       if (!isEdit) {
-        this.modal.fields.push(field);
+        this.modal.items.push({ type: 'field', field });
       } else {
         // Update in place
-        const idx = this.modal.fields.findIndex((f) => f.id === field.id);
+        const idx = this.modal.items.findIndex((it) => it.type === 'field' && it.field.id === field.id);
         if (idx >= 0) {
-          this.modal.fields[idx] = field;
+          this.modal.items[idx] = { type: 'field', field };
         }
       }
 

@@ -61,7 +61,7 @@ export class CustomModalChooser extends Modal {
       info.createDiv({ cls: 'vital-log-chooser-name', text: modal.displayName });
       info.createDiv({
         cls: 'vital-log-chooser-meta',
-        text: `${modal.fields.length} field${modal.fields.length !== 1 ? 's' : ''}`,
+        text: `${modal.items.length} item${modal.items.length !== 1 ? 's' : ''}`,
       });
 
       btn.addEventListener('click', () => {

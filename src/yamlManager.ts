@@ -6,6 +6,7 @@
 
 import { App, Notice, TFile, parseYaml, stringifyYaml } from 'obsidian';
 import { isArray } from './types';
+import type { TallyEntry } from './types';
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -130,6 +131,38 @@ export async function setProperties(
       fm[key] = value;
     }
   });
+}
+
+/**
+ * Read a tally entry from frontmatter. Returns { value: 0 } if absent or malformed.
+ */
+export async function readTallyEntry(
+  app: App,
+  file: TFile,
+  propertyKey: string
+): Promise<TallyEntry> {
+  const fm = await readAllFrontmatter(app, file);
+  const val = fm[propertyKey];
+  if (typeof val === 'object' && val !== null && !Array.isArray(val)) {
+    const obj = val as Record<string, unknown>;
+    return {
+      value: typeof obj['value'] === 'number' ? obj['value'] : 0,
+      note: typeof obj['note'] === 'string' ? obj['note'] : undefined,
+    };
+  }
+  return { value: 0 };
+}
+
+/**
+ * Write a tally entry to frontmatter, replacing any existing value.
+ */
+export async function setTallyEntry(
+  app: App,
+  file: TFile,
+  propertyKey: string,
+  entry: TallyEntry
+): Promise<void> {
+  await setProperties(app, file, { [propertyKey]: entry });
 }
 
 /**

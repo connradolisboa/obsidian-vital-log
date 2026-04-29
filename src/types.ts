@@ -38,6 +38,7 @@ export interface VitalLogSettings {
   packs: Pack[];
   stacks: Stack[];
   trackers: TrackerConfig[];  // mood, energy, etc.
+  tallyCounters: TallyCounterConfig[];  // running daily counts
   customModals: CustomModalConfig[];  // user-defined log modals
   sameFolderPrefix: string;  // reserved for future use
   logMode: 'perVitamin' | 'substances'; // perVitamin: each vitamin gets its own key; substances: all go into substances[]
@@ -46,8 +47,10 @@ export interface VitalLogSettings {
   logStackEntries: boolean;   // whether to write a stacks[] entry when logging a stack
   appendToNoteDefault_supplements: boolean; // default state of "append to note content" checkbox in log modal
   appendToNoteDefault_trackers: boolean;    // default state of "append to note content" checkbox in tracker modal
+  appendToNoteDefault_tallies: boolean;     // default state of "append to note content" checkbox in tally modal
   noteContentTemplate_supplements: string; // template for supplement note lines. Tokens: {time} {name} {amount} {unit} {note}
   noteContentTemplate_trackers: string;    // template for tracker note lines. Tokens: {time} {name} {value} {note}
+  noteContentTemplate_tallies: string;     // template for tally note lines. Tokens: {name} {value} {target}
 }
 
 // Shape written to frontmatter per vitamin property (list element)
@@ -145,6 +148,21 @@ export function isTrackerEntry(v: unknown, valueName: string): v is TrackerEntry
   return typeof o['time'] === 'string' && typeof o[valueName] === 'number';
 }
 
+// ── Tally Counter types ─────────────────────────────────────
+
+export interface TallyCounterConfig {
+  id: string;
+  displayName: string;
+  propertyKey: string;  // frontmatter key, e.g. "outreachTally"
+  target: number;       // visual goal
+  step: number;         // increment/decrement amount per click
+}
+
+export interface TallyEntry {
+  value: number;
+  note?: string;
+}
+
 // ── Custom Modal types ──────────────────────────────────────
 
 export type CustomFieldType =
@@ -171,6 +189,10 @@ export interface CustomField {
   options?: string[];       // dropdown options
 }
 
+export type CustomModalItem =
+  | { type: 'field'; field: CustomField }
+  | { type: 'tally'; tallyCounterId: string };
+
 export interface CustomModalConfig {
   id: string;
   displayName: string;      // e.g. "Daily Review"
@@ -178,7 +200,7 @@ export interface CustomModalConfig {
   notePath: string;         // path template, e.g. "Calendar/Daily/{{YYYY}}/Q{{Q}}/{{YYYY-MM-DD dddd}}"
   useTemplater: boolean;    // trigger Templater on new note creation
   templatePath: string;     // path to template file for Templater
-  fields: CustomField[];
+  items: CustomModalItem[];
 }
 
 export const CUSTOM_FIELD_TYPES: CustomFieldType[] = [
@@ -205,6 +227,7 @@ export const DEFAULT_SETTINGS: VitalLogSettings = {
     { id: 'mood-default', displayName: 'Mood', propertyKey: 'moodLog', valueName: 'mood', min: 1, max: 5, icon: 'smile' },
     { id: 'energy-default', displayName: 'Energy', propertyKey: 'energyLog', valueName: 'energy', min: 1, max: 5, icon: 'zap' },
   ],
+  tallyCounters: [],
   customModals: [],
   sameFolderPrefix: '',
   logMode: 'perVitamin',
@@ -213,6 +236,8 @@ export const DEFAULT_SETTINGS: VitalLogSettings = {
   logStackEntries: true,
   appendToNoteDefault_supplements: false,
   appendToNoteDefault_trackers: false,
+  appendToNoteDefault_tallies: false,
   noteContentTemplate_supplements: '- {time} {name} {amount}{unit}',
   noteContentTemplate_trackers: '- {time} {name}: {value}',
+  noteContentTemplate_tallies: '- {name}: {value}/{target}',
 };

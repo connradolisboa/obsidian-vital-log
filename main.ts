@@ -4,7 +4,7 @@
 // ============================================================
 
 import { Plugin, Notice } from 'obsidian';
-import type { VitalLogSettings } from './src/types';
+import type { VitalLogSettings, CustomField } from './src/types';
 import { DEFAULT_SETTINGS } from './src/types';
 import { VitalLogSettingTab } from './src/settings';
 import { LogModal } from './src/logModal';
@@ -152,6 +152,19 @@ export default class VitalLogPlugin extends Plugin {
     try {
       const stored = await this.loadData() as Partial<VitalLogSettings> | null;
       this.settings = Object.assign({}, DEFAULT_SETTINGS, stored ?? {});
+
+      // Migrate legacy CustomModalConfig.fields → items
+      let needsSave = false;
+      for (const modal of this.settings.customModals) {
+        const legacy = modal as unknown as Record<string, unknown>;
+        if ('fields' in legacy && !('items' in legacy)) {
+          const fields = (legacy['fields'] as CustomField[]) ?? [];
+          (modal as unknown as Record<string, unknown>)['items'] = fields.map((f) => ({ type: 'field', field: f }));
+          delete legacy['fields'];
+          needsSave = true;
+        }
+      }
+      if (needsSave) await this.saveSettings();
     } catch (err) {
       new Notice('Vital Log: Failed to load settings. Using defaults.');
       console.error('Vital Log loadSettings:', err);

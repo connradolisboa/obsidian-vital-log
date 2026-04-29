@@ -1058,6 +1058,80 @@
   border-left: 2px solid var(--background-modifier-border);
 }
 
+/* ── Tally Counter ── */
+
+.vital-log-tally-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  margin-bottom: 0.5rem;
+}
+
+.vital-log-tally-label {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.vital-log-tally-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.vital-log-tally-value {
+  flex: 1;
+  text-align: center;
+  font-size: 1.2rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.vital-log-tally-at-target {
+  color: var(--color-green);
+}
+
+.vital-log-tally-btn {
+  min-width: 2.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+  padding: 0.35rem 0.6rem;
+}
+
+.vital-log-tally-note {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  min-height: 3rem;
+  font-size: 0.875rem;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+}
+
+.vital-log-append-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0;
+  margin-top: 0.25rem;
+}
+
+@media (max-width: 479px) {
+  .vital-log-tally-value {
+    font-size: 1rem;
+  }
+  .vital-log-tally-btn {
+    min-width: 2rem;
+    font-size: 0.9rem;
+    padding: 0.3rem 0.5rem;
+  }
+}
+
 /* ── Global input/select sizing on mobile ── */
 @media (max-width: 479px) {
   input[type="text"],
