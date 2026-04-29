@@ -51,6 +51,7 @@ export interface VitalLogSettings {
   noteContentTemplate_supplements: string; // template for supplement note lines. Tokens: {time} {name} {amount} {unit} {note}
   noteContentTemplate_trackers: string;    // template for tracker note lines. Tokens: {time} {name} {value} {note}
   noteContentTemplate_tallies: string;     // template for tally note lines. Tokens: {name} {value} {target}
+  noteContentTemplate_specificNoteTally: string; // template for per-tally specific-note lines. Tokens: {dailyNote} {time} {name} {value} {target}
 }
 
 // Shape written to frontmatter per vitamin property (list element)
@@ -153,9 +154,13 @@ export function isTrackerEntry(v: unknown, valueName: string): v is TrackerEntry
 export interface TallyCounterConfig {
   id: string;
   displayName: string;
-  propertyKey: string;  // frontmatter key, e.g. "outreachTally"
-  target: number;       // visual goal
-  step: number;         // increment/decrement amount per click
+  description?: string;      // shown in modal below the label
+  propertyKey: string;       // frontmatter key, e.g. "outreachTally"
+  target: number;            // visual goal
+  step: number;              // increment/decrement amount per click
+  icon?: string;             // Obsidian icon name
+  showInStatusBar?: boolean; // show current/target in the status bar
+  appendToNoteName?: string; // vault path (no .md) of note to append tally lines to
 }
 
 export interface TallyEntry {
@@ -240,4 +245,5 @@ export const DEFAULT_SETTINGS: VitalLogSettings = {
   noteContentTemplate_supplements: '- {time} {name} {amount}{unit}',
   noteContentTemplate_trackers: '- {time} {name}: {value}',
   noteContentTemplate_tallies: '- {name}: {value}/{target}',
+  noteContentTemplate_specificNoteTally: '- [[{dailyNote}]] {time} : {value}/{target}',
 };

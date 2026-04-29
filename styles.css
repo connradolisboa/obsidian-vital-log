@@ -1071,8 +1071,30 @@
 }
 
 .vital-log-tally-label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
   font-weight: 600;
   font-size: 0.9rem;
+}
+
+.vital-log-tally-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.vital-log-tally-icon svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.vital-log-tally-description {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  opacity: 0.75;
+  margin-top: -0.25rem;
 }
 
 .vital-log-tally-controls {
@@ -1194,4 +1216,53 @@
   .vital-log-pack-item-row {
     gap: 0.3rem;
   }
+}
+
+/* ── Item icon (settings list rows) ── */
+
+.vital-log-item-icon {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 0.3rem;
+  color: var(--text-muted);
+  vertical-align: middle;
+}
+
+.vital-log-item-icon svg {
+  width: 0.9rem;
+  height: 0.9rem;
+}
+
+/* ── Tracker selector button icons ── */
+
+.vital-log-type-btn-icon {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 0.3rem;
+}
+
+.vital-log-type-btn-icon svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+/* ── Status bar tally items ── */
+
+.vital-log-status-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  padding: 0 0.3rem;
+}
+
+.vital-log-status-icon {
+  display: inline-flex;
+  align-items: center;
+}
+
+.vital-log-status-icon svg {
+  width: 0.85rem;
+  height: 0.85rem;
 }

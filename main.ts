@@ -3,9 +3,10 @@
 // Wires all modules together. No business logic here.
 // ============================================================
 
-import { Plugin, Notice } from 'obsidian';
-import type { VitalLogSettings, CustomField } from './src/types';
+import { Plugin, Notice, setIcon, TFile } from 'obsidian';
+import type { VitalLogSettings, CustomField, TallyCounterConfig } from './src/types';
 import { DEFAULT_SETTINGS } from './src/types';
+import { getDailyNoteIfExists } from './src/dailyNoteResolver';
 import { VitalLogSettingTab } from './src/settings';
 import { LogModal } from './src/logModal';
 import { HistoryModal } from './src/historyModal';
@@ -19,6 +20,9 @@ export default class VitalLogPlugin extends Plugin {
 
   // Track dynamically registered command IDs so we can unregister on change
   private customModalCommandIds: string[] = [];
+
+  // Status bar items for tally counters with showInStatusBar enabled
+  private tallyStatusItems: { el: HTMLElement; config: TallyCounterConfig }[] = [];
 
   private openLogModal(initialType?: 'vitamin' | 'pack' | 'stack'): void {
     new LogModal(
@@ -107,6 +111,18 @@ export default class VitalLogPlugin extends Plugin {
     });
 
     this.registerCustomModalCommands();
+
+    // ── Status bar for tally counters ─────────────────────
+    this.initStatusBar();
+    this.app.workspace.onLayoutReady(() => this.updateStatusBar());
+    this.registerEvent(
+      this.app.metadataCache.on('changed', (file: TFile) => {
+        const daily = getDailyNoteIfExists(this.app, this.settings);
+        if (daily && file.path === daily.path) {
+          this.updateStatusBar();
+        }
+      })
+    );
   }
 
   onunload(): void {
@@ -145,6 +161,37 @@ export default class VitalLogPlugin extends Plugin {
         },
       });
       this.customModalCommandIds.push(cmdId);
+    }
+  }
+
+  private initStatusBar(): void {
+    const tallies = (this.settings.tallyCounters ?? []).filter((t) => t.showInStatusBar);
+    for (const config of tallies) {
+      const el = this.addStatusBarItem();
+      el.addClass('vital-log-status-item');
+      this.tallyStatusItems.push({ el, config });
+    }
+  }
+
+  private updateStatusBar(): void {
+    if (this.tallyStatusItems.length === 0) return;
+    const daily = getDailyNoteIfExists(this.app, this.settings);
+    const fm = daily
+      ? (this.app.metadataCache.getFileCache(daily)?.frontmatter ?? {})
+      : {};
+
+    for (const { el, config } of this.tallyStatusItems) {
+      el.empty();
+      if (config.icon) {
+        const iconSpan = el.createSpan({ cls: 'vital-log-status-icon' });
+        setIcon(iconSpan, config.icon);
+      }
+      const raw = fm[config.propertyKey];
+      const value =
+        typeof raw === 'object' && raw !== null && 'value' in raw
+          ? ((raw as Record<string, unknown>)['value'] as number) ?? 0
+          : 0;
+      el.createSpan({ text: ` ${value}/${config.target}` });
     }
   }
 

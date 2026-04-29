@@ -11,7 +11,7 @@ import type {
   CustomField,
   TallyCounterConfig,
 } from './types';
-import { resolveNote, getNoteIfExists } from './dailyNoteResolver';
+import { resolveNote, getNoteIfExists, resolvePathTemplate } from './dailyNoteResolver';
 import * as yaml from './yamlManager';
 import * as tally from './tallyManager';
 
@@ -211,7 +211,16 @@ export class CustomLogModal extends Modal {
   private renderTallyCounter(container: HTMLElement, config: TallyCounterConfig): void {
     const section = container.createDiv('vital-log-tally-item');
 
-    section.createEl('label', { text: config.displayName, cls: 'vital-log-tally-label' });
+    const labelEl = section.createEl('label', { cls: 'vital-log-tally-label' });
+    if (config.icon) {
+      const iconSpan = labelEl.createSpan({ cls: 'vital-log-tally-icon' });
+      setIcon(iconSpan, config.icon);
+    }
+    labelEl.createSpan({ text: config.displayName });
+
+    if (config.description) {
+      section.createDiv({ cls: 'vital-log-tally-description', text: config.description });
+    }
 
     const controls = section.createDiv('vital-log-tally-controls');
 
@@ -569,15 +578,45 @@ export class CustomLogModal extends Modal {
       await this.persistTallyNotes(file);
       this.tallyNotesSaved = true;
 
-      // Append tallies to note body if requested
+      // Append tallies to note body (or specific note) if requested
       if (this.appendTallies) {
         const template = this.settings.noteContentTemplate_tallies ?? '- {name}: {value}/{target}';
+        const specificTemplate = this.settings.noteContentTemplate_specificNoteTally ?? '- [[{dailyNote}]] {time} : {value}/{target}';
+        const dailyNotePath = resolvePathTemplate(this.settings.dailyNotePath, this.selectedDate);
+        const dailyNoteBasename = dailyNotePath.split('/').pop() ?? dailyNotePath;
+        const timeStr = moment().format('HH:mm');
+
         for (const item of this.config.items) {
           if (item.type !== 'tally') continue;
           const config = this.settings.tallyCounters.find((t) => t.id === item.tallyCounterId);
           if (!config) continue;
           const entry = await yaml.readTallyEntry(this.app, file, config.propertyKey);
-          await tally.appendTallyToNote(this.app, file, config, entry, template);
+
+          if (config.appendToNoteName) {
+            // Find or create the target note
+            let targetFile: TFile | null = null;
+            const byPath = this.app.vault.getAbstractFileByPath(config.appendToNoteName + '.md');
+            if (byPath instanceof TFile) {
+              targetFile = byPath;
+            } else {
+              // Fall back to searching by basename
+              targetFile = this.app.vault.getFiles().find((f) => f.basename === config.appendToNoteName) ?? null;
+            }
+            if (!targetFile) {
+              targetFile = await this.app.vault.create(config.appendToNoteName + '.md', '---\n---\n');
+            }
+            if (targetFile) {
+              const line = specificTemplate
+                .replace('{dailyNote}', dailyNoteBasename)
+                .replace('{time}', timeStr)
+                .replace('{name}', config.displayName)
+                .replace('{value}', String(entry.value))
+                .replace('{target}', String(config.target));
+              await yaml.appendLineToBody(this.app, targetFile, line);
+            }
+          } else {
+            await tally.appendTallyToNote(this.app, file, config, entry, template);
+          }
         }
       }
 

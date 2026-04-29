@@ -2,7 +2,7 @@
 // Vital Log — Settings Tab
 // ============================================================
 
-import { App, Modal, PluginSettingTab, Setting } from 'obsidian';
+import { App, Modal, PluginSettingTab, Setting, setIcon } from 'obsidian';
 import type VitalLogPlugin from '../main';
 import type { CustomModalConfig, CustomField, CustomFieldType, TallyCounterConfig, CustomModalItem } from './types';
 import { CUSTOM_FIELD_TYPES } from './types';
@@ -246,6 +246,19 @@ export class VitalLogSettingTab extends PluginSettingTab {
           })
       );
 
+    new Setting(el)
+      .setName('Tally → specific note template')
+      .setDesc('Template for lines appended to a tally\'s "Append to note" target note. Available tokens: {dailyNote} {time} {name} {value} {target}.')
+      .addText((text) =>
+        text
+          .setPlaceholder('- [[{dailyNote}]] {time} : {value}/{target}')
+          .setValue(this.plugin.settings.noteContentTemplate_specificNoteTally ?? '- [[{dailyNote}]] {time} : {value}/{target}')
+          .onChange(async (value) => {
+            this.plugin.settings.noteContentTemplate_specificNoteTally = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
     // ── Manage Data ──
     el.createEl('h3', { text: 'Manage Data' });
 
@@ -314,7 +327,12 @@ export class VitalLogSettingTab extends PluginSettingTab {
       const tracker = this.plugin.settings.trackers[i];
       const row = trackerList.createDiv('vital-log-item-row');
       const info = row.createDiv('vital-log-item-info');
-      info.createDiv({ cls: 'vital-log-item-name', text: tracker.displayName });
+      const trackerNameEl = info.createDiv({ cls: 'vital-log-item-name' });
+      if (tracker.icon) {
+        const iconSpan = trackerNameEl.createSpan({ cls: 'vital-log-item-icon' });
+        setIcon(iconSpan, tracker.icon);
+      }
+      trackerNameEl.createSpan({ text: tracker.displayName });
       info.createDiv({
         cls: 'vital-log-item-meta',
         text: `${tracker.propertyKey} · ${tracker.valueName} · ${tracker.min}–${tracker.max}`,
@@ -460,7 +478,12 @@ export class VitalLogSettingTab extends PluginSettingTab {
       const t = tallies[i];
       const row = tallyList.createDiv('vital-log-item-row');
       const info = row.createDiv('vital-log-item-info');
-      info.createDiv({ cls: 'vital-log-item-name', text: t.displayName });
+      const nameEl = info.createDiv({ cls: 'vital-log-item-name' });
+      if (t.icon) {
+        const iconSpan = nameEl.createSpan({ cls: 'vital-log-item-icon' });
+        setIcon(iconSpan, t.icon);
+      }
+      nameEl.createSpan({ text: t.displayName });
       info.createDiv({
         cls: 'vital-log-item-meta',
         text: `${t.propertyKey} · target ${t.target} · step ${t.step}`,
@@ -529,6 +552,14 @@ export class VitalLogSettingTab extends PluginSettingTab {
       keyInput.value = slugify(nameInput.value) + 'Tally';
     });
 
+    const descRow = form.createDiv('vital-log-form-row');
+    descRow.createEl('label', { text: 'Description' });
+    const descInput = descRow.createEl('input', { type: 'text', placeholder: 'Helper text shown in modal' });
+
+    const iconRow = form.createDiv('vital-log-form-row');
+    iconRow.createEl('label', { text: 'Icon' });
+    const iconInput = iconRow.createEl('input', { type: 'text', placeholder: 'e.g. check-circle, target, hash' });
+
     const targetRow = form.createDiv('vital-log-form-row');
     targetRow.createEl('label', { text: 'Target' });
     const targetInput = targetRow.createEl('input', { type: 'number', value: '10' });
@@ -536,6 +567,14 @@ export class VitalLogSettingTab extends PluginSettingTab {
     const stepRow = form.createDiv('vital-log-form-row');
     stepRow.createEl('label', { text: 'Step' });
     const stepInput = stepRow.createEl('input', { type: 'number', value: '1' });
+
+    const statusBarRow = form.createDiv('vital-log-form-row');
+    statusBarRow.createEl('label', { text: 'Show in status bar' });
+    const statusBarCheckbox = statusBarRow.createEl('input', { type: 'checkbox' });
+
+    const appendNoteRow = form.createDiv('vital-log-form-row');
+    appendNoteRow.createEl('label', { text: 'Append to note (path)' });
+    const appendNoteInput = appendNoteRow.createEl('input', { type: 'text', placeholder: 'e.g. Business Outreaches' });
 
     const actions = form.createDiv('vital-log-inline-form-actions');
     const cancelBtn = actions.createEl('button', { text: 'Cancel', cls: 'vital-log-btn' });
@@ -557,9 +596,13 @@ export class VitalLogSettingTab extends PluginSettingTab {
       this.plugin.settings.tallyCounters.push({
         id: crypto.randomUUID(),
         displayName: name,
+        description: descInput.value.trim() || undefined,
         propertyKey: key,
         target: parseInt(targetInput.value) || 10,
         step: Math.max(1, parseInt(stepInput.value) || 1),
+        icon: iconInput.value.trim() || undefined,
+        showInStatusBar: statusBarCheckbox.checked || undefined,
+        appendToNoteName: appendNoteInput.value.trim() || undefined,
       });
       await this.plugin.saveSettings();
       this.display();
@@ -583,6 +626,14 @@ export class VitalLogSettingTab extends PluginSettingTab {
     keyRow.createEl('label', { text: 'Property Key' });
     const keyInput = keyRow.createEl('input', { type: 'text', value: t.propertyKey });
 
+    const descRow = form.createDiv('vital-log-form-row');
+    descRow.createEl('label', { text: 'Description' });
+    const descInput = descRow.createEl('input', { type: 'text', value: t.description ?? '', placeholder: 'Helper text shown in modal' });
+
+    const iconRow = form.createDiv('vital-log-form-row');
+    iconRow.createEl('label', { text: 'Icon' });
+    const iconInput = iconRow.createEl('input', { type: 'text', value: t.icon ?? '', placeholder: 'e.g. check-circle, target, hash' });
+
     const targetRow = form.createDiv('vital-log-form-row');
     targetRow.createEl('label', { text: 'Target' });
     const targetInput = targetRow.createEl('input', { type: 'number', value: String(t.target) });
@@ -590,6 +641,15 @@ export class VitalLogSettingTab extends PluginSettingTab {
     const stepRow = form.createDiv('vital-log-form-row');
     stepRow.createEl('label', { text: 'Step' });
     const stepInput = stepRow.createEl('input', { type: 'number', value: String(t.step) });
+
+    const statusBarRow = form.createDiv('vital-log-form-row');
+    statusBarRow.createEl('label', { text: 'Show in status bar' });
+    const statusBarCheckbox = statusBarRow.createEl('input', { type: 'checkbox' });
+    statusBarCheckbox.checked = t.showInStatusBar === true;
+
+    const appendNoteRow = form.createDiv('vital-log-form-row');
+    appendNoteRow.createEl('label', { text: 'Append to note (path)' });
+    const appendNoteInput = appendNoteRow.createEl('input', { type: 'text', value: t.appendToNoteName ?? '', placeholder: 'e.g. Business Outreaches' });
 
     const actions = form.createDiv('vital-log-inline-form-actions');
     const cancelBtn = actions.createEl('button', { text: 'Cancel', cls: 'vital-log-btn' });
@@ -603,8 +663,12 @@ export class VitalLogSettingTab extends PluginSettingTab {
 
       t.displayName = name;
       t.propertyKey = key;
+      t.description = descInput.value.trim() || undefined;
+      t.icon = iconInput.value.trim() || undefined;
       t.target = parseInt(targetInput.value) || 10;
       t.step = Math.max(1, parseInt(stepInput.value) || 1);
+      t.showInStatusBar = statusBarCheckbox.checked || undefined;
+      t.appendToNoteName = appendNoteInput.value.trim() || undefined;
       await this.plugin.saveSettings();
       this.display();
     });
@@ -628,6 +692,10 @@ export class VitalLogSettingTab extends PluginSettingTab {
     const valRow = form.createDiv('vital-log-form-row');
     valRow.createEl('label', { text: 'Value Name' });
     const valInput = valRow.createEl('input', { type: 'text', placeholder: 'e.g. mood' });
+
+    const iconRow = form.createDiv('vital-log-form-row');
+    iconRow.createEl('label', { text: 'Icon' });
+    const iconInput = iconRow.createEl('input', { type: 'text', placeholder: 'e.g. smile, zap, activity' });
 
     const minRow = form.createDiv('vital-log-form-row');
     minRow.createEl('label', { text: 'Min' });
@@ -655,7 +723,7 @@ export class VitalLogSettingTab extends PluginSettingTab {
         valueName: val,
         min: parseInt(minInput.value) || 1,
         max: parseInt(maxInput.value) || 5,
-        icon: 'activity',
+        icon: iconInput.value.trim() || 'activity',
       });
       await this.plugin.saveSettings();
       this.display();
@@ -683,6 +751,10 @@ export class VitalLogSettingTab extends PluginSettingTab {
     valRow.createEl('label', { text: 'Value Name' });
     const valInput = valRow.createEl('input', { type: 'text', value: tracker.valueName });
 
+    const iconRow = form.createDiv('vital-log-form-row');
+    iconRow.createEl('label', { text: 'Icon' });
+    const iconInput = iconRow.createEl('input', { type: 'text', value: tracker.icon ?? '', placeholder: 'e.g. smile, zap, activity' });
+
     const minRow = form.createDiv('vital-log-form-row');
     minRow.createEl('label', { text: 'Min' });
     const minInput = minRow.createEl('input', { type: 'number', value: String(tracker.min) });
@@ -705,6 +777,7 @@ export class VitalLogSettingTab extends PluginSettingTab {
       tracker.displayName = name;
       tracker.propertyKey = key;
       tracker.valueName = val;
+      tracker.icon = iconInput.value.trim() || 'activity';
       tracker.min = parseInt(minInput.value) || 1;
       tracker.max = parseInt(maxInput.value) || 5;
       await this.plugin.saveSettings();

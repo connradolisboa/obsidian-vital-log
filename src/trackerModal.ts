@@ -4,7 +4,7 @@
 // Shows value buttons for fast selection + optional note.
 // ============================================================
 
-import { App, Modal, Notice } from 'obsidian';
+import { App, Modal, Notice, setIcon } from 'obsidian';
 import type { VitalLogSettings, TrackerConfig } from './types';
 import { resolveDailyNote } from './dailyNoteResolver';
 import * as tm from './trackerManager';
@@ -88,9 +88,13 @@ export class TrackerModal extends Modal {
     const typeSel = contentEl.createDiv('vital-log-type-selector');
     for (const t of this.settings.trackers) {
       const btn = typeSel.createEl('button', {
-        text: t.displayName,
         cls: 'vital-log-type-btn' + (this.selectedTrackerId === t.id ? ' is-active' : ''),
       });
+      if (t.icon) {
+        const iconSpan = btn.createSpan({ cls: 'vital-log-type-btn-icon' });
+        setIcon(iconSpan, t.icon);
+      }
+      btn.createSpan({ text: t.displayName });
       btn.addEventListener('click', () => {
         this.selectedTrackerId = t.id;
         this.selectedValue = null;
