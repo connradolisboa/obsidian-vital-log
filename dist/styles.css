@@ -1246,6 +1246,225 @@
   height: 1rem;
 }
 
+/* ── Embedded vital-log code block ── */
+
+.vital-log-embed {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  overflow: hidden;
+  margin: 0.15em 0;
+  background: var(--background-secondary);
+  font-size: inherit;
+}
+
+.vital-log-embed-error,
+.vital-log-embed-empty {
+  color: var(--text-muted);
+  font-size: 0.85em;
+  padding: 0.35em 0.6em;
+  font-style: italic;
+}
+
+.vital-log-embed-error {
+  color: var(--text-error);
+}
+
+.vital-log-embed-tallies {
+  display: grid;
+  grid-template-columns: 1fr;
+  padding-top: 1.6em;
+}
+
+.vital-log-embed-tallies--multi {
+  grid-template-columns: 1fr 1fr;
+}
+
+.vital-log-embed-tally-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  padding: 0.25em 0.6em;
+  border-bottom: 1px solid var(--background-modifier-border);
+  border-right: 1px solid transparent;
+}
+
+/* In two-column mode, right-column rows get a left separator */
+.vital-log-embed-tallies--multi .vital-log-embed-tally-row:nth-child(odd) {
+  border-right-color: var(--background-modifier-border);
+}
+
+/* Remove bottom border from the last row in each column-pair */
+.vital-log-embed-tallies--multi .vital-log-embed-tally-row:nth-last-child(-n+2):nth-child(odd),
+.vital-log-embed-tallies--multi .vital-log-embed-tally-row:last-child {
+  border-bottom-color: transparent;
+}
+
+@media (max-width: 480px) {
+  .vital-log-embed-tallies--multi {
+    grid-template-columns: 1fr;
+  }
+
+  .vital-log-embed-tallies--multi .vital-log-embed-tally-row:nth-child(odd) {
+    border-right-color: transparent;
+  }
+
+  .vital-log-embed-tallies--multi .vital-log-embed-tally-row:nth-last-child(-n+2):nth-child(odd),
+  .vital-log-embed-tallies--multi .vital-log-embed-tally-row:last-child {
+    border-bottom-color: var(--background-modifier-border);
+  }
+
+  .vital-log-embed-tallies--multi .vital-log-embed-tally-row:last-child {
+    border-bottom-color: transparent;
+  }
+}
+
+.vital-log-embed-tally-label {
+  display: flex;
+  align-items: center;
+  gap: 0.3em;
+  flex: 0 0 36%;
+  min-width: 0;
+}
+
+.vital-log-embed-tally-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.vital-log-embed-tally-icon svg {
+  width: 0.9em;
+  height: 0.9em;
+}
+
+.vital-log-embed-tally-name {
+  font-size: 1em;
+  font-weight: 500;
+  color: var(--text-normal);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vital-log-embed-tally-progress {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15em;
+  min-width: 0;
+}
+
+.vital-log-embed-tally-bar {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--background-modifier-border);
+  overflow: hidden;
+}
+
+.vital-log-embed-tally-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--interactive-accent);
+  transition: width 0.2s ease;
+}
+
+.vital-log-embed-tally-count {
+  font-size: 0.78em;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  line-height: 1;
+}
+
+.vital-log-embed-tally-row.is-complete .vital-log-embed-tally-fill {
+  background: var(--color-green);
+}
+
+.vital-log-embed-tally-row.is-complete .vital-log-embed-tally-count {
+  color: var(--color-green);
+}
+
+.vital-log-embed-tally-controls {
+  display: flex;
+  gap: 0.2em;
+  flex-shrink: 0;
+}
+
+.vital-log-embed-tally-btn {
+  width: 1.6em;
+  height: 1.6em;
+  border-radius: 4px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  cursor: pointer;
+  font-size: 1em;
+  font-weight: 600;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.12s;
+  -webkit-tap-highlight-color: transparent;
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.vital-log-embed-tally-btn:hover {
+  background: var(--background-modifier-hover);
+}
+
+.vital-log-embed-tally-btn:active {
+  opacity: 0.7;
+}
+
+.vital-log-embed-tally-btn--inc {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent);
+}
+
+.vital-log-embed-tally-btn--inc:hover {
+  background: var(--interactive-accent-hover);
+}
+
+.vital-log-embed-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.5em;
+}
+
+.vital-log-embed-open-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  padding: 0.25em 0.6em;
+  border-radius: 4px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.8em;
+  transition: background 0.12s, color 0.12s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.vital-log-embed-open-btn:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.vital-log-embed-open-btn-icon {
+  display: inline-flex;
+  align-items: center;
+}
+
+.vital-log-embed-open-btn-icon svg {
+  width: 0.85em;
+  height: 0.85em;
+}
+
 /* ── Status bar tally items ── */
 
 .vital-log-status-item {
