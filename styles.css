@@ -1269,10 +1269,57 @@
   color: var(--text-error);
 }
 
+.vital-log-embed-header {
+  display: flex;
+  align-items: center;
+  gap: 0.35em;
+  padding: 0.25em 0.5em 0.25em 0.6em;
+  border-bottom: 1px solid var(--background-modifier-border);
+  background: var(--background-primary-alt);
+}
+
+.vital-log-embed-header-title {
+  font-size: 0.72em;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vital-log-embed-header-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5em;
+  height: 1.5em;
+  border-radius: 3px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  transition: all 0.12s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.vital-log-embed-header-btn svg {
+  width: 0.75em;
+  height: 0.75em;
+}
+
+.vital-log-embed-header-btn:hover {
+  color: var(--text-accent);
+  border-color: var(--background-modifier-border);
+  background: var(--background-modifier-hover);
+}
+
 .vital-log-embed-tallies {
   display: grid;
   grid-template-columns: 1fr;
-  padding-top: 1.6em;
 }
 
 .vital-log-embed-tallies--multi {
@@ -1322,8 +1369,10 @@
   display: flex;
   align-items: center;
   gap: 0.3em;
-  flex: 0 0 36%;
+  flex: 0 1 auto;
+  max-width: 55%;
   min-width: 0;
+  overflow: hidden;
 }
 
 .vital-log-embed-tally-icon {
@@ -1347,38 +1396,13 @@
   text-overflow: ellipsis;
 }
 
-.vital-log-embed-tally-progress {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 0.15em;
-  min-width: 0;
-}
-
-.vital-log-embed-tally-bar {
-  height: 3px;
-  border-radius: 2px;
-  background: var(--background-modifier-border);
-  overflow: hidden;
-}
-
-.vital-log-embed-tally-fill {
-  height: 100%;
-  border-radius: 2px;
-  background: var(--interactive-accent);
-  transition: width 0.2s ease;
-}
-
 .vital-log-embed-tally-count {
+  flex: 1;
   font-size: 0.78em;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
   text-align: right;
   line-height: 1;
-}
-
-.vital-log-embed-tally-row.is-complete .vital-log-embed-tally-fill {
-  background: var(--color-green);
 }
 
 .vital-log-embed-tally-row.is-complete .vital-log-embed-tally-count {
@@ -1429,51 +1453,159 @@
   background: var(--interactive-accent-hover);
 }
 
-.vital-log-embed-footer {
+/* ── Embed field rows ── */
+
+.vital-log-embed-items {
   display: flex;
-  justify-content: flex-end;
-  margin-top: 0.5em;
+  flex-direction: column;
 }
 
-.vital-log-embed-open-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3em;
-  padding: 0.25em 0.6em;
-  border-radius: 4px;
-  border: 1px solid var(--background-modifier-border);
-  background: var(--background-primary);
+/* Tally groups inside the mixed container need a bottom border to
+   separate them from the next item — the individual row borders are
+   removed in --multi mode, so we put it on the wrapper instead. */
+.vital-log-embed-items .vital-log-embed-tallies {
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.vital-log-embed-items .vital-log-embed-tallies:last-child {
+  border-bottom: none;
+}
+
+.vital-log-embed-field-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25em;
+  padding: 0.35em 0.6em;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.vital-log-embed-field-row:last-child {
+  border-bottom: none;
+}
+
+/* Tally rows inside the mixed items container also lose their last border */
+.vital-log-embed-items .vital-log-embed-tally-row:last-child {
+  border-bottom: none;
+}
+
+.vital-log-embed-field-label {
+  font-size: 0.78em;
+  font-weight: 600;
   color: var(--text-muted);
-  cursor: pointer;
-  font-size: 0.8em;
-  transition: background 0.12s, color 0.12s;
-  -webkit-tap-highlight-color: transparent;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
 }
 
-.vital-log-embed-open-btn:hover {
-  background: var(--background-modifier-hover);
+.vital-log-embed-field-input {
+  width: 100%;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
   color: var(--text-normal);
+  font-size: 0.9em;
+  padding: 0.2em 0.4em;
+  box-sizing: border-box;
 }
 
-.vital-log-embed-open-btn-icon {
-  display: inline-flex;
+.vital-log-embed-field-input:focus {
+  outline: none;
+  border-color: var(--interactive-accent);
+}
+
+.vital-log-embed-field-textarea {
+  resize: vertical;
+  min-height: 3em;
+  font-family: inherit;
+  line-height: 1.4;
+}
+
+.vital-log-embed-field-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+}
+
+.vital-log-embed-field-slider-row .vital-log-slider-input {
+  flex: 1;
+}
+
+.vital-log-embed-field-slider-row .vital-log-slider-value {
+  min-width: 2em;
+  text-align: right;
+  font-size: 0.85em;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.vital-log-embed-field-checkbox-row {
+  display: flex;
   align-items: center;
 }
 
-.vital-log-embed-open-btn-icon svg {
-  width: 0.85em;
-  height: 0.85em;
+.vital-log-embed-field-checkbox {
+  width: 1em;
+  height: 1em;
+  margin: 0;
+  cursor: pointer;
+  flex-shrink: 0;
 }
+
+.vital-log-embed-checkbox-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.vital-log-embed-checkbox-group:last-child {
+  border-bottom: none;
+}
+
+.vital-log-embed-checkbox-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  padding: 0.35em 0.6em;
+  flex: 1 1 0;
+  min-width: 0;
+  border-right: 1px solid var(--background-modifier-border);
+}
+
+.vital-log-embed-checkbox-item:last-child {
+  border-right: none;
+}
+
+.vital-log-embed-checkbox-item-label {
+  font-size: 0.9em;
+  color: var(--text-normal);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vital-log-embed-field-rating {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25em;
+}
+
+.vital-log-embed-tag-add-btn {
+  padding: 0.15em 0.5em;
+  font-size: 0.85em;
+}
+
 
 /* ── Status bar tally items ── */
 
 .vital-log-status-item {
   display: inline-flex;
   align-items: center;
-  gap: 0.2rem;
-  font-size: 0.8rem;
+  gap: 0.15rem;
+  font-size: var(--status-bar-font-size, 0.7rem);
   font-variant-numeric: tabular-nums;
-  padding: 0 0.3rem;
+  color: var(--status-bar-text-color, var(--text-muted));
+  padding: 0 0.2rem;
+  opacity: 0.85;
 }
 
 .vital-log-status-icon {
@@ -1482,6 +1614,6 @@
 }
 
 .vital-log-status-icon svg {
-  width: 0.85rem;
-  height: 0.85rem;
+  width: 0.7rem;
+  height: 0.7rem;
 }
