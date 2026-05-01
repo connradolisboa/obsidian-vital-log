@@ -10,6 +10,7 @@ import type {
   CustomModalConfig,
   CustomField,
   TallyCounterConfig,
+  CustomButtonConfig,
 } from './types';
 import { resolveNote, getNoteIfExists, resolvePathTemplate } from './dailyNoteResolver';
 import * as yaml from './yamlManager';
@@ -166,7 +167,7 @@ export class CustomLogModal extends Modal {
       return;
     }
 
-    // Items (fields + tally counters, interleaved in configured order)
+    // Items (fields, tally counters, and buttons, interleaved in configured order)
     const fieldsContainer = contentEl.createDiv('vital-log-custom-fields');
     let hasTallies = false;
     for (const item of this.config.items) {
@@ -178,6 +179,8 @@ export class CustomLogModal extends Modal {
           this.renderTallyCounter(fieldsContainer, config);
           hasTallies = true;
         }
+      } else if (item.type === 'button') {
+        this.renderButton(fieldsContainer, item.button);
       }
     }
 
@@ -540,6 +543,31 @@ export class CustomLogModal extends Modal {
 
     const addBtn = inputRow.createEl('button', { text: 'Add', cls: 'vital-log-btn' });
     addBtn.addEventListener('click', addTag);
+  }
+
+  // ── Button ────────────────────────────────────────────────
+
+  private renderButton(container: HTMLElement, button: CustomButtonConfig): void {
+    const section = container.createDiv('vital-log-modal-button-item');
+    const btn = section.createEl('button', {
+      cls: 'vital-log-btn vital-log-modal-action-btn',
+      attr: { 'aria-label': button.displayName },
+    });
+    if (button.icon) {
+      const iconSpan = btn.createSpan({ cls: 'vital-log-modal-action-btn-icon' });
+      setIcon(iconSpan, button.icon);
+    }
+    btn.createSpan({ cls: 'vital-log-modal-action-btn-label', text: button.displayName });
+    const arrowSpan = btn.createSpan({ cls: 'vital-log-modal-action-btn-arrow' });
+    setIcon(arrowSpan, button.buttonType === 'filelink' ? 'file-symlink' : 'terminal');
+
+    btn.addEventListener('click', () => {
+      if (button.buttonType === 'filelink') {
+        void this.app.workspace.openLinkText(button.target, '', false);
+      } else {
+        (this.app as any).commands.executeCommandById(button.target);
+      }
+    });
   }
 
   // ── Save ──────────────────────────────────────────────────

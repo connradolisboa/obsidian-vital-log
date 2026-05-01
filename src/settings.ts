@@ -4,7 +4,7 @@
 
 import { App, Modal, PluginSettingTab, Setting, setIcon } from 'obsidian';
 import type VitalLogPlugin from '../main';
-import type { CustomModalConfig, CustomField, CustomFieldType, TallyCounterConfig, CustomModalItem } from './types';
+import type { CustomModalConfig, CustomField, CustomFieldType, TallyCounterConfig, CustomModalItem, CustomButtonConfig } from './types';
 import { CUSTOM_FIELD_TYPES } from './types';
 import { ManageModal } from './manageModal';
 
@@ -948,12 +948,18 @@ class CustomModalEditorModal extends Modal {
           cls: 'vital-log-item-meta',
           text: `${field.propertyKey} · ${field.fieldType}${this.getFieldMeta(field)}`,
         });
-      } else {
+      } else if (item.type === 'tally') {
         const tc = this.plugin.settings.tallyCounters?.find((t) => t.id === item.tallyCounterId);
         info.createDiv({ cls: 'vital-log-item-name', text: tc?.displayName ?? '(deleted tally)' });
         info.createDiv({
           cls: 'vital-log-item-meta',
           text: tc ? `${tc.propertyKey} · tally · target ${tc.target}` : item.tallyCounterId,
+        });
+      } else if (item.type === 'button') {
+        info.createDiv({ cls: 'vital-log-item-name', text: item.button.displayName });
+        info.createDiv({
+          cls: 'vital-log-item-meta',
+          text: `${item.button.buttonType} → ${item.button.target}`,
         });
       }
 
@@ -979,6 +985,11 @@ class CustomModalEditorModal extends Modal {
         editBtn.addEventListener('click', () => {
           this.renderFieldForm(fieldListEl, item.field, true);
         });
+      } else if (item.type === 'button') {
+        const editBtn = actions.createEl('button', { text: 'Edit', cls: 'vital-log-btn' });
+        editBtn.addEventListener('click', () => {
+          this.renderButtonForm(fieldListEl, item.button, true);
+        });
       }
 
       const delBtn = actions.createEl('button', { text: '\u00d7', cls: 'vital-log-btn mod-warning' });
@@ -989,7 +1000,7 @@ class CustomModalEditorModal extends Modal {
     }
 
     if (items.length === 0) {
-      fieldListEl.createDiv({ cls: 'vital-log-empty-state', text: 'No items yet. Add fields or tally counters below.' });
+      fieldListEl.createDiv({ cls: 'vital-log-empty-state', text: 'No items yet. Add fields, tally counters, or buttons below.' });
     }
 
     const addRow = fieldListEl.createDiv('vital-log-field-add-row');
@@ -1020,6 +1031,17 @@ class CustomModalEditorModal extends Modal {
         text: ' \u00b7 No tally counters defined yet. Add them in the Tally Counters tab.',
       });
     }
+
+    const addButtonBtn = addRow.createEl('button', { text: '+ Add Button', cls: 'vital-log-btn' });
+    addButtonBtn.addEventListener('click', () => {
+      const newButton: CustomButtonConfig = {
+        id: crypto.randomUUID(),
+        displayName: '',
+        buttonType: 'filelink',
+        target: '',
+      };
+      this.renderButtonForm(fieldListEl, newButton, false);
+    });
   }
 
   private renderTallyPickerForm(fieldListEl: HTMLElement, available: TallyCounterConfig[]): void {
@@ -1041,6 +1063,85 @@ class CustomModalEditorModal extends Modal {
     addBtn.addEventListener('click', () => {
       if (!select.value) return;
       this.modal.items.push({ type: 'tally', tallyCounterId: select.value });
+      form.remove();
+      this.renderFieldList(fieldListEl);
+    });
+  }
+
+  private renderButtonForm(
+    fieldListEl: HTMLElement,
+    button: CustomButtonConfig,
+    isEdit: boolean
+  ): void {
+    const form = fieldListEl.createDiv('vital-log-inline-form');
+    form.createEl('h4', { text: isEdit ? `Edit: ${button.displayName}` : 'New Button' });
+
+    const nameRow = form.createDiv('vital-log-form-row');
+    nameRow.createEl('label', { text: 'Label' });
+    const nameInput = nameRow.createEl('input', {
+      type: 'text',
+      placeholder: 'e.g. Open Journal',
+      value: button.displayName,
+    });
+
+    const typeRow = form.createDiv('vital-log-form-row');
+    typeRow.createEl('label', { text: 'Action' });
+    const typeSelect = typeRow.createEl('select');
+    typeSelect.createEl('option', { value: 'filelink', text: 'Open file' });
+    typeSelect.createEl('option', { value: 'command', text: 'Run command' });
+    typeSelect.value = button.buttonType;
+
+    const targetRow = form.createDiv('vital-log-form-row');
+    const targetLabel = targetRow.createEl('label', { text: 'File path' });
+    const targetInput = targetRow.createEl('input', {
+      type: 'text',
+      placeholder: 'Notes/Journal.md',
+      value: button.target,
+    });
+
+    const updateTargetLabel = () => {
+      if (typeSelect.value === 'filelink') {
+        targetLabel.setText('File path');
+        targetInput.placeholder = 'Notes/Journal.md';
+      } else {
+        targetLabel.setText('Command ID');
+        targetInput.placeholder = 'daily-notes:open-daily-note';
+      }
+    };
+    typeSelect.addEventListener('change', updateTargetLabel);
+
+    const iconRow = form.createDiv('vital-log-form-row');
+    iconRow.createEl('label', { text: 'Icon (optional)' });
+    const iconInput = iconRow.createEl('input', {
+      type: 'text',
+      placeholder: 'e.g. book-open, terminal',
+      value: button.icon ?? '',
+    });
+
+    const actions = form.createDiv('vital-log-inline-form-actions');
+    const cancelBtn = actions.createEl('button', { text: 'Cancel', cls: 'vital-log-btn' });
+    cancelBtn.addEventListener('click', () => { form.remove(); });
+
+    const saveBtn = actions.createEl('button', { text: 'Save Button', cls: 'vital-log-btn mod-cta' });
+    saveBtn.addEventListener('click', () => {
+      const name = nameInput.value.trim();
+      const target = targetInput.value.trim();
+      if (!name || !target) return;
+
+      button.displayName = name;
+      button.buttonType = typeSelect.value as 'filelink' | 'command';
+      button.target = target;
+      button.icon = iconInput.value.trim() || undefined;
+
+      if (!isEdit) {
+        this.modal.items.push({ type: 'button', button });
+      } else {
+        const idx = this.modal.items.findIndex((it) => it.type === 'button' && it.button.id === button.id);
+        if (idx >= 0) {
+          this.modal.items[idx] = { type: 'button', button };
+        }
+      }
+
       form.remove();
       this.renderFieldList(fieldListEl);
     });

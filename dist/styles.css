@@ -1594,6 +1594,220 @@
   font-size: 0.85em;
 }
 
+/* ── Embed button rows (field-row context) ── */
+
+.vital-log-embed-button-row {
+  display: flex;
+  align-items: center;
+  padding: 0.3em 0.6em;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.vital-log-embed-button-row:last-child {
+  border-bottom: none;
+}
+
+.vital-log-embed-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  padding: 0.3em 0.7em;
+  border-radius: 5px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-size: 0.88em;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+  -webkit-tap-highlight-color: transparent;
+  width: 100%;
+  justify-content: flex-start;
+}
+
+.vital-log-embed-action-btn:hover {
+  background: var(--background-modifier-hover);
+  border-color: var(--interactive-accent);
+  color: var(--text-accent);
+}
+
+.vital-log-embed-action-btn:active {
+  opacity: 0.75;
+}
+
+.vital-log-embed-action-btn-icon svg,
+.vital-log-embed-action-btn-arrow svg {
+  width: 0.85em;
+  height: 0.85em;
+}
+
+.vital-log-embed-action-btn-label {
+  flex: 1;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vital-log-embed-action-btn-arrow {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+/* ── Embed button items (tally-grid context) ── */
+
+.vital-log-embed-button-grid-item {
+  cursor: pointer;
+  user-select: none;
+}
+
+.vital-log-embed-button-grid-item:hover {
+  background: var(--background-modifier-hover);
+}
+
+.vital-log-embed-button-grid-item:active {
+  opacity: 0.7;
+}
+
+.vital-log-embed-button-grid-trigger {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+.vital-log-embed-button-grid-trigger svg {
+  width: 0.85em;
+  height: 0.85em;
+}
+
+/* ── Modal button items ── */
+
+.vital-log-modal-button-item {
+  margin: 0.25em 0;
+}
+
+.vital-log-modal-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  padding: 0.4em 0.9em;
+  width: 100%;
+  justify-content: flex-start;
+  font-size: 0.9em;
+}
+
+.vital-log-modal-action-btn-icon svg,
+.vital-log-modal-action-btn-arrow svg {
+  width: 0.85em;
+  height: 0.85em;
+}
+
+.vital-log-modal-action-btn-label {
+  flex: 1;
+  text-align: left;
+}
+
+.vital-log-modal-action-btn-arrow {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+/* ── Invisible embed ── */
+
+.vital-log-embed--invisible {
+  background: none !important;
+  border: none !important;
+  border-radius: 0 !important;
+  margin: 0 !important;
+  margin-top: 0.6em !important;
+  overflow: visible !important;
+}
+
+.vital-log-embed--invisible .vital-log-embed-tallies--multi {
+  column-gap: 1.2em;
+  row-gap: 0.3em;
+}
+
+.vital-log-embed--invisible .vital-log-embed-tallies {
+  row-gap: 0.3em;
+}
+
+.vital-log-embed--invisible .vital-log-embed-field-row {
+  border-bottom: none;
+  padding: 0.2em 0;
+  margin-bottom: 0.35em;
+}
+
+.vital-log-embed--invisible .vital-log-embed-field-row:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
+.vital-log-embed--invisible .vital-log-embed-field-label {
+  color: var(--text-muted);
+  font-size: 0.75em;
+}
+
+.vital-log-embed--invisible .vital-log-embed-field-input {
+  background: transparent;
+  border-color: transparent;
+  border-bottom: 1px solid var(--background-modifier-border);
+  border-radius: 0;
+  padding: 0.15em 0;
+}
+
+.vital-log-embed--invisible .vital-log-embed-field-input:focus {
+  border-color: transparent;
+  border-bottom-color: var(--interactive-accent);
+  background: transparent;
+  outline: none;
+}
+
+.vital-log-embed--invisible .vital-log-embed-tallies {
+  background: none;
+}
+
+.vital-log-embed--invisible .vital-log-embed-tally-row {
+  border-bottom: none;
+  padding: 0.2em 0;
+  background: none;
+}
+
+.vital-log-embed--invisible .vital-log-embed-items {
+  gap: 0;
+}
+
+.vital-log-embed--invisible .vital-log-embed-items .vital-log-embed-tallies {
+  border-bottom: none;
+}
+
+.vital-log-embed--invisible .vital-log-embed-checkbox-group {
+  border-bottom: none;
+}
+
+.vital-log-embed--invisible .vital-log-embed-checkbox-item {
+  padding: 0.2em 0;
+  border-right: none;
+}
+
+.vital-log-embed--invisible .vital-log-embed-button-row {
+  border-bottom: none;
+  padding: 0.2em 0;
+}
+
+.vital-log-embed--invisible .vital-log-embed-action-btn {
+  background: transparent;
+  border-color: var(--background-modifier-border);
+}
+
+.vital-log-embed--invisible .vital-log-embed-action-btn:hover {
+  background: var(--background-modifier-hover);
+}
 
 /* ── Status bar tally items ── */
 

@@ -1,19 +1,26 @@
 // ============================================================
 // Vital Log — Embedded Code Block Renderer
 // Registers the `vital-log` fenced code block processor.
-// Usage in a note:
 //
+// Basic usage:
 //   ```vital-log
 //   My Modal Name
 //   ```
 //
-// Renders a compact widget that reads/writes the daily note's
-// frontmatter without opening a modal.
+// With options (one per line after the modal name):
+//   ```vital-log
+//   My Modal Name
+//   invisible
+//   ```
+//
+// Options:
+//   invisible — removes the card background/border/header so the
+//               embed blends seamlessly into the note.
 // ============================================================
 
 import { App, setIcon, TFile } from 'obsidian';
 import type VitalLogPlugin from '../main';
-import type { TallyCounterConfig, CustomField } from './types';
+import type { TallyCounterConfig, CustomField, CustomButtonConfig } from './types';
 import { getDailyNoteIfExists } from './dailyNoteResolver';
 import * as yaml from './yamlManager';
 import * as tally from './tallyManager';
@@ -21,17 +28,23 @@ import { CustomLogModal } from './customLogModal';
 
 export function registerEmbedRenderer(plugin: VitalLogPlugin): void {
   plugin.registerMarkdownCodeBlockProcessor('vital-log', async (source, el) => {
-    await renderEmbed(plugin, el, source.trim());
+    const lines = source.trim().split('\n').map((l) => l.trim()).filter(Boolean);
+    const modalName = lines[0] ?? '';
+    const options = new Set(lines.slice(1));
+    const invisible = options.has('invisible');
+    await renderEmbed(plugin, el, modalName, invisible);
   });
 }
 
 async function renderEmbed(
   plugin: VitalLogPlugin,
   container: HTMLElement,
-  modalName: string
+  modalName: string,
+  invisible: boolean
 ): Promise<void> {
   container.empty();
   container.addClass('vital-log-embed');
+  if (invisible) container.addClass('vital-log-embed--invisible');
 
   const { app, settings } = plugin;
 
@@ -60,105 +73,99 @@ async function renderEmbed(
     ? await yaml.readAllFrontmatter(app, dailyNote)
     : {};
 
-  // ── Header ────────────────────────────────────────────────
-  const headerEl = container.createDiv('vital-log-embed-header');
-  headerEl.createSpan({ cls: 'vital-log-embed-header-title', text: modalConfig.displayName });
-  const openBtn = headerEl.createEl('button', {
-    cls: 'vital-log-embed-header-btn',
-    attr: { 'aria-label': `Open ${modalConfig.displayName}` },
-  });
-  setIcon(openBtn, 'external-link');
-  openBtn.addEventListener('click', () => {
-    new CustomLogModal(app, settings, plugin.saveSettings.bind(plugin), modalConfig).open();
-  });
+  // ── Header (hidden in invisible mode) ─────────────────────
+  if (!invisible) {
+    const headerEl = container.createDiv('vital-log-embed-header');
+    headerEl.createSpan({ cls: 'vital-log-embed-header-title', text: modalConfig.displayName });
+    const openBtn = headerEl.createEl('button', {
+      cls: 'vital-log-embed-header-btn',
+      attr: { 'aria-label': `Open ${modalConfig.displayName}` },
+    });
+    setIcon(openBtn, 'external-link');
+    openBtn.addEventListener('click', () => {
+      new CustomLogModal(app, settings, plugin.saveSettings.bind(plugin), modalConfig).open();
+    });
+  }
 
   const hasFields = modalConfig.items.some((i) => i.type === 'field');
 
   if (!hasFields) {
-    // Pure-tally mode: preserve the 2-column grid layout
-    const validTallyCount = modalConfig.items.filter((item) => {
-      if (item.type !== 'tally') return false;
-      return settings.tallyCounters.some((t) => t.id === item.tallyCounterId);
+    // Pure-tally/button mode: preserve the 2-column grid layout
+    const validItemCount = modalConfig.items.filter((item) => {
+      if (item.type === 'tally') return settings.tallyCounters.some((t) => t.id === item.tallyCounterId);
+      if (item.type === 'button') return true;
+      return false;
     }).length;
 
     const talliesCls =
-      validTallyCount > 1
+      validItemCount > 1
         ? 'vital-log-embed-tallies vital-log-embed-tallies--multi'
         : 'vital-log-embed-tallies';
     const talliesEl = container.createDiv(talliesCls);
 
     for (const item of modalConfig.items) {
-      if (item.type !== 'tally') continue;
-      const config = settings.tallyCounters.find((t) => t.id === item.tallyCounterId);
-      if (!config) continue;
-
-      const raw = fm[config.propertyKey];
-      const currentValue =
-        typeof raw === 'object' && raw !== null && 'value' in raw
-          ? ((raw as Record<string, unknown>)['value'] as number) ?? 0
-          : 0;
-
-      renderTallyRow(app, talliesEl, config, currentValue, dailyNote);
+      if (item.type === 'tally') {
+        const config = settings.tallyCounters.find((t) => t.id === item.tallyCounterId);
+        if (!config) continue;
+        const raw = fm[config.propertyKey];
+        const currentValue =
+          typeof raw === 'object' && raw !== null && 'value' in raw
+            ? ((raw as Record<string, unknown>)['value'] as number) ?? 0
+            : 0;
+        renderTallyRow(app, talliesEl, config, currentValue, dailyNote);
+      } else if (item.type === 'button') {
+        renderButtonRow(app, talliesEl, item.button, 'tally-grid');
+      }
     }
   } else {
-    // Mixed mode: render items in configured order, grouping consecutive tallies
-    // into their own 2-column grid so the multi-column layout is preserved.
+    // Mixed mode: render items in configured order.
+    // Consecutive column-eligible items (tallies, buttons, checkboxes) are grouped
+    // into a shared 2-column grid. Regular fields render as full-width rows.
     const itemsEl = container.createDiv('vital-log-embed-items');
     const items = modalConfig.items;
     let i = 0;
 
+    const isColumnEligible = (it: typeof items[number]): boolean =>
+      it.type === 'tally' ||
+      it.type === 'button' ||
+      (it.type === 'field' && it.field.fieldType === 'checkbox');
+
     while (i < items.length) {
       const item = items[i];
 
-      if (item.type === 'tally') {
-        // Collect the run of consecutive tally items
-        const run: { type: 'tally'; tallyCounterId: string }[] = [];
-        while (i < items.length && items[i].type === 'tally') {
-          run.push(items[i] as { type: 'tally'; tallyCounterId: string });
+      if (isColumnEligible(item)) {
+        // Collect the run of consecutive column-eligible items
+        const run: typeof items = [];
+        while (i < items.length && isColumnEligible(items[i])) {
+          run.push(items[i]);
           i++;
         }
 
-        const validCount = run.filter(
-          (t) => t.type === 'tally' && settings.tallyCounters.some((c) => c.id === t.tallyCounterId)
-        ).length;
+        const validCount = run.filter((it) => {
+          if (it.type === 'tally') return settings.tallyCounters.some((c) => c.id === it.tallyCounterId);
+          return true;
+        }).length;
 
-        const tallyCls =
+        const groupCls =
           validCount > 1
             ? 'vital-log-embed-tallies vital-log-embed-tallies--multi'
             : 'vital-log-embed-tallies';
-        const tallyGroupEl = itemsEl.createDiv(tallyCls);
+        const groupEl = itemsEl.createDiv(groupCls);
 
-        for (const t of run) {
-          if (t.type !== 'tally') continue;
-          const config = settings.tallyCounters.find((c) => c.id === t.tallyCounterId);
-          if (!config) continue;
-
-          const raw = fm[config.propertyKey];
-          const currentValue =
-            typeof raw === 'object' && raw !== null && 'value' in raw
-              ? ((raw as Record<string, unknown>)['value'] as number) ?? 0
-              : 0;
-
-          renderTallyRow(app, tallyGroupEl, config, currentValue, dailyNote);
-        }
-      } else if (item.type === 'field' && item.field.fieldType === 'checkbox') {
-        // Collect the run of consecutive checkbox fields
-        const run: CustomField[] = [];
-        while (
-          i < items.length &&
-          items[i].type === 'field' &&
-          (items[i] as { type: 'field'; field: CustomField }).field.fieldType === 'checkbox'
-        ) {
-          run.push((items[i] as { type: 'field'; field: CustomField }).field);
-          i++;
-        }
-
-        if (run.length === 1) {
-          renderFieldRow(app, itemsEl, run[0], fm[run[0].propertyKey], dailyNote);
-        } else {
-          const groupEl = itemsEl.createDiv('vital-log-embed-checkbox-group');
-          for (const field of run) {
-            renderCheckboxGroupItem(groupEl, field, fm[field.propertyKey], dailyNote, app);
+        for (const runItem of run) {
+          if (runItem.type === 'tally') {
+            const config = settings.tallyCounters.find((c) => c.id === runItem.tallyCounterId);
+            if (!config) continue;
+            const raw = fm[config.propertyKey];
+            const currentValue =
+              typeof raw === 'object' && raw !== null && 'value' in raw
+                ? ((raw as Record<string, unknown>)['value'] as number) ?? 0
+                : 0;
+            renderTallyRow(app, groupEl, config, currentValue, dailyNote);
+          } else if (runItem.type === 'button') {
+            renderButtonRow(app, groupEl, runItem.button, 'tally-grid');
+          } else if (runItem.type === 'field') {
+            renderCheckboxAsGridItem(groupEl, runItem.field, fm[runItem.field.propertyKey], dailyNote, app);
           }
         }
       } else if (item.type === 'field') {
@@ -168,6 +175,54 @@ async function renderEmbed(
         i++;
       }
     }
+  }
+}
+
+// ── Button row ─────────────────────────────────────────────
+
+function renderButtonRow(
+  app: App,
+  container: HTMLElement,
+  button: CustomButtonConfig,
+  context: 'tally-grid' | 'field-row'
+): void {
+  const handleClick = () => {
+    if (button.buttonType === 'filelink') {
+      void app.workspace.openLinkText(button.target, '', false);
+    } else {
+      (app as any).commands.executeCommandById(button.target);
+    }
+  };
+
+  if (context === 'tally-grid') {
+    // Render as a tally-style row so it fits the column grid
+    const row = container.createDiv('vital-log-embed-tally-row vital-log-embed-button-grid-item');
+    const labelEl = row.createDiv('vital-log-embed-tally-label');
+    if (button.icon) {
+      const iconSpan = labelEl.createSpan({ cls: 'vital-log-embed-tally-icon' });
+      setIcon(iconSpan, button.icon);
+    }
+    labelEl.createSpan({ cls: 'vital-log-embed-tally-name', text: button.displayName });
+    const triggerEl = row.createDiv({ cls: 'vital-log-embed-button-grid-trigger' });
+    const icon = button.buttonType === 'filelink' ? 'file-symlink' : 'terminal';
+    setIcon(triggerEl, icon);
+    row.addEventListener('click', handleClick);
+    row.style.cursor = 'pointer';
+  } else {
+    // Render as a full-width button row
+    const row = container.createDiv('vital-log-embed-button-row');
+    const btn = row.createEl('button', {
+      cls: 'vital-log-embed-action-btn',
+      attr: { 'aria-label': button.displayName },
+    });
+    if (button.icon) {
+      const iconSpan = btn.createSpan({ cls: 'vital-log-embed-action-btn-icon' });
+      setIcon(iconSpan, button.icon);
+    }
+    btn.createSpan({ cls: 'vital-log-embed-action-btn-label', text: button.displayName });
+    const arrowSpan = btn.createSpan({ cls: 'vital-log-embed-action-btn-arrow' });
+    setIcon(arrowSpan, button.buttonType === 'filelink' ? 'file-symlink' : 'terminal');
+    btn.addEventListener('click', handleClick);
   }
 }
 
@@ -252,6 +307,27 @@ function renderFieldRow(
   };
 
   renderEmbedFieldInput(row, field, initialValue, persist);
+}
+
+function renderCheckboxAsGridItem(
+  container: HTMLElement,
+  field: CustomField,
+  initialValue: unknown,
+  dailyNote: TFile | null,
+  app: App
+): void {
+  const row = container.createDiv('vital-log-embed-tally-row');
+  const labelEl = row.createDiv('vital-log-embed-tally-label');
+  labelEl.createSpan({ cls: 'vital-log-embed-tally-name', text: field.displayName });
+  const checkEl = row.createEl('input', { type: 'checkbox' });
+  checkEl.addClass('vital-log-embed-field-checkbox');
+  checkEl.checked = initialValue === true;
+  checkEl.addEventListener('change', () => {
+    if (!dailyNote) return;
+    void yaml.setProperties(app, dailyNote, { [field.propertyKey]: checkEl.checked }).catch(
+      (err) => console.error('Vital Log embed checkbox grid:', err)
+    );
+  });
 }
 
 function renderCheckboxGroupItem(

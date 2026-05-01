@@ -194,9 +194,18 @@ export interface CustomField {
   options?: string[];       // dropdown options
 }
 
+export interface CustomButtonConfig {
+  id: string;
+  displayName: string;
+  buttonType: 'filelink' | 'command';
+  target: string;           // vault-relative file path or Obsidian command ID
+  icon?: string;
+}
+
 export type CustomModalItem =
   | { type: 'field'; field: CustomField }
-  | { type: 'tally'; tallyCounterId: string };
+  | { type: 'tally'; tallyCounterId: string }
+  | { type: 'button'; button: CustomButtonConfig };
 
 export interface CustomModalConfig {
   id: string;
