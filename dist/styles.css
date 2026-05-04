@@ -1317,6 +1317,23 @@
   background: var(--background-modifier-hover);
 }
 
+.vital-log-embed-header--collapsible {
+  cursor: pointer;
+  user-select: none;
+}
+
+.vital-log-embed-header-chevron svg {
+  transition: transform 0.15s ease;
+}
+
+.vital-log-embed-header-chevron.is-collapsed svg {
+  transform: rotate(-90deg);
+}
+
+.vital-log-embed--collapsed .vital-log-embed-body {
+  display: none;
+}
+
 .vital-log-embed-tallies {
   display: grid;
   grid-template-columns: 1fr;

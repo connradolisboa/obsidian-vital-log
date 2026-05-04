@@ -16,6 +16,8 @@
 // Options:
 //   invisible — removes the card background/border/header so the
 //               embed blends seamlessly into the note.
+//   +         — collapsible, starts expanded (open by default)
+//   -         — collapsible, starts collapsed (closed by default)
 // ============================================================
 
 import { App, setIcon, TFile } from 'obsidian';
@@ -32,7 +34,9 @@ export function registerEmbedRenderer(plugin: VitalLogPlugin): void {
     const modalName = lines[0] ?? '';
     const options = new Set(lines.slice(1));
     const invisible = options.has('invisible');
-    await renderEmbed(plugin, el, modalName, invisible);
+    const collapsible = options.has('+') || options.has('-');
+    const defaultOpen = options.has('+');
+    await renderEmbed(plugin, el, modalName, invisible, collapsible, defaultOpen);
   });
 }
 
@@ -40,7 +44,9 @@ async function renderEmbed(
   plugin: VitalLogPlugin,
   container: HTMLElement,
   modalName: string,
-  invisible: boolean
+  invisible: boolean,
+  collapsible = false,
+  defaultOpen = true,
 ): Promise<void> {
   container.empty();
   container.addClass('vital-log-embed');
@@ -76,6 +82,30 @@ async function renderEmbed(
   // ── Header (hidden in invisible mode) ─────────────────────
   if (!invisible) {
     const headerEl = container.createDiv('vital-log-embed-header');
+    if (collapsible) headerEl.addClass('vital-log-embed-header--collapsible');
+
+    if (collapsible) {
+      const chevronBtn = headerEl.createEl('button', {
+        cls: 'vital-log-embed-header-btn vital-log-embed-header-chevron',
+        attr: { 'aria-label': 'Toggle' },
+      });
+      setIcon(chevronBtn, 'chevron-down');
+      if (!defaultOpen) {
+        container.addClass('vital-log-embed--collapsed');
+        chevronBtn.addClass('is-collapsed');
+      }
+      const toggle = () => {
+        const collapsed = container.hasClass('vital-log-embed--collapsed');
+        container.toggleClass('vital-log-embed--collapsed', !collapsed);
+        chevronBtn.toggleClass('is-collapsed', !collapsed);
+      };
+      chevronBtn.addEventListener('click', toggle);
+      headerEl.addEventListener('click', (e) => {
+        if ((e.target as HTMLElement).closest('.vital-log-embed-header-btn:not(.vital-log-embed-header-chevron)')) return;
+        toggle();
+      });
+    }
+
     headerEl.createSpan({ cls: 'vital-log-embed-header-title', text: modalConfig.displayName });
     const openBtn = headerEl.createEl('button', {
       cls: 'vital-log-embed-header-btn',
@@ -87,6 +117,7 @@ async function renderEmbed(
     });
   }
 
+  const bodyEl = container.createDiv('vital-log-embed-body');
   const hasFields = modalConfig.items.some((i) => i.type === 'field');
 
   if (!hasFields) {
@@ -101,7 +132,7 @@ async function renderEmbed(
       validItemCount > 1
         ? 'vital-log-embed-tallies vital-log-embed-tallies--multi'
         : 'vital-log-embed-tallies';
-    const talliesEl = container.createDiv(talliesCls);
+    const talliesEl = bodyEl.createDiv(talliesCls);
 
     for (const item of modalConfig.items) {
       if (item.type === 'tally') {
@@ -121,7 +152,7 @@ async function renderEmbed(
     // Mixed mode: render items in configured order.
     // Consecutive column-eligible items (tallies, buttons, checkboxes) are grouped
     // into a shared 2-column grid. Regular fields render as full-width rows.
-    const itemsEl = container.createDiv('vital-log-embed-items');
+    const itemsEl = bodyEl.createDiv('vital-log-embed-items');
     const items = modalConfig.items;
     let i = 0;
 
