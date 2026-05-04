@@ -208,7 +208,7 @@ export type CustomModalItem =
   | { type: 'button'; button: CustomButtonConfig }
   | { type: 'header'; text: string }
   | { type: 'divider' }
-  | { type: 'section'; title: string; defaultOpen: boolean }
+  | { type: 'section'; title: string; defaultOpen: boolean; color?: string }
   | { type: 'section-end' };
 
 export interface CustomModalConfig {
@@ -219,6 +219,8 @@ export interface CustomModalConfig {
   useTemplater: boolean;    // trigger Templater on new note creation
   templatePath: string;     // path to template file for Templater
   items: CustomModalItem[];
+  mirrorMode?: boolean;           // only show properties that already exist in the current note
+  mirrorModePinnedIds?: string[]; // field IDs or tallyCounterIds that always show in mirror mode
 }
 
 export const CUSTOM_FIELD_TYPES: CustomFieldType[] = [

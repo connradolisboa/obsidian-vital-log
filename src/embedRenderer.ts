@@ -22,21 +22,21 @@
 
 import { App, setIcon, TFile } from 'obsidian';
 import type VitalLogPlugin from '../main';
-import type { TallyCounterConfig, CustomField, CustomButtonConfig } from './types';
+import type { TallyCounterConfig, CustomField, CustomButtonConfig, CustomModalConfig, CustomModalItem, VitalLogSettings } from './types';
 import { getDailyNoteIfExists } from './dailyNoteResolver';
 import * as yaml from './yamlManager';
 import * as tally from './tallyManager';
 import { CustomLogModal } from './customLogModal';
 
 export function registerEmbedRenderer(plugin: VitalLogPlugin): void {
-  plugin.registerMarkdownCodeBlockProcessor('vital-log', async (source, el) => {
+  plugin.registerMarkdownCodeBlockProcessor('vital-log', async (source, el, ctx) => {
     const lines = source.trim().split('\n').map((l) => l.trim()).filter(Boolean);
     const modalName = lines[0] ?? '';
     const options = new Set(lines.slice(1));
     const invisible = options.has('invisible');
     const collapsible = options.has('+') || options.has('-');
     const defaultOpen = options.has('+');
-    await renderEmbed(plugin, el, modalName, invisible, collapsible, defaultOpen);
+    await renderEmbed(plugin, el, modalName, invisible, collapsible, defaultOpen, ctx.sourcePath);
   });
 }
 
@@ -47,6 +47,7 @@ async function renderEmbed(
   invisible: boolean,
   collapsible = false,
   defaultOpen = true,
+  sourcePath?: string,
 ): Promise<void> {
   container.empty();
   container.addClass('vital-log-embed');
@@ -74,10 +75,21 @@ async function renderEmbed(
     return;
   }
 
-  const dailyNote = getDailyNoteIfExists(app, settings);
-  const fm: Record<string, unknown> = dailyNote
-    ? await yaml.readAllFrontmatter(app, dailyNote)
+  // When notePath is empty, target the note this embed lives in (sourcePath).
+  // Otherwise fall back to the daily note (legacy behaviour for path-based modals).
+  let targetNote: TFile | null;
+  if (!modalConfig.notePath.trim() && sourcePath) {
+    const f = app.vault.getAbstractFileByPath(sourcePath);
+    targetNote = f instanceof TFile ? f : null;
+  } else {
+    targetNote = getDailyNoteIfExists(app, settings);
+  }
+
+  const fm: Record<string, unknown> = targetNote
+    ? await yaml.readAllFrontmatter(app, targetNote)
     : {};
+
+  const visibleItems = getMirrorFilteredItems(modalConfig, fm, settings);
 
   // ── Header (hidden in invisible mode) ─────────────────────
   if (!invisible) {
@@ -117,13 +129,19 @@ async function renderEmbed(
   }
 
   const bodyEl = container.createDiv('vital-log-embed-body');
-  const hasStructure = modalConfig.items.some(
+
+  if (visibleItems.length === 0 && modalConfig.mirrorMode) {
+    bodyEl.createDiv({ cls: 'vital-log-embed-empty', text: 'No matching properties in this note.' });
+    return;
+  }
+
+  const hasStructure = visibleItems.some(
     (i) => i.type === 'field' || i.type === 'header' || i.type === 'divider' || i.type === 'section' || i.type === 'section-end'
   );
 
   if (!hasStructure) {
     // Pure-tally/button mode: preserve the 2-column grid layout
-    const validItemCount = modalConfig.items.filter((item) => {
+    const validItemCount = visibleItems.filter((item) => {
       if (item.type === 'tally') return settings.tallyCounters.some((t) => t.id === item.tallyCounterId);
       if (item.type === 'button') return true;
       return false;
@@ -135,7 +153,7 @@ async function renderEmbed(
         : 'vital-log-embed-tallies';
     const talliesEl = bodyEl.createDiv(talliesCls);
 
-    for (const item of modalConfig.items) {
+    for (const item of visibleItems) {
       if (item.type === 'tally') {
         const config = settings.tallyCounters.find((t) => t.id === item.tallyCounterId);
         if (!config) continue;
@@ -144,7 +162,7 @@ async function renderEmbed(
           typeof raw === 'object' && raw !== null && 'value' in raw
             ? ((raw as Record<string, unknown>)['value'] as number) ?? 0
             : 0;
-        renderTallyRow(app, talliesEl, config, currentValue, dailyNote);
+        renderTallyRow(app, talliesEl, config, currentValue, targetNote);
       } else if (item.type === 'button') {
         renderButtonRow(app, talliesEl, item.button, 'tally-grid');
       }
@@ -152,21 +170,48 @@ async function renderEmbed(
   } else {
     // Mixed mode: render items in configured order.
     const itemsEl = bodyEl.createDiv('vital-log-embed-items');
-    renderMixedItems(app, itemsEl, modalConfig.items, settings, fm, dailyNote);
+    renderMixedItems(app, itemsEl, visibleItems, settings, fm, targetNote);
   }
+}
+
+// ── Mirror mode filter (mirrors CustomLogModal.computeVisibleItems) ──
+
+function getMirrorFilteredItems(
+  modalConfig: CustomModalConfig,
+  fm: Record<string, unknown>,
+  settings: VitalLogSettings,
+): CustomModalItem[] {
+  if (!modalConfig.mirrorMode) return modalConfig.items;
+
+  const pinnedIds = modalConfig.mirrorModePinnedIds ?? [];
+
+  return modalConfig.items.filter((item) => {
+    if (item.type === 'field') {
+      const val = fm[item.field.propertyKey];
+      return (val !== undefined && val !== null) || pinnedIds.includes(item.field.id);
+    }
+    if (item.type === 'tally') {
+      const tallyConfig = settings.tallyCounters.find((t) => t.id === item.tallyCounterId);
+      if (!tallyConfig) return false;
+      const val = fm[tallyConfig.propertyKey];
+      return (val !== undefined && val !== null) || pinnedIds.includes(item.tallyCounterId);
+    }
+    if (item.type === 'button') return true;
+    return false;
+  });
 }
 
 // ── Mixed-mode item renderer (supports sections, headers, dividers) ──
 
-type EmbedSettings = { tallyCounters: import('./types').TallyCounterConfig[] };
+type EmbedSettings = { tallyCounters: TallyCounterConfig[] };
 
 function renderMixedItems(
   app: App,
   container: HTMLElement,
-  items: import('./types').CustomModalItem[],
+  items: CustomModalItem[],
   settings: EmbedSettings,
   fm: Record<string, unknown>,
-  dailyNote: TFile | null
+  targetNote: TFile | null
 ): void {
   let i = 0;
 
@@ -184,6 +229,10 @@ function renderMixedItems(
       const chevronSpan = sectionHeader.createSpan({ cls: 'vital-log-embed-section-chevron' });
       setIcon(chevronSpan, 'chevron-down');
       sectionHeader.createSpan({ cls: 'vital-log-embed-section-title', text: item.title });
+      if (item.color) {
+        sectionEl.style.setProperty('--vl-section-color', item.color);
+        sectionEl.addClass('vital-log-embed-section-group--colored');
+      }
       const sectionBody = sectionEl.createDiv('vital-log-embed-section-body');
 
       if (!item.defaultOpen) {
@@ -204,7 +253,7 @@ function renderMixedItems(
         i++;
       }
       if (i < items.length && items[i].type === 'section-end') i++;
-      renderMixedItems(app, sectionBody, sectionItems, settings, fm, dailyNote);
+      renderMixedItems(app, sectionBody, sectionItems, settings, fm, targetNote);
 
     } else if (item.type === 'header') {
       container.createEl('p', { cls: 'vital-log-embed-item-header', text: item.text });
@@ -241,16 +290,16 @@ function renderMixedItems(
             typeof raw === 'object' && raw !== null && 'value' in raw
               ? ((raw as Record<string, unknown>)['value'] as number) ?? 0
               : 0;
-          renderTallyRow(app, groupEl, config, currentValue, dailyNote);
+          renderTallyRow(app, groupEl, config, currentValue, targetNote);
         } else if (runItem.type === 'button') {
           renderButtonRow(app, groupEl, runItem.button, 'tally-grid');
         } else if (runItem.type === 'field') {
-          renderCheckboxAsGridItem(groupEl, runItem.field, fm[runItem.field.propertyKey], dailyNote, app);
+          renderCheckboxAsGridItem(groupEl, runItem.field, fm[runItem.field.propertyKey], targetNote, app);
         }
       }
 
     } else if (item.type === 'field') {
-      renderFieldRow(app, container, item.field, fm[item.field.propertyKey], dailyNote);
+      renderFieldRow(app, container, item.field, fm[item.field.propertyKey], targetNote);
       i++;
 
     } else {
@@ -314,7 +363,7 @@ function renderTallyRow(
   container: HTMLElement,
   config: TallyCounterConfig,
   initialValue: number,
-  dailyNote: TFile | null
+  targetNote: TFile | null
 ): void {
   const row = container.createDiv('vital-log-embed-tally-row');
   if (initialValue >= config.target) row.addClass('is-complete');
@@ -353,9 +402,9 @@ function renderTallyRow(
   const handleStep = async (delta: number) => {
     value = Math.max(0, value + delta);
     refresh();
-    if (dailyNote) {
+    if (targetNote) {
       try {
-        await tally.updateTallyValue(app, dailyNote, config, value);
+        await tally.updateTallyValue(app, targetNote, config, value);
       } catch (err) {
         console.error('Vital Log embed:', err);
       }
@@ -373,15 +422,15 @@ function renderFieldRow(
   container: HTMLElement,
   field: CustomField,
   initialValue: unknown,
-  dailyNote: TFile | null
+  targetNote: TFile | null
 ): void {
   const row = container.createDiv('vital-log-embed-field-row');
   row.createDiv({ cls: 'vital-log-embed-field-label', text: field.displayName });
 
   const persist = async (value: unknown) => {
-    if (!dailyNote) return;
+    if (!targetNote) return;
     try {
-      await yaml.setProperties(app, dailyNote, { [field.propertyKey]: value ?? null });
+      await yaml.setProperties(app, targetNote, { [field.propertyKey]: value ?? null });
     } catch (err) {
       console.error('Vital Log embed field:', err);
     }
@@ -394,7 +443,7 @@ function renderCheckboxAsGridItem(
   container: HTMLElement,
   field: CustomField,
   initialValue: unknown,
-  dailyNote: TFile | null,
+  targetNote: TFile | null,
   app: App
 ): void {
   const row = container.createDiv('vital-log-embed-tally-row');
@@ -404,8 +453,8 @@ function renderCheckboxAsGridItem(
   checkEl.addClass('vital-log-embed-field-checkbox');
   checkEl.checked = initialValue === true;
   checkEl.addEventListener('change', () => {
-    if (!dailyNote) return;
-    void yaml.setProperties(app, dailyNote, { [field.propertyKey]: checkEl.checked }).catch(
+    if (!targetNote) return;
+    void yaml.setProperties(app, targetNote, { [field.propertyKey]: checkEl.checked }).catch(
       (err) => console.error('Vital Log embed checkbox grid:', err)
     );
   });
@@ -415,7 +464,7 @@ function renderCheckboxGroupItem(
   container: HTMLElement,
   field: CustomField,
   initialValue: unknown,
-  dailyNote: TFile | null,
+  targetNote: TFile | null,
   app: App
 ): void {
   const item = container.createDiv('vital-log-embed-checkbox-item');
@@ -424,8 +473,8 @@ function renderCheckboxGroupItem(
   checkbox.checked = initialValue === true;
   item.createSpan({ cls: 'vital-log-embed-checkbox-item-label', text: field.displayName });
   checkbox.addEventListener('change', () => {
-    if (!dailyNote) return;
-    void yaml.setProperties(app, dailyNote, { [field.propertyKey]: checkbox.checked }).catch(
+    if (!targetNote) return;
+    void yaml.setProperties(app, targetNote, { [field.propertyKey]: checkbox.checked }).catch(
       (err) => console.error('Vital Log embed checkbox:', err)
     );
   });
@@ -524,6 +573,10 @@ function renderEmbedFieldInput(
       const select = container.createEl('select');
       select.addClass('vital-log-embed-field-input');
       select.createEl('option', { value: '', text: '— Select —' });
+      const currentStr = typeof value === 'string' ? value : null;
+      if (currentStr && !(field.options ?? []).includes(currentStr)) {
+        select.createEl('option', { value: currentStr, text: currentStr }).selected = true;
+      }
       for (const opt of field.options ?? []) {
         const optEl = select.createEl('option', { value: opt, text: opt });
         if (value === opt) optEl.selected = true;

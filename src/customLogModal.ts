@@ -8,6 +8,7 @@ import { App, Modal, Notice, TFile, setIcon } from 'obsidian';
 import type {
   VitalLogSettings,
   CustomModalConfig,
+  CustomModalItem,
   CustomField,
   TallyCounterConfig,
   CustomButtonConfig,
@@ -38,6 +39,9 @@ export class CustomLogModal extends Modal {
   private appendTallies: boolean = false;
   private tallyNotesSaved = false;
 
+  // Mirror mode: items visible after frontmatter filtering
+  private visibleItems: CustomModalItem[] = [];
+
   constructor(
     app: App,
     settings: VitalLogSettings,
@@ -61,12 +65,36 @@ export class CustomLogModal extends Modal {
   onClose(): void {
     // Save any unsaved tally notes (fire-and-forget safety net)
     if (!this.tallyNotesSaved) {
-      const file = getNoteIfExists(this.app, this.config.notePath, this.selectedDate);
+      const file = this.getTargetFile();
       if (file) {
         void this.persistTallyNotes(file);
       }
     }
     this.contentEl.empty();
+  }
+
+  private get isCurrentNoteMode(): boolean {
+    return !this.config.notePath.trim();
+  }
+
+  // Returns the existing target file without creating it.
+  // In current-note mode: the active editor file.
+  // Otherwise: the path-template–resolved file for the selected date.
+  private getTargetFile(): TFile | null {
+    if (this.isCurrentNoteMode) {
+      return this.app.workspace.getActiveFile();
+    }
+    return getNoteIfExists(this.app, this.config.notePath, this.selectedDate);
+  }
+
+  // Resolves (and creates if needed) the target file for saving.
+  private async resolveTargetFile(): Promise<TFile | null> {
+    if (this.isCurrentNoteMode) {
+      const file = this.app.workspace.getActiveFile();
+      if (!file) new Notice('Vital Log: No note is currently open.');
+      return file;
+    }
+    return resolveNote(this.app, this.config.notePath, this.selectedDate);
   }
 
   // ── Load frontmatter values then render ───────────────────
@@ -76,9 +104,11 @@ export class CustomLogModal extends Modal {
     this.tallyNotesSaved = false;
     this.render();
 
-    const file = getNoteIfExists(this.app, this.config.notePath, this.selectedDate);
+    const file = this.getTargetFile();
+    let fm: Record<string, unknown> = {};
+
     if (file) {
-      const fm = await yaml.readAllFrontmatter(this.app, file);
+      fm = await yaml.readAllFrontmatter(this.app, file);
 
       // Load custom field values
       for (const item of this.config.items) {
@@ -113,8 +143,31 @@ export class CustomLogModal extends Modal {
       }
     }
 
+    this.visibleItems = this.computeVisibleItems(fm);
     this.loading = false;
     this.render();
+  }
+
+  private computeVisibleItems(fm: Record<string, unknown>): CustomModalItem[] {
+    if (!this.config.mirrorMode) return this.config.items;
+
+    const pinnedIds = this.config.mirrorModePinnedIds ?? [];
+
+    return this.config.items.filter((item) => {
+      if (item.type === 'field') {
+        const val = fm[item.field.propertyKey];
+        return (val !== undefined && val !== null) || pinnedIds.includes(item.field.id);
+      }
+      if (item.type === 'tally') {
+        const tallyConfig = this.settings.tallyCounters.find((t) => t.id === item.tallyCounterId);
+        if (!tallyConfig) return false;
+        const val = fm[tallyConfig.propertyKey];
+        return (val !== undefined && val !== null) || pinnedIds.includes(item.tallyCounterId);
+      }
+      if (item.type === 'button') return true;
+      // Structural items (header, divider, section, section-end) are skipped in mirror mode
+      return false;
+    });
   }
 
   // ── Render ────────────────────────────────────────────────
@@ -127,36 +180,50 @@ export class CustomLogModal extends Modal {
     // Header
     const header = contentEl.createDiv('vital-log-modal-header');
     header.createEl('h2', { text: this.config.displayName });
+    if (this.config.mirrorMode) {
+      header.createEl('span', { cls: 'vital-log-mirror-badge', text: 'Mirror' });
+    }
 
     if (this.loading) {
       contentEl.createDiv({ cls: 'vital-log-no-data', text: 'Loading...' });
       return;
     }
 
-    // Date picker
+    // Date picker (hidden in current-note mode)
     const dateSection = contentEl.createDiv('vital-log-custom-date-row');
-    dateSection.createEl('label', { text: 'Date' });
-    const dateInput = dateSection.createEl('input', {
-      type: 'date',
-      value: moment(this.selectedDate).format('YYYY-MM-DD'),
-    });
-    dateInput.addEventListener('change', () => {
-      const parsed = new Date(dateInput.value + 'T12:00:00');
-      if (!isNaN(parsed.getTime())) {
-        this.selectedDate = parsed;
-        this.loadAndRender();
+    if (this.isCurrentNoteMode) {
+      const activeFile = this.app.workspace.getActiveFile();
+      const statusEl = dateSection.createDiv({ cls: 'vital-log-note-status' });
+      if (activeFile) {
+        statusEl.setText(activeFile.basename);
+        statusEl.addClass('vital-log-note-status--exists');
+      } else {
+        statusEl.setText('No note open');
+        statusEl.addClass('vital-log-note-status--new');
       }
-    });
-
-    // Note status indicator
-    const noteExists = getNoteIfExists(this.app, this.config.notePath, this.selectedDate);
-    const statusEl = dateSection.createDiv({ cls: 'vital-log-note-status' });
-    if (noteExists) {
-      statusEl.setText('Note exists');
-      statusEl.addClass('vital-log-note-status--exists');
     } else {
-      statusEl.setText('New note will be created');
-      statusEl.addClass('vital-log-note-status--new');
+      dateSection.createEl('label', { text: 'Date' });
+      const dateInput = dateSection.createEl('input', {
+        type: 'date',
+        value: moment(this.selectedDate).format('YYYY-MM-DD'),
+      });
+      dateInput.addEventListener('change', () => {
+        const parsed = new Date(dateInput.value + 'T12:00:00');
+        if (!isNaN(parsed.getTime())) {
+          this.selectedDate = parsed;
+          this.loadAndRender();
+        }
+      });
+
+      const noteExists = getNoteIfExists(this.app, this.config.notePath, this.selectedDate);
+      const statusEl = dateSection.createDiv({ cls: 'vital-log-note-status' });
+      if (noteExists) {
+        statusEl.setText('Note exists');
+        statusEl.addClass('vital-log-note-status--exists');
+      } else {
+        statusEl.setText('New note will be created');
+        statusEl.addClass('vital-log-note-status--new');
+      }
     }
 
     if (this.config.items.length === 0) {
@@ -167,21 +234,33 @@ export class CustomLogModal extends Modal {
       return;
     }
 
+    if (this.visibleItems.length === 0 && this.config.mirrorMode) {
+      contentEl.createDiv({
+        cls: 'vital-log-no-data',
+        text: 'No matching properties found in this note. Pin fields in modal settings to always show them.',
+      });
+      return;
+    }
+
     // Items (fields, tally counters, buttons, headers, dividers, sections)
-    const hasTallies = this.config.items.some(
+    const hasTallies = this.visibleItems.some(
       (item) => item.type === 'tally' && this.settings.tallyCounters.some((t) => t.id === item.tallyCounterId)
     );
 
     const fieldsContainer = contentEl.createDiv('vital-log-custom-fields');
     let currentContainer: HTMLElement = fieldsContainer;
 
-    for (const item of this.config.items) {
+    for (const item of this.visibleItems) {
       if (item.type === 'section') {
         const sectionEl = fieldsContainer.createDiv('vital-log-modal-section-group');
         const sectionHeader = sectionEl.createDiv('vital-log-modal-section-header');
         const chevronEl = sectionHeader.createSpan({ cls: 'vital-log-modal-section-chevron' });
         setIcon(chevronEl, 'chevron-down');
         sectionHeader.createSpan({ cls: 'vital-log-modal-section-title', text: item.title });
+        if (item.color) {
+          sectionEl.style.setProperty('--vl-section-color', item.color);
+          sectionEl.addClass('vital-log-modal-section-group--colored');
+        }
         const sectionBody = sectionEl.createDiv('vital-log-modal-section-body');
         if (!item.defaultOpen) {
           sectionEl.addClass('vital-log-modal-section-group--collapsed');
@@ -282,7 +361,7 @@ export class CustomLogModal extends Modal {
       updateValueDisplay(next);
       // Write value immediately to frontmatter
       try {
-        const file = await resolveNote(this.app, this.config.notePath, this.selectedDate);
+        const file = await this.resolveTargetFile();
         if (file) {
           await tally.updateTallyValue(this.app, file, config, next);
         }
@@ -601,14 +680,13 @@ export class CustomLogModal extends Modal {
 
   private async doSave(): Promise<void> {
     try {
-      let file = getNoteIfExists(this.app, this.config.notePath, this.selectedDate);
+      let file = this.getTargetFile();
       const isNewNote = !file;
 
       if (!file) {
-        file = await resolveNote(this.app, this.config.notePath, this.selectedDate);
+        file = await this.resolveTargetFile();
         if (!file) {
-          new Notice('Vital Log: Could not create note.');
-          return;
+          return; // resolveTargetFile already showed a Notice
         }
 
         if (isNewNote && this.config.useTemplater && this.config.templatePath) {
@@ -618,7 +696,7 @@ export class CustomLogModal extends Modal {
 
       // Save custom field values
       const properties: Record<string, unknown> = {};
-      for (const item of this.config.items) {
+      for (const item of this.visibleItems) {
         if (item.type !== 'field') continue;
         const val = this.fieldValues.get(item.field.id);
         if (val !== undefined) {
@@ -641,7 +719,7 @@ export class CustomLogModal extends Modal {
         const dailyNoteBasename = dailyNotePath.split('/').pop() ?? dailyNotePath;
         const timeStr = moment().format('HH:mm');
 
-        for (const item of this.config.items) {
+        for (const item of this.visibleItems) {
           if (item.type !== 'tally') continue;
           const config = this.settings.tallyCounters.find((t) => t.id === item.tallyCounterId);
           if (!config) continue;
@@ -686,7 +764,7 @@ export class CustomLogModal extends Modal {
   }
 
   private async persistTallyNotes(file: TFile): Promise<void> {
-    for (const item of this.config.items) {
+    for (const item of this.visibleItems) {
       if (item.type !== 'tally') continue;
       const config = this.settings.tallyCounters.find((t) => t.id === item.tallyCounterId);
       if (!config) continue;

@@ -941,6 +941,16 @@ class CustomModalEditorModal extends Modal {
       templatePathRow.style.display = templaterCheckbox.checked ? '' : 'none';
     });
 
+    // ── Mirror Mode ──
+    const mirrorRow = metaSection.createDiv('vital-log-form-row');
+    mirrorRow.createEl('label', { text: 'Mirror Mode' });
+    const mirrorCheckbox = mirrorRow.createEl('input', { type: 'checkbox' });
+    mirrorCheckbox.checked = this.modal.mirrorMode ?? false;
+    mirrorRow.createEl('span', {
+      cls: 'vital-log-form-hint',
+      text: 'Only show properties that already exist in the note. Pin fields below to always show them.',
+    });
+
     // ── Fields section ──
     const fieldsSection = contentEl.createDiv('vital-log-editor-section');
     fieldsSection.createEl('h3', { text: 'Fields' });
@@ -963,6 +973,7 @@ class CustomModalEditorModal extends Modal {
       this.modal.notePath = pathInput.value.trim();
       this.modal.useTemplater = templaterCheckbox.checked;
       this.modal.templatePath = templatePathInput.value.trim();
+      this.modal.mirrorMode = mirrorCheckbox.checked;
 
       if (this.isEdit) {
         const idx = this.plugin.settings.customModals.findIndex((m) => m.id === this.modal.id);
@@ -1080,7 +1091,31 @@ class CustomModalEditorModal extends Modal {
       } else if (item.type === 'section') {
         const editBtn = actions.createEl('button', { text: 'Edit', cls: 'vital-log-btn' });
         editBtn.addEventListener('click', () => {
-          this.renderSectionForm(fieldListEl, item as { type: 'section'; title: string; defaultOpen: boolean }, true);
+          this.renderSectionForm(fieldListEl, item as { type: 'section'; title: string; defaultOpen: boolean; color?: string }, true);
+        });
+      }
+
+      // Pin button for field/tally items (controls mirror mode visibility)
+      if (item.type === 'field' || item.type === 'tally') {
+        const itemId = item.type === 'field' ? item.field.id : item.tallyCounterId;
+        if (!this.modal.mirrorModePinnedIds) this.modal.mirrorModePinnedIds = [];
+        const isPinned = this.modal.mirrorModePinnedIds.includes(itemId);
+
+        const pinBtn = actions.createEl('button', {
+          cls: `vital-log-btn vital-log-pin-btn${isPinned ? ' is-pinned' : ''}`,
+          title: isPinned ? 'Unpin (remove always-show in Mirror Mode)' : 'Pin (always show in Mirror Mode)',
+        });
+        setIcon(pinBtn, 'pin');
+
+        pinBtn.addEventListener('click', () => {
+          if (!this.modal.mirrorModePinnedIds) this.modal.mirrorModePinnedIds = [];
+          const idx = this.modal.mirrorModePinnedIds.indexOf(itemId);
+          if (idx >= 0) {
+            this.modal.mirrorModePinnedIds.splice(idx, 1);
+          } else {
+            this.modal.mirrorModePinnedIds.push(itemId);
+          }
+          this.renderFieldList(fieldListEl);
         });
       }
 
@@ -1297,7 +1332,7 @@ class CustomModalEditorModal extends Modal {
 
   private renderSectionForm(
     fieldListEl: HTMLElement,
-    item: { type: 'section'; title: string; defaultOpen: boolean },
+    item: { type: 'section'; title: string; defaultOpen: boolean; color?: string },
     isEdit: boolean
   ): void {
     const form = fieldListEl.createDiv('vital-log-inline-form');
@@ -1316,6 +1351,23 @@ class CustomModalEditorModal extends Modal {
     const openCheckbox = openRow.createEl('input', { type: 'checkbox' });
     openCheckbox.checked = item.defaultOpen;
 
+    const colorRow = form.createDiv('vital-log-form-row');
+    colorRow.createEl('label', { text: 'Accent color' });
+    const colorInput = colorRow.createEl('input', { type: 'color' });
+    colorInput.addClass('vital-log-color-input');
+    colorInput.value = item.color ?? '#7c6cfc';
+    const clearColorBtn = colorRow.createEl('button', { text: 'None', cls: 'vital-log-btn' });
+    let useColor = !!item.color;
+    colorInput.style.opacity = useColor ? '1' : '0.4';
+    clearColorBtn.addEventListener('click', () => {
+      useColor = false;
+      colorInput.style.opacity = '0.4';
+    });
+    colorInput.addEventListener('input', () => {
+      useColor = true;
+      colorInput.style.opacity = '1';
+    });
+
     const actions = form.createDiv('vital-log-inline-form-actions');
     actions.createEl('button', { text: 'Cancel', cls: 'vital-log-btn' })
       .addEventListener('click', () => form.remove());
@@ -1324,11 +1376,13 @@ class CustomModalEditorModal extends Modal {
       .addEventListener('click', () => {
         const title = titleInput.value.trim();
         if (!title) return;
+        const color = useColor ? colorInput.value : undefined;
         if (!isEdit) {
-          this.modal.items.push({ type: 'section', title, defaultOpen: openCheckbox.checked });
+          this.modal.items.push({ type: 'section', title, defaultOpen: openCheckbox.checked, color });
         } else {
           item.title = title;
           item.defaultOpen = openCheckbox.checked;
+          item.color = color;
         }
         form.remove();
         this.renderFieldList(fieldListEl);

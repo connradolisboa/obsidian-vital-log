@@ -68,12 +68,27 @@
   font-weight: 500;
 }
 
-.vital-log-form-row input,
+.vital-log-form-row input:not([type="checkbox"]),
 .vital-log-form-row select {
   width: 100%;
   min-height: 40px;
   box-sizing: border-box;
   font-size: 1rem;            /* prevents iOS zoom on focus */
+}
+
+/* Checkbox rows always lay out horizontally with natural-size checkbox */
+.vital-log-form-row:has(input[type="checkbox"]) {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.vital-log-form-row input[type="checkbox"] {
+  width: var(--checkbox-size, 1rem);
+  height: var(--checkbox-size, 1rem);
+  min-height: unset;
+  flex-shrink: 0;
+  cursor: pointer;
 }
 
 @media (min-width: 480px) {
@@ -86,7 +101,7 @@
     min-width: 130px;
     flex-shrink: 0;
   }
-  .vital-log-form-row input,
+  .vital-log-form-row input:not([type="checkbox"]),
   .vital-log-form-row select {
     flex: 1;
     width: auto;
@@ -481,12 +496,45 @@
 .vital-log-modal-header {
   display: flex;
   align-items: center;
+  gap: 0.5rem;
   justify-content: space-between;
   margin-bottom: 0.25rem;
 }
 
 .vital-log-modal-header h2 {
   margin: 0;
+}
+
+.vital-log-mirror-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  flex-shrink: 0;
+}
+
+.vital-log-pin-btn {
+  padding: 0.2rem 0.4rem;
+  opacity: 0.4;
+}
+
+.vital-log-pin-btn:hover {
+  opacity: 0.8;
+}
+
+.vital-log-pin-btn.is-pinned {
+  opacity: 1;
+  color: var(--interactive-accent);
+}
+
+.vital-log-form-hint {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-left: 0.5rem;
 }
 
 .vital-log-switch-btn {
@@ -2009,4 +2057,104 @@
 
 .vital-log-embed-section--collapsed .vital-log-embed-section-body {
   display: none;
+}
+
+/* ── Section color accents ── */
+
+.vital-log-modal-section-group--colored .vital-log-modal-section-header {
+  border-left: 3px solid var(--vl-section-color);
+}
+
+.vital-log-embed-section-group--colored .vital-log-embed-section-header {
+  border-left: 3px solid var(--vl-section-color);
+}
+
+/* ── Color picker in section form ── */
+
+.vital-log-color-input {
+  width: 36px;
+  height: 28px;
+  padding: 2px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  cursor: pointer;
+  background: none;
+}
+
+/* ── Inline tally and counter widgets ── */
+
+.vital-log-inline-tally,
+.vital-log-inline-counter {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  padding: 1px 5px;
+  font-size: var(--font-ui-small);
+  vertical-align: middle;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.vital-log-inline-tally.is-complete {
+  border-color: var(--color-green);
+  background: rgba(var(--color-green-rgb, 68, 168, 106), 0.08);
+}
+
+.vital-log-inline-error {
+  color: var(--text-error);
+}
+
+.vital-log-inline-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-muted);
+}
+
+.vital-log-inline-icon svg {
+  width: 11px;
+  height: 11px;
+}
+
+.vital-log-inline-name {
+  font-weight: 600;
+  color: var(--text-normal);
+}
+
+.vital-log-inline-value {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  min-width: 24px;
+  text-align: center;
+}
+
+.vital-log-inline-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0 2px;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--text-muted);
+  border-radius: 2px;
+  min-width: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.1s, color 0.1s;
+}
+
+.vital-log-inline-btn:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.vital-log-inline-btn--inc {
+  color: var(--color-green, #44a86a);
+}
+
+.vital-log-inline-btn--dec {
+  color: var(--text-faint);
 }
