@@ -206,6 +206,8 @@ export class CustomLogModal extends Modal {
         }
       } else if (item.type === 'button') {
         this.renderButton(currentContainer, item.button);
+      } else if (item.type === 'section-end') {
+        currentContainer = fieldsContainer;
       }
     }
 

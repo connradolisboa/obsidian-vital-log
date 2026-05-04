@@ -118,7 +118,7 @@ async function renderEmbed(
 
   const bodyEl = container.createDiv('vital-log-embed-body');
   const hasStructure = modalConfig.items.some(
-    (i) => i.type === 'field' || i.type === 'header' || i.type === 'divider' || i.type === 'section'
+    (i) => i.type === 'field' || i.type === 'header' || i.type === 'divider' || i.type === 'section' || i.type === 'section-end'
   );
 
   if (!hasStructure) {
@@ -199,10 +199,11 @@ function renderMixedItems(
 
       i++;
       const sectionItems: typeof items = [];
-      while (i < items.length && items[i].type !== 'section') {
+      while (i < items.length && items[i].type !== 'section' && items[i].type !== 'section-end') {
         sectionItems.push(items[i]);
         i++;
       }
+      if (i < items.length && items[i].type === 'section-end') i++;
       renderMixedItems(app, sectionBody, sectionItems, settings, fm, dailyNote);
 
     } else if (item.type === 'header') {

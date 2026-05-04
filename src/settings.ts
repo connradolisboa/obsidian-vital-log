@@ -323,9 +323,13 @@ export class VitalLogSettingTab extends PluginSettingTab {
     });
 
     const trackerList = el.createDiv('vital-log-item-list');
+    let trackerDragIdx = -1;
     for (let i = 0; i < this.plugin.settings.trackers.length; i++) {
       const tracker = this.plugin.settings.trackers[i];
       const row = trackerList.createDiv('vital-log-item-row');
+      row.draggable = true;
+      const handle = row.createDiv({ cls: 'vital-log-drag-handle' });
+      setIcon(handle, 'grip-vertical');
       const info = row.createDiv('vital-log-item-info');
       const trackerNameEl = info.createDiv({ cls: 'vital-log-item-name' });
       if (tracker.icon) {
@@ -339,24 +343,33 @@ export class VitalLogSettingTab extends PluginSettingTab {
       });
       const actions = row.createDiv('vital-log-item-actions');
 
-      if (i > 0) {
-        const upBtn = actions.createEl('button', { text: '\u2191', cls: 'vital-log-btn' });
-        upBtn.addEventListener('click', async () => {
-          const trackers = this.plugin.settings.trackers;
-          [trackers[i - 1], trackers[i]] = [trackers[i], trackers[i - 1]];
+      row.addEventListener('dragstart', (e) => {
+        trackerDragIdx = i;
+        row.classList.add('is-dragging');
+        e.dataTransfer!.effectAllowed = 'move';
+      });
+      row.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        if (trackerDragIdx !== i) row.classList.add('drag-over');
+      });
+      row.addEventListener('dragleave', () => row.classList.remove('drag-over'));
+      row.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        row.classList.remove('drag-over');
+        if (trackerDragIdx !== -1 && trackerDragIdx !== i) {
+          const arr = this.plugin.settings.trackers;
+          const [moved] = arr.splice(trackerDragIdx, 1);
+          arr.splice(i, 0, moved);
+          trackerDragIdx = -1;
           await this.plugin.saveSettings();
           this.display();
-        });
-      }
-      if (i < this.plugin.settings.trackers.length - 1) {
-        const downBtn = actions.createEl('button', { text: '\u2193', cls: 'vital-log-btn' });
-        downBtn.addEventListener('click', async () => {
-          const trackers = this.plugin.settings.trackers;
-          [trackers[i], trackers[i + 1]] = [trackers[i + 1], trackers[i]];
-          await this.plugin.saveSettings();
-          this.display();
-        });
-      }
+        }
+      });
+      row.addEventListener('dragend', () => {
+        row.classList.remove('is-dragging');
+        trackerList.querySelectorAll('.drag-over').forEach((el) => el.classList.remove('drag-over'));
+        trackerDragIdx = -1;
+      });
 
       const editBtn = actions.createEl('button', { text: 'Edit', cls: 'vital-log-btn' });
       editBtn.addEventListener('click', () => {
@@ -395,9 +408,13 @@ export class VitalLogSettingTab extends PluginSettingTab {
     });
 
     const modalList = el.createDiv('vital-log-item-list');
+    let modalDragIdx = -1;
     for (let i = 0; i < this.plugin.settings.customModals.length; i++) {
       const modal = this.plugin.settings.customModals[i];
       const row = modalList.createDiv('vital-log-item-row');
+      row.draggable = true;
+      const handle = row.createDiv({ cls: 'vital-log-drag-handle' });
+      setIcon(handle, 'grip-vertical');
       const info = row.createDiv('vital-log-item-info');
       info.createDiv({ cls: 'vital-log-item-name', text: modal.displayName });
       info.createDiv({
@@ -406,24 +423,34 @@ export class VitalLogSettingTab extends PluginSettingTab {
       });
       const actions = row.createDiv('vital-log-item-actions');
 
-      if (i > 0) {
-        const upBtn = actions.createEl('button', { text: '\u2191', cls: 'vital-log-btn' });
-        upBtn.addEventListener('click', async () => {
-          const modals = this.plugin.settings.customModals;
-          [modals[i - 1], modals[i]] = [modals[i], modals[i - 1]];
+      row.addEventListener('dragstart', (e) => {
+        modalDragIdx = i;
+        row.classList.add('is-dragging');
+        e.dataTransfer!.effectAllowed = 'move';
+      });
+      row.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        if (modalDragIdx !== i) row.classList.add('drag-over');
+      });
+      row.addEventListener('dragleave', () => row.classList.remove('drag-over'));
+      row.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        row.classList.remove('drag-over');
+        if (modalDragIdx !== -1 && modalDragIdx !== i) {
+          const arr = this.plugin.settings.customModals;
+          const [moved] = arr.splice(modalDragIdx, 1);
+          arr.splice(i, 0, moved);
+          modalDragIdx = -1;
           await this.plugin.saveSettings();
+          this.plugin.registerCustomModalCommands();
           this.display();
-        });
-      }
-      if (i < this.plugin.settings.customModals.length - 1) {
-        const downBtn = actions.createEl('button', { text: '\u2193', cls: 'vital-log-btn' });
-        downBtn.addEventListener('click', async () => {
-          const modals = this.plugin.settings.customModals;
-          [modals[i], modals[i + 1]] = [modals[i + 1], modals[i]];
-          await this.plugin.saveSettings();
-          this.display();
-        });
-      }
+        }
+      });
+      row.addEventListener('dragend', () => {
+        row.classList.remove('is-dragging');
+        modalList.querySelectorAll('.drag-over').forEach((el) => el.classList.remove('drag-over'));
+        modalDragIdx = -1;
+      });
 
       const dupBtn = actions.createEl('button', { text: 'Duplicate', cls: 'vital-log-btn' });
       dupBtn.addEventListener('click', async () => {
@@ -484,10 +511,14 @@ export class VitalLogSettingTab extends PluginSettingTab {
 
     const tallyList = el.createDiv('vital-log-item-list');
     const tallies = this.plugin.settings.tallyCounters ?? [];
+    let tallyDragIdx = -1;
 
     for (let i = 0; i < tallies.length; i++) {
       const t = tallies[i];
       const row = tallyList.createDiv('vital-log-item-row');
+      row.draggable = true;
+      const handle = row.createDiv({ cls: 'vital-log-drag-handle' });
+      setIcon(handle, 'grip-vertical');
       const info = row.createDiv('vital-log-item-info');
       const nameEl = info.createDiv({ cls: 'vital-log-item-name' });
       if (t.icon) {
@@ -501,22 +532,32 @@ export class VitalLogSettingTab extends PluginSettingTab {
       });
       const actions = row.createDiv('vital-log-item-actions');
 
-      if (i > 0) {
-        const upBtn = actions.createEl('button', { text: '↑', cls: 'vital-log-btn' });
-        upBtn.addEventListener('click', async () => {
-          [tallies[i - 1], tallies[i]] = [tallies[i], tallies[i - 1]];
+      row.addEventListener('dragstart', (e) => {
+        tallyDragIdx = i;
+        row.classList.add('is-dragging');
+        e.dataTransfer!.effectAllowed = 'move';
+      });
+      row.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        if (tallyDragIdx !== i) row.classList.add('drag-over');
+      });
+      row.addEventListener('dragleave', () => row.classList.remove('drag-over'));
+      row.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        row.classList.remove('drag-over');
+        if (tallyDragIdx !== -1 && tallyDragIdx !== i) {
+          const [moved] = tallies.splice(tallyDragIdx, 1);
+          tallies.splice(i, 0, moved);
+          tallyDragIdx = -1;
           await this.plugin.saveSettings();
           this.display();
-        });
-      }
-      if (i < tallies.length - 1) {
-        const downBtn = actions.createEl('button', { text: '↓', cls: 'vital-log-btn' });
-        downBtn.addEventListener('click', async () => {
-          [tallies[i], tallies[i + 1]] = [tallies[i + 1], tallies[i]];
-          await this.plugin.saveSettings();
-          this.display();
-        });
-      }
+        }
+      });
+      row.addEventListener('dragend', () => {
+        row.classList.remove('is-dragging');
+        tallyList.querySelectorAll('.drag-over').forEach((el) => el.classList.remove('drag-over'));
+        tallyDragIdx = -1;
+      });
 
       const editBtn = actions.createEl('button', { text: 'Edit', cls: 'vital-log-btn' });
       editBtn.addEventListener('click', () => {
@@ -946,10 +987,14 @@ class CustomModalEditorModal extends Modal {
   private renderFieldList(fieldListEl: HTMLElement): void {
     fieldListEl.empty();
     const items = this.modal.items;
+    let fieldDragIdx = -1;
 
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
       const row = fieldListEl.createDiv('vital-log-item-row');
+      row.draggable = true;
+      const handle = row.createDiv({ cls: 'vital-log-drag-handle' });
+      setIcon(handle, 'grip-vertical');
       const info = row.createDiv('vital-log-item-info');
 
       if (item.type === 'field') {
@@ -984,24 +1029,38 @@ class CustomModalEditorModal extends Modal {
           cls: 'vital-log-item-meta',
           text: `section · ${item.defaultOpen ? 'open' : 'collapsed'} by default`,
         });
+      } else if (item.type === 'section-end') {
+        info.createDiv({ cls: 'vital-log-item-name', text: 'End section' });
+        info.createDiv({ cls: 'vital-log-item-meta', text: 'section end' });
       }
 
       const actions = row.createDiv('vital-log-item-actions');
 
-      if (i > 0) {
-        const upBtn = actions.createEl('button', { text: '\u2191', cls: 'vital-log-btn' });
-        upBtn.addEventListener('click', () => {
-          [items[i - 1], items[i]] = [items[i], items[i - 1]];
+      row.addEventListener('dragstart', (e) => {
+        fieldDragIdx = i;
+        row.classList.add('is-dragging');
+        e.dataTransfer!.effectAllowed = 'move';
+      });
+      row.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        if (fieldDragIdx !== i) row.classList.add('drag-over');
+      });
+      row.addEventListener('dragleave', () => row.classList.remove('drag-over'));
+      row.addEventListener('drop', (e) => {
+        e.preventDefault();
+        row.classList.remove('drag-over');
+        if (fieldDragIdx !== -1 && fieldDragIdx !== i) {
+          const [moved] = items.splice(fieldDragIdx, 1);
+          items.splice(i, 0, moved);
+          fieldDragIdx = -1;
           this.renderFieldList(fieldListEl);
-        });
-      }
-      if (i < items.length - 1) {
-        const downBtn = actions.createEl('button', { text: '\u2193', cls: 'vital-log-btn' });
-        downBtn.addEventListener('click', () => {
-          [items[i], items[i + 1]] = [items[i + 1], items[i]];
-          this.renderFieldList(fieldListEl);
-        });
-      }
+        }
+      });
+      row.addEventListener('dragend', () => {
+        row.classList.remove('is-dragging');
+        fieldListEl.querySelectorAll('.drag-over').forEach((el) => el.classList.remove('drag-over'));
+        fieldDragIdx = -1;
+      });
 
       if (item.type === 'field') {
         const editBtn = actions.createEl('button', { text: 'Edit', cls: 'vital-log-btn' });
@@ -1091,6 +1150,12 @@ class CustomModalEditorModal extends Modal {
     addSectionBtn.addEventListener('click', () => {
       this.renderSectionForm(fieldListEl, { type: 'section', title: '', defaultOpen: true }, false);
     });
+
+    addRow.createEl('button', { text: '+ End Section', cls: 'vital-log-btn' })
+      .addEventListener('click', () => {
+        this.modal.items.push({ type: 'section-end' });
+        this.renderFieldList(fieldListEl);
+      });
   }
 
   private renderTallyPickerForm(fieldListEl: HTMLElement, available: TallyCounterConfig[]): void {

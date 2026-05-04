@@ -208,7 +208,8 @@ export type CustomModalItem =
   | { type: 'button'; button: CustomButtonConfig }
   | { type: 'header'; text: string }
   | { type: 'divider' }
-  | { type: 'section'; title: string; defaultOpen: boolean };
+  | { type: 'section'; title: string; defaultOpen: boolean }
+  | { type: 'section-end' };
 
 export interface CustomModalConfig {
   id: string;
