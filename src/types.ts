@@ -205,7 +205,10 @@ export interface CustomButtonConfig {
 export type CustomModalItem =
   | { type: 'field'; field: CustomField }
   | { type: 'tally'; tallyCounterId: string }
-  | { type: 'button'; button: CustomButtonConfig };
+  | { type: 'button'; button: CustomButtonConfig }
+  | { type: 'header'; text: string }
+  | { type: 'divider' }
+  | { type: 'section'; title: string; defaultOpen: boolean };
 
 export interface CustomModalConfig {
   id: string;

@@ -99,7 +99,6 @@ async function renderEmbed(
         container.toggleClass('vital-log-embed--collapsed', !collapsed);
         chevronBtn.toggleClass('is-collapsed', !collapsed);
       };
-      chevronBtn.addEventListener('click', toggle);
       headerEl.addEventListener('click', (e) => {
         if ((e.target as HTMLElement).closest('.vital-log-embed-header-btn:not(.vital-log-embed-header-chevron)')) return;
         toggle();
@@ -118,9 +117,11 @@ async function renderEmbed(
   }
 
   const bodyEl = container.createDiv('vital-log-embed-body');
-  const hasFields = modalConfig.items.some((i) => i.type === 'field');
+  const hasStructure = modalConfig.items.some(
+    (i) => i.type === 'field' || i.type === 'header' || i.type === 'divider' || i.type === 'section'
+  );
 
-  if (!hasFields) {
+  if (!hasStructure) {
     // Pure-tally/button mode: preserve the 2-column grid layout
     const validItemCount = modalConfig.items.filter((item) => {
       if (item.type === 'tally') return settings.tallyCounters.some((t) => t.id === item.tallyCounterId);
@@ -150,61 +151,109 @@ async function renderEmbed(
     }
   } else {
     // Mixed mode: render items in configured order.
-    // Consecutive column-eligible items (tallies, buttons, checkboxes) are grouped
-    // into a shared 2-column grid. Regular fields render as full-width rows.
     const itemsEl = bodyEl.createDiv('vital-log-embed-items');
-    const items = modalConfig.items;
-    let i = 0;
+    renderMixedItems(app, itemsEl, modalConfig.items, settings, fm, dailyNote);
+  }
+}
 
-    const isColumnEligible = (it: typeof items[number]): boolean =>
-      it.type === 'tally' ||
-      it.type === 'button' ||
-      (it.type === 'field' && it.field.fieldType === 'checkbox');
+// ── Mixed-mode item renderer (supports sections, headers, dividers) ──
 
-    while (i < items.length) {
-      const item = items[i];
+type EmbedSettings = { tallyCounters: import('./types').TallyCounterConfig[] };
 
-      if (isColumnEligible(item)) {
-        // Collect the run of consecutive column-eligible items
-        const run: typeof items = [];
-        while (i < items.length && isColumnEligible(items[i])) {
-          run.push(items[i]);
-          i++;
-        }
+function renderMixedItems(
+  app: App,
+  container: HTMLElement,
+  items: import('./types').CustomModalItem[],
+  settings: EmbedSettings,
+  fm: Record<string, unknown>,
+  dailyNote: TFile | null
+): void {
+  let i = 0;
 
-        const validCount = run.filter((it) => {
-          if (it.type === 'tally') return settings.tallyCounters.some((c) => c.id === it.tallyCounterId);
-          return true;
-        }).length;
+  const isColumnEligible = (it: typeof items[number]): boolean =>
+    it.type === 'tally' ||
+    it.type === 'button' ||
+    (it.type === 'field' && it.field.fieldType === 'checkbox');
 
-        const groupCls =
-          validCount > 1
-            ? 'vital-log-embed-tallies vital-log-embed-tallies--multi'
-            : 'vital-log-embed-tallies';
-        const groupEl = itemsEl.createDiv(groupCls);
+  while (i < items.length) {
+    const item = items[i];
 
-        for (const runItem of run) {
-          if (runItem.type === 'tally') {
-            const config = settings.tallyCounters.find((c) => c.id === runItem.tallyCounterId);
-            if (!config) continue;
-            const raw = fm[config.propertyKey];
-            const currentValue =
-              typeof raw === 'object' && raw !== null && 'value' in raw
-                ? ((raw as Record<string, unknown>)['value'] as number) ?? 0
-                : 0;
-            renderTallyRow(app, groupEl, config, currentValue, dailyNote);
-          } else if (runItem.type === 'button') {
-            renderButtonRow(app, groupEl, runItem.button, 'tally-grid');
-          } else if (runItem.type === 'field') {
-            renderCheckboxAsGridItem(groupEl, runItem.field, fm[runItem.field.propertyKey], dailyNote, app);
-          }
-        }
-      } else if (item.type === 'field') {
-        renderFieldRow(app, itemsEl, item.field, fm[item.field.propertyKey], dailyNote);
-        i++;
-      } else {
+    if (item.type === 'section') {
+      const sectionEl = container.createDiv('vital-log-embed-section-group');
+      const sectionHeader = sectionEl.createDiv('vital-log-embed-section-header');
+      const chevronSpan = sectionHeader.createSpan({ cls: 'vital-log-embed-section-chevron' });
+      setIcon(chevronSpan, 'chevron-down');
+      sectionHeader.createSpan({ cls: 'vital-log-embed-section-title', text: item.title });
+      const sectionBody = sectionEl.createDiv('vital-log-embed-section-body');
+
+      if (!item.defaultOpen) {
+        sectionEl.addClass('vital-log-embed-section--collapsed');
+        chevronSpan.addClass('is-collapsed');
+      }
+
+      sectionHeader.addEventListener('click', () => {
+        const isCollapsed = sectionEl.hasClass('vital-log-embed-section--collapsed');
+        sectionEl.toggleClass('vital-log-embed-section--collapsed', !isCollapsed);
+        chevronSpan.toggleClass('is-collapsed', !isCollapsed);
+      });
+
+      i++;
+      const sectionItems: typeof items = [];
+      while (i < items.length && items[i].type !== 'section') {
+        sectionItems.push(items[i]);
         i++;
       }
+      renderMixedItems(app, sectionBody, sectionItems, settings, fm, dailyNote);
+
+    } else if (item.type === 'header') {
+      container.createEl('p', { cls: 'vital-log-embed-item-header', text: item.text });
+      i++;
+
+    } else if (item.type === 'divider') {
+      container.createEl('hr', { cls: 'vital-log-embed-divider' });
+      i++;
+
+    } else if (isColumnEligible(item)) {
+      const run: typeof items = [];
+      while (i < items.length && isColumnEligible(items[i])) {
+        run.push(items[i]);
+        i++;
+      }
+
+      const validCount = run.filter((it) => {
+        if (it.type === 'tally') return settings.tallyCounters.some((c) => c.id === it.tallyCounterId);
+        return true;
+      }).length;
+
+      const groupCls =
+        validCount > 1
+          ? 'vital-log-embed-tallies vital-log-embed-tallies--multi'
+          : 'vital-log-embed-tallies';
+      const groupEl = container.createDiv(groupCls);
+
+      for (const runItem of run) {
+        if (runItem.type === 'tally') {
+          const config = settings.tallyCounters.find((c) => c.id === runItem.tallyCounterId);
+          if (!config) continue;
+          const raw = fm[config.propertyKey];
+          const currentValue =
+            typeof raw === 'object' && raw !== null && 'value' in raw
+              ? ((raw as Record<string, unknown>)['value'] as number) ?? 0
+              : 0;
+          renderTallyRow(app, groupEl, config, currentValue, dailyNote);
+        } else if (runItem.type === 'button') {
+          renderButtonRow(app, groupEl, runItem.button, 'tally-grid');
+        } else if (runItem.type === 'field') {
+          renderCheckboxAsGridItem(groupEl, runItem.field, fm[runItem.field.propertyKey], dailyNote, app);
+        }
+      }
+
+    } else if (item.type === 'field') {
+      renderFieldRow(app, container, item.field, fm[item.field.propertyKey], dailyNote);
+      i++;
+
+    } else {
+      i++;
     }
   }
 }

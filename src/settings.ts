@@ -425,6 +425,17 @@ export class VitalLogSettingTab extends PluginSettingTab {
         });
       }
 
+      const dupBtn = actions.createEl('button', { text: 'Duplicate', cls: 'vital-log-btn' });
+      dupBtn.addEventListener('click', async () => {
+        const copy: import('./types').CustomModalConfig = JSON.parse(JSON.stringify(modal));
+        copy.id = crypto.randomUUID();
+        copy.displayName = `Copy of ${modal.displayName}`;
+        this.plugin.settings.customModals.splice(i + 1, 0, copy);
+        await this.plugin.saveSettings();
+        this.plugin.registerCustomModalCommands();
+        this.display();
+      });
+
       const editBtn = actions.createEl('button', { text: 'Edit', cls: 'vital-log-btn' });
       editBtn.addEventListener('click', () => {
         new CustomModalEditorModal(this.app, this.plugin, modal, true, () => this.display()).open();
@@ -961,6 +972,18 @@ class CustomModalEditorModal extends Modal {
           cls: 'vital-log-item-meta',
           text: `${item.button.buttonType} → ${item.button.target}`,
         });
+      } else if (item.type === 'header') {
+        info.createDiv({ cls: 'vital-log-item-name', text: item.text });
+        info.createDiv({ cls: 'vital-log-item-meta', text: 'header' });
+      } else if (item.type === 'divider') {
+        info.createDiv({ cls: 'vital-log-item-name', text: '—' });
+        info.createDiv({ cls: 'vital-log-item-meta', text: 'divider' });
+      } else if (item.type === 'section') {
+        info.createDiv({ cls: 'vital-log-item-name', text: item.title });
+        info.createDiv({
+          cls: 'vital-log-item-meta',
+          text: `section · ${item.defaultOpen ? 'open' : 'collapsed'} by default`,
+        });
       }
 
       const actions = row.createDiv('vital-log-item-actions');
@@ -989,6 +1012,16 @@ class CustomModalEditorModal extends Modal {
         const editBtn = actions.createEl('button', { text: 'Edit', cls: 'vital-log-btn' });
         editBtn.addEventListener('click', () => {
           this.renderButtonForm(fieldListEl, item.button, true);
+        });
+      } else if (item.type === 'header') {
+        const editBtn = actions.createEl('button', { text: 'Edit', cls: 'vital-log-btn' });
+        editBtn.addEventListener('click', () => {
+          this.renderHeaderForm(fieldListEl, item as { type: 'header'; text: string }, true);
+        });
+      } else if (item.type === 'section') {
+        const editBtn = actions.createEl('button', { text: 'Edit', cls: 'vital-log-btn' });
+        editBtn.addEventListener('click', () => {
+          this.renderSectionForm(fieldListEl, item as { type: 'section'; title: string; defaultOpen: boolean }, true);
         });
       }
 
@@ -1041,6 +1074,22 @@ class CustomModalEditorModal extends Modal {
         target: '',
       };
       this.renderButtonForm(fieldListEl, newButton, false);
+    });
+
+    const addHeaderBtn = addRow.createEl('button', { text: '+ Add Header', cls: 'vital-log-btn' });
+    addHeaderBtn.addEventListener('click', () => {
+      this.renderHeaderForm(fieldListEl, { type: 'header', text: '' }, false);
+    });
+
+    addRow.createEl('button', { text: '+ Add Divider', cls: 'vital-log-btn' })
+      .addEventListener('click', () => {
+        this.modal.items.push({ type: 'divider' });
+        this.renderFieldList(fieldListEl);
+      });
+
+    const addSectionBtn = addRow.createEl('button', { text: '+ Add Section', cls: 'vital-log-btn' });
+    addSectionBtn.addEventListener('click', () => {
+      this.renderSectionForm(fieldListEl, { type: 'section', title: '', defaultOpen: true }, false);
     });
   }
 
@@ -1145,6 +1194,80 @@ class CustomModalEditorModal extends Modal {
       form.remove();
       this.renderFieldList(fieldListEl);
     });
+  }
+
+  private renderHeaderForm(
+    fieldListEl: HTMLElement,
+    item: { type: 'header'; text: string },
+    isEdit: boolean
+  ): void {
+    const form = fieldListEl.createDiv('vital-log-inline-form');
+    form.createEl('h4', { text: isEdit ? 'Edit Header' : 'New Header' });
+
+    const textRow = form.createDiv('vital-log-form-row');
+    textRow.createEl('label', { text: 'Header Text' });
+    const textInput = textRow.createEl('input', {
+      type: 'text',
+      placeholder: 'e.g. Morning Routine',
+      value: item.text,
+    });
+
+    const actions = form.createDiv('vital-log-inline-form-actions');
+    actions.createEl('button', { text: 'Cancel', cls: 'vital-log-btn' })
+      .addEventListener('click', () => form.remove());
+
+    actions.createEl('button', { text: 'Save', cls: 'vital-log-btn mod-cta' })
+      .addEventListener('click', () => {
+        const text = textInput.value.trim();
+        if (!text) return;
+        if (!isEdit) {
+          this.modal.items.push({ type: 'header', text });
+        } else {
+          item.text = text;
+        }
+        form.remove();
+        this.renderFieldList(fieldListEl);
+      });
+  }
+
+  private renderSectionForm(
+    fieldListEl: HTMLElement,
+    item: { type: 'section'; title: string; defaultOpen: boolean },
+    isEdit: boolean
+  ): void {
+    const form = fieldListEl.createDiv('vital-log-inline-form');
+    form.createEl('h4', { text: isEdit ? 'Edit Section' : 'New Section' });
+
+    const titleRow = form.createDiv('vital-log-form-row');
+    titleRow.createEl('label', { text: 'Section Title' });
+    const titleInput = titleRow.createEl('input', {
+      type: 'text',
+      placeholder: 'e.g. Evening Check-in',
+      value: item.title,
+    });
+
+    const openRow = form.createDiv('vital-log-form-row');
+    openRow.createEl('label', { text: 'Expanded by default' });
+    const openCheckbox = openRow.createEl('input', { type: 'checkbox' });
+    openCheckbox.checked = item.defaultOpen;
+
+    const actions = form.createDiv('vital-log-inline-form-actions');
+    actions.createEl('button', { text: 'Cancel', cls: 'vital-log-btn' })
+      .addEventListener('click', () => form.remove());
+
+    actions.createEl('button', { text: 'Save', cls: 'vital-log-btn mod-cta' })
+      .addEventListener('click', () => {
+        const title = titleInput.value.trim();
+        if (!title) return;
+        if (!isEdit) {
+          this.modal.items.push({ type: 'section', title, defaultOpen: openCheckbox.checked });
+        } else {
+          item.title = title;
+          item.defaultOpen = openCheckbox.checked;
+        }
+        form.remove();
+        this.renderFieldList(fieldListEl);
+      });
   }
 
   private getFieldMeta(field: CustomField): string {

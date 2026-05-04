@@ -167,20 +167,45 @@ export class CustomLogModal extends Modal {
       return;
     }
 
-    // Items (fields, tally counters, and buttons, interleaved in configured order)
+    // Items (fields, tally counters, buttons, headers, dividers, sections)
+    const hasTallies = this.config.items.some(
+      (item) => item.type === 'tally' && this.settings.tallyCounters.some((t) => t.id === item.tallyCounterId)
+    );
+
     const fieldsContainer = contentEl.createDiv('vital-log-custom-fields');
-    let hasTallies = false;
+    let currentContainer: HTMLElement = fieldsContainer;
+
     for (const item of this.config.items) {
-      if (item.type === 'field') {
-        this.renderField(fieldsContainer, item.field);
+      if (item.type === 'section') {
+        const sectionEl = fieldsContainer.createDiv('vital-log-modal-section-group');
+        const sectionHeader = sectionEl.createDiv('vital-log-modal-section-header');
+        const chevronEl = sectionHeader.createSpan({ cls: 'vital-log-modal-section-chevron' });
+        setIcon(chevronEl, 'chevron-down');
+        sectionHeader.createSpan({ cls: 'vital-log-modal-section-title', text: item.title });
+        const sectionBody = sectionEl.createDiv('vital-log-modal-section-body');
+        if (!item.defaultOpen) {
+          sectionEl.addClass('vital-log-modal-section-group--collapsed');
+          chevronEl.addClass('is-collapsed');
+        }
+        sectionHeader.addEventListener('click', () => {
+          const isCollapsed = sectionEl.hasClass('vital-log-modal-section-group--collapsed');
+          sectionEl.toggleClass('vital-log-modal-section-group--collapsed', !isCollapsed);
+          chevronEl.toggleClass('is-collapsed', !isCollapsed);
+        });
+        currentContainer = sectionBody;
+      } else if (item.type === 'header') {
+        currentContainer.createEl('p', { cls: 'vital-log-modal-item-header', text: item.text });
+      } else if (item.type === 'divider') {
+        currentContainer.createEl('hr', { cls: 'vital-log-modal-item-divider' });
+      } else if (item.type === 'field') {
+        this.renderField(currentContainer, item.field);
       } else if (item.type === 'tally') {
         const config = this.settings.tallyCounters.find((t) => t.id === item.tallyCounterId);
         if (config) {
-          this.renderTallyCounter(fieldsContainer, config);
-          hasTallies = true;
+          this.renderTallyCounter(currentContainer, config);
         }
       } else if (item.type === 'button') {
-        this.renderButton(fieldsContainer, item.button);
+        this.renderButton(currentContainer, item.button);
       }
     }
 
