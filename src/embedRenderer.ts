@@ -90,6 +90,7 @@ async function renderEmbed(
     : {};
 
   const visibleItems = getMirrorFilteredItems(modalConfig, fm, settings);
+  const otherProps = getOtherProps(modalConfig, fm, settings);
 
   // ── Header (hidden in invisible mode) ─────────────────────
   if (!invisible) {
@@ -130,7 +131,7 @@ async function renderEmbed(
 
   const bodyEl = container.createDiv('vital-log-embed-body');
 
-  if (visibleItems.length === 0 && modalConfig.mirrorMode) {
+  if (visibleItems.length === 0 && modalConfig.mirrorMode && otherProps.length === 0) {
     bodyEl.createDiv({ cls: 'vital-log-embed-empty', text: 'No matching properties in this note.' });
     return;
   }
@@ -139,38 +140,45 @@ async function renderEmbed(
     (i) => i.type === 'field' || i.type === 'header' || i.type === 'divider' || i.type === 'section' || i.type === 'section-end'
   );
 
-  if (!hasStructure) {
-    // Pure-tally/button mode: preserve the 2-column grid layout
-    const validItemCount = visibleItems.filter((item) => {
-      if (item.type === 'tally') return settings.tallyCounters.some((t) => t.id === item.tallyCounterId);
-      if (item.type === 'button') return true;
-      return false;
-    }).length;
+  if (visibleItems.length > 0) {
+    if (!hasStructure) {
+      // Pure-tally/button mode: preserve the 2-column grid layout
+      const validItemCount = visibleItems.filter((item) => {
+        if (item.type === 'tally') return settings.tallyCounters.some((t) => t.id === item.tallyCounterId);
+        if (item.type === 'button') return true;
+        return false;
+      }).length;
 
-    const talliesCls =
-      validItemCount > 1
-        ? 'vital-log-embed-tallies vital-log-embed-tallies--multi'
-        : 'vital-log-embed-tallies';
-    const talliesEl = bodyEl.createDiv(talliesCls);
+      const talliesCls =
+        validItemCount > 1
+          ? 'vital-log-embed-tallies vital-log-embed-tallies--multi'
+          : 'vital-log-embed-tallies';
+      const talliesEl = bodyEl.createDiv(talliesCls);
 
-    for (const item of visibleItems) {
-      if (item.type === 'tally') {
-        const config = settings.tallyCounters.find((t) => t.id === item.tallyCounterId);
-        if (!config) continue;
-        const raw = fm[config.propertyKey];
-        const currentValue =
-          typeof raw === 'object' && raw !== null && 'value' in raw
-            ? ((raw as Record<string, unknown>)['value'] as number) ?? 0
-            : 0;
-        renderTallyRow(app, talliesEl, config, currentValue, targetNote);
-      } else if (item.type === 'button') {
-        renderButtonRow(app, talliesEl, item.button, 'tally-grid');
+      for (const item of visibleItems) {
+        if (item.type === 'tally') {
+          const config = settings.tallyCounters.find((t) => t.id === item.tallyCounterId);
+          if (!config) continue;
+          const raw = fm[config.propertyKey];
+          const currentValue =
+            typeof raw === 'object' && raw !== null && 'value' in raw
+              ? ((raw as Record<string, unknown>)['value'] as number) ?? 0
+              : 0;
+          renderTallyRow(app, talliesEl, config, currentValue, targetNote);
+        } else if (item.type === 'button') {
+          renderButtonRow(app, talliesEl, item.button, 'tally-grid');
+        }
       }
+    } else {
+      // Mixed mode: render items in configured order.
+      const itemsEl = bodyEl.createDiv('vital-log-embed-items');
+      renderMixedItems(app, itemsEl, visibleItems, settings, fm, targetNote);
     }
-  } else {
-    // Mixed mode: render items in configured order.
-    const itemsEl = bodyEl.createDiv('vital-log-embed-items');
-    renderMixedItems(app, itemsEl, visibleItems, settings, fm, targetNote);
+  }
+
+  // Other Properties: note frontmatter keys not covered by the modal
+  if (otherProps.length > 0) {
+    renderEmbedOtherPropsSection(app, bodyEl, otherProps, targetNote);
   }
 }
 
@@ -199,6 +207,108 @@ function getMirrorFilteredItems(
     if (item.type === 'button') return true;
     return false;
   });
+}
+
+// ── Other props: note frontmatter keys not covered by the modal ──────
+
+function getOtherProps(
+  modalConfig: CustomModalConfig,
+  fm: Record<string, unknown>,
+  settings: VitalLogSettings,
+): Array<{key: string; value: unknown}> {
+  if (!modalConfig.mirrorMode || !modalConfig.showOtherProperties) return [];
+
+  const excludedKeys = new Set(settings.mirrorExcludedKeys ?? []);
+  const coveredKeys = new Set<string>();
+  for (const item of modalConfig.items) {
+    if (item.type === 'field') {
+      coveredKeys.add((item.field as any).parentKey ?? item.field.propertyKey);
+    } else if (item.type === 'tally') {
+      const tc = settings.tallyCounters.find((t) => t.id === item.tallyCounterId);
+      if (tc) coveredKeys.add(tc.propertyKey);
+    }
+  }
+
+  return Object.entries(fm)
+    .filter(([key]) => !coveredKeys.has(key) && !excludedKeys.has(key))
+    .map(([key, value]) => ({ key, value }));
+}
+
+function renderEmbedOtherPropsSection(
+  app: App,
+  container: HTMLElement,
+  props: Array<{key: string; value: unknown}>,
+  targetNote: TFile | null,
+): void {
+  const sectionEl = container.createDiv('vital-log-embed-section-group');
+  sectionEl.addClass('vital-log-embed-section--collapsed');
+  const sectionHeader = sectionEl.createDiv('vital-log-embed-section-header');
+  const chevronSpan = sectionHeader.createSpan({ cls: 'vital-log-embed-section-chevron' });
+  chevronSpan.addClass('is-collapsed');
+  setIcon(chevronSpan, 'chevron-down');
+  sectionHeader.createSpan({ cls: 'vital-log-embed-section-title', text: 'Other Properties' });
+  const sectionBody = sectionEl.createDiv('vital-log-embed-section-body');
+
+  sectionHeader.addEventListener('click', () => {
+    const collapsed = sectionEl.hasClass('vital-log-embed-section--collapsed');
+    sectionEl.toggleClass('vital-log-embed-section--collapsed', !collapsed);
+    chevronSpan.toggleClass('is-collapsed', !collapsed);
+  });
+
+  for (const prop of props) {
+    const row = sectionBody.createDiv('vital-log-embed-field-row');
+    row.createDiv({ cls: 'vital-log-embed-field-label', text: prop.key });
+
+    const persist = async (value: unknown) => {
+      if (!targetNote) return;
+      try {
+        await import('./yamlManager').then((y) =>
+          y.setProperties(app, targetNote, { [prop.key]: value ?? null })
+        );
+      } catch (err) {
+        console.error('Vital Log embed other-prop:', err);
+      }
+    };
+
+    const value = prop.value;
+    if (value === null || value === undefined) {
+      const input = row.createEl('input', { type: 'text', value: '' });
+      input.addClass('vital-log-embed-field-input');
+      input.addEventListener('blur', () => void persist(input.value || null));
+    } else if (typeof value === 'boolean') {
+      const wrapper = row.createDiv('vital-log-embed-field-checkbox-row');
+      const cb = wrapper.createEl('input', { type: 'checkbox' });
+      cb.addClass('vital-log-embed-field-checkbox');
+      cb.checked = value;
+      cb.addEventListener('change', () => void persist(cb.checked));
+    } else if (typeof value === 'number') {
+      const input = row.createEl('input', { type: 'number', value: String(value) });
+      input.addClass('vital-log-embed-field-input');
+      input.addEventListener('blur', () =>
+        void persist(input.value !== '' ? parseFloat(input.value) : null)
+      );
+    } else if (Array.isArray(value)) {
+      const input = row.createEl('input', {
+        type: 'text',
+        value: value.map((v) => String(v)).join(', '),
+      });
+      input.addClass('vital-log-embed-field-input');
+      input.readOnly = true;
+      input.title = 'Array values are read-only';
+    } else if (typeof value === 'object') {
+      const input = row.createEl('input', { type: 'text', value: JSON.stringify(value) });
+      input.addClass('vital-log-embed-field-input');
+      input.readOnly = true;
+      input.title = 'Object values are read-only';
+    } else {
+      const input = row.createEl('input', {
+        type: 'text',
+        value: value !== null && value !== undefined ? String(value) : '',
+      });
+      input.addClass('vital-log-embed-field-input');
+      input.addEventListener('blur', () => void persist(input.value || null));
+    }
+  }
 }
 
 // ── Mixed-mode item renderer (supports sections, headers, dividers) ──

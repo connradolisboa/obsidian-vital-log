@@ -12,6 +12,7 @@ import type {
   CustomField,
   TallyCounterConfig,
   CustomButtonConfig,
+  MirrorConditionalPin,
 } from './types';
 import { resolveNote, getNoteIfExists, resolvePathTemplate } from './dailyNoteResolver';
 import * as yaml from './yamlManager';
@@ -41,6 +42,9 @@ export class CustomLogModal extends Modal {
 
   // Mirror mode: items visible after frontmatter filtering
   private visibleItems: CustomModalItem[] = [];
+  // Mirror mode: note frontmatter keys not covered by the modal, shown in "Other Properties"
+  private otherProps: Array<{key: string; value: unknown}> = [];
+  private otherPropValues: Map<string, unknown> = new Map();
 
   constructor(
     app: App,
@@ -114,7 +118,9 @@ export class CustomLogModal extends Modal {
       for (const item of this.config.items) {
         if (item.type !== 'field') continue;
         const field = item.field;
-        const val = fm[field.propertyKey];
+        const val = field.parentKey
+          ? (fm[field.parentKey] as Record<string, unknown> | undefined)?.[field.propertyKey]
+          : fm[field.propertyKey];
         if (val !== undefined && val !== null) {
           this.fieldValues.set(field.id, val);
         } else {
@@ -144,6 +150,11 @@ export class CustomLogModal extends Modal {
     }
 
     this.visibleItems = this.computeVisibleItems(fm);
+    this.otherProps = this.computeOtherProps(fm);
+    this.otherPropValues.clear();
+    for (const prop of this.otherProps) {
+      this.otherPropValues.set(prop.key, prop.value);
+    }
     this.loading = false;
     this.render();
   }
@@ -151,23 +162,79 @@ export class CustomLogModal extends Modal {
   private computeVisibleItems(fm: Record<string, unknown>): CustomModalItem[] {
     if (!this.config.mirrorMode) return this.config.items;
 
-    const pinnedIds = this.config.mirrorModePinnedIds ?? [];
+    const pinnedIds = new Set(this.config.mirrorModePinnedIds ?? []);
+
+    // Apply conditional pins based on the current note's tags / folder
+    for (const pin of this.config.mirrorModeConditionalPins ?? []) {
+      if (this.matchesConditionalPin(pin)) {
+        for (const id of pin.pinnedIds) pinnedIds.add(id);
+      }
+    }
 
     return this.config.items.filter((item) => {
       if (item.type === 'field') {
-        const val = fm[item.field.propertyKey];
-        return (val !== undefined && val !== null) || pinnedIds.includes(item.field.id);
+        const val = item.field.parentKey
+          ? (fm[item.field.parentKey] as Record<string, unknown> | undefined)?.[item.field.propertyKey]
+          : fm[item.field.propertyKey];
+        return (val !== undefined && val !== null) || pinnedIds.has(item.field.id);
       }
       if (item.type === 'tally') {
         const tallyConfig = this.settings.tallyCounters.find((t) => t.id === item.tallyCounterId);
         if (!tallyConfig) return false;
         const val = fm[tallyConfig.propertyKey];
-        return (val !== undefined && val !== null) || pinnedIds.includes(item.tallyCounterId);
+        return (val !== undefined && val !== null) || pinnedIds.has(item.tallyCounterId);
       }
       if (item.type === 'button') return true;
       // Structural items (header, divider, section, section-end) are skipped in mirror mode
       return false;
     });
+  }
+
+  private matchesConditionalPin(pin: MirrorConditionalPin): boolean {
+    const file = this.getTargetFile();
+    if (!file) return false;
+
+    if (pin.conditionType === 'tag') {
+      const cache = this.app.metadataCache.getFileCache(file);
+      const allTags: string[] = [];
+      const fmTags = cache?.frontmatter?.['tags'];
+      if (Array.isArray(fmTags)) {
+        allTags.push(...fmTags.map((t) => String(t)));
+      } else if (typeof fmTags === 'string') {
+        allTags.push(fmTags);
+      }
+      for (const t of cache?.tags ?? []) allTags.push(t.tag);
+      const needle = (pin.conditionValue.startsWith('#') ? pin.conditionValue : '#' + pin.conditionValue).toLowerCase();
+      return allTags.some((t) => (t.startsWith('#') ? t : '#' + t).toLowerCase() === needle);
+    }
+
+    if (pin.conditionType === 'folder') {
+      const folder = pin.conditionValue.endsWith('/') ? pin.conditionValue : pin.conditionValue + '/';
+      return file.path.startsWith(folder);
+    }
+
+    return false;
+  }
+
+  private computeOtherProps(fm: Record<string, unknown>): Array<{key: string; value: unknown}> {
+    if (!this.config.mirrorMode || !this.config.showOtherProperties) return [];
+
+    const excludedKeys = new Set(this.settings.mirrorExcludedKeys ?? []);
+
+    // Collect all frontmatter keys that the modal already covers
+    const coveredKeys = new Set<string>();
+    for (const item of this.config.items) {
+      if (item.type === 'field') {
+        coveredKeys.add(item.field.parentKey ?? item.field.propertyKey);
+      } else if (item.type === 'tally') {
+        const tc = this.settings.tallyCounters.find((t) => t.id === item.tallyCounterId);
+        if (tc) coveredKeys.add(tc.propertyKey);
+      }
+    }
+
+    return Object.entries(fm)
+      .filter(([key]) => !coveredKeys.has(key) && !excludedKeys.has(key))
+      .map(([key, value]) => ({ key, value }));
   }
 
   // ── Render ────────────────────────────────────────────────
@@ -234,7 +301,7 @@ export class CustomLogModal extends Modal {
       return;
     }
 
-    if (this.visibleItems.length === 0 && this.config.mirrorMode) {
+    if (this.visibleItems.length === 0 && this.config.mirrorMode && this.otherProps.length === 0) {
       contentEl.createDiv({
         cls: 'vital-log-no-data',
         text: 'No matching properties found in this note. Pin fields in modal settings to always show them.',
@@ -290,6 +357,11 @@ export class CustomLogModal extends Modal {
       }
     }
 
+    // Other Properties section: note frontmatter keys not covered by the modal
+    if (this.otherProps.length > 0) {
+      this.renderOtherPropertiesSection(fieldsContainer, this.otherProps);
+    }
+
     // Append-to-note checkbox for tallies
     if (hasTallies) {
       const appendRow = contentEl.createDiv('vital-log-append-row');
@@ -313,6 +385,78 @@ export class CustomLogModal extends Modal {
 
     const saveBtn = btnRow.createEl('button', { text: 'Save', cls: 'vital-log-btn mod-cta' });
     saveBtn.addEventListener('click', () => this.doSave());
+  }
+
+  // ── Other Properties section ─────────────────────────────
+
+  private renderOtherPropertiesSection(
+    container: HTMLElement,
+    props: Array<{key: string; value: unknown}>
+  ): void {
+    const sectionEl = container.createDiv('vital-log-modal-section-group');
+    sectionEl.addClass('vital-log-modal-section-group--collapsed');
+    const sectionHeader = sectionEl.createDiv('vital-log-modal-section-header');
+    const chevronEl = sectionHeader.createSpan({ cls: 'vital-log-modal-section-chevron' });
+    chevronEl.addClass('is-collapsed');
+    setIcon(chevronEl, 'chevron-down');
+    sectionHeader.createSpan({ cls: 'vital-log-modal-section-title', text: 'Other Properties' });
+    const sectionBody = sectionEl.createDiv('vital-log-modal-section-body');
+
+    sectionHeader.addEventListener('click', () => {
+      const collapsed = sectionEl.hasClass('vital-log-modal-section-group--collapsed');
+      sectionEl.toggleClass('vital-log-modal-section-group--collapsed', !collapsed);
+      chevronEl.toggleClass('is-collapsed', !collapsed);
+    });
+
+    for (const prop of props) {
+      const row = sectionBody.createDiv('vital-log-custom-field');
+      row.createEl('label', { text: prop.key });
+      this.renderOtherPropInput(row, prop.key, prop.value);
+    }
+  }
+
+  private renderOtherPropInput(container: HTMLElement, key: string, value: unknown): void {
+    if (value === null || value === undefined) {
+      const input = container.createEl('input', { type: 'text', value: '' });
+      input.addClass('vital-log-custom-input');
+      input.addEventListener('input', () => {
+        this.otherPropValues.set(key, input.value || null);
+      });
+    } else if (typeof value === 'boolean') {
+      const row = container.createDiv('vital-log-checkbox-row');
+      const cb = row.createEl('input', { type: 'checkbox' });
+      cb.checked = value;
+      cb.addClass('vital-log-custom-checkbox');
+      const lbl = row.createEl('span', { cls: 'vital-log-checkbox-label', text: value ? 'Yes' : 'No' });
+      cb.addEventListener('change', () => {
+        this.otherPropValues.set(key, cb.checked);
+        lbl.setText(cb.checked ? 'Yes' : 'No');
+      });
+    } else if (typeof value === 'number') {
+      const input = container.createEl('input', { type: 'number', value: String(value) });
+      input.addClass('vital-log-custom-input');
+      input.addEventListener('input', () => {
+        this.otherPropValues.set(key, input.value !== '' ? parseFloat(input.value) : undefined);
+      });
+    } else if (Array.isArray(value)) {
+      const strVal = value.map((v) => String(v)).join(', ');
+      const input = container.createEl('input', { type: 'text', value: strVal });
+      input.addClass('vital-log-custom-input');
+      input.readOnly = true;
+      input.title = 'Array values are read-only';
+    } else if (typeof value === 'object') {
+      const input = container.createEl('input', { type: 'text', value: JSON.stringify(value) });
+      input.addClass('vital-log-custom-input');
+      input.readOnly = true;
+      input.title = 'Object values are read-only';
+    } else {
+      const strVal = value !== null && value !== undefined ? String(value) : '';
+      const input = container.createEl('input', { type: 'text', value: strVal });
+      input.addClass('vital-log-custom-input');
+      input.addEventListener('input', () => {
+        this.otherPropValues.set(key, input.value || undefined);
+      });
+    }
   }
 
   // ── Render tally counter ──────────────────────────────────
@@ -699,12 +843,28 @@ export class CustomLogModal extends Modal {
       for (const item of this.visibleItems) {
         if (item.type !== 'field') continue;
         const val = this.fieldValues.get(item.field.id);
-        if (val !== undefined) {
+        if (val === undefined) continue;
+        if (item.field.parentKey) {
+          if (!properties[item.field.parentKey]) properties[item.field.parentKey] = {};
+          (properties[item.field.parentKey] as Record<string, unknown>)[item.field.propertyKey] = val;
+        } else {
           properties[item.field.propertyKey] = val;
         }
       }
       if (Object.keys(properties).length > 0) {
         await yaml.setProperties(this.app, file, properties);
+      }
+
+      // Save other property edits (note frontmatter keys not covered by the modal)
+      if (this.otherProps.length > 0) {
+        const otherProperties: Record<string, unknown> = {};
+        for (const prop of this.otherProps) {
+          const val = this.otherPropValues.get(prop.key);
+          if (val !== undefined) otherProperties[prop.key] = val;
+        }
+        if (Object.keys(otherProperties).length > 0) {
+          await yaml.setProperties(this.app, file, otherProperties);
+        }
       }
 
       // Save tally notes

@@ -2,7 +2,7 @@
 // Vital Log — Inline Widget Renderer
 // Processes inline code elements:
 //   `tally: Name`   → interactive tally counter (linked to settings)
-//   `counter: Name` → free-form per-note counter (stored in frontmatter)
+//   `counter: Name` → free-form per-note counter (value lives on the same line)
 // ============================================================
 
 import { App, TFile, setIcon } from 'obsidian';
@@ -11,8 +11,8 @@ import { getDailyNoteIfExists } from './dailyNoteResolver';
 import * as yaml from './yamlManager';
 import * as tally from './tallyManager';
 
-function counterKey(name: string): string {
-  return 'vl_counter_' + name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 export function registerInlineRenderers(plugin: VitalLogPlugin): void {
@@ -106,9 +106,22 @@ async function renderInlineCounter(
   const file = app.vault.getAbstractFileByPath(sourcePath);
   const targetNote = file instanceof TFile ? file : null;
 
-  const key = counterKey(name);
-  const fm = targetNote ? await yaml.readAllFrontmatter(app, targetNote) : {};
-  let value = typeof fm[key] === 'number' ? (fm[key] as number) : 0;
+  // Read initial value from the number sitting before `counter: name` on the same line
+  let value = 0;
+  if (targetNote) {
+    const content = await app.vault.read(targetNote);
+    const escapedName = escapeRegex(name);
+    const lineRegex = new RegExp('`counter:\\s*' + escapedName + '`');
+    for (const line of content.split('\n')) {
+      if (lineRegex.test(line)) {
+        const counterPos = line.search(lineRegex);
+        const beforeCounter = line.slice(0, counterPos);
+        const numMatch = beforeCounter.match(/(\d+)\s*$/);
+        if (numMatch) value = parseInt(numMatch[1], 10);
+        break;
+      }
+    }
+  }
 
   const widget = document.createElement('span');
   widget.className = 'vital-log-inline-counter';
@@ -134,7 +147,7 @@ async function renderInlineCounter(
     value = Math.max(0, value + delta);
     refresh();
     if (targetNote) {
-      await yaml.setProperties(app, targetNote, { [key]: value });
+      await writeCounterToLine(app, targetNote, name, value);
     }
   };
 
@@ -142,4 +155,24 @@ async function renderInlineCounter(
   incBtn.addEventListener('click', (e) => { e.preventDefault(); void handleStep(1); });
 
   code.replaceWith(widget);
+}
+
+// Write newValue into the note line that contains `counter: name`.
+// Replaces the number immediately before the counter tag; inserts one if absent.
+async function writeCounterToLine(
+  app: App,
+  file: TFile,
+  name: string,
+  newValue: number,
+): Promise<void> {
+  const escapedName = escapeRegex(name);
+  await app.vault.process(file, (content) => {
+    // Replace existing number immediately before the counter tag (with optional whitespace)
+    const replaceRegex = new RegExp('(\\d+)(\\s*`counter:\\s*' + escapedName + '`)', 'g');
+    const replaced = content.replace(replaceRegex, (_, _num, suffix) => `${newValue}${suffix}`);
+    if (replaced !== content) return replaced;
+    // No number found on the line yet — insert one before the counter tag
+    const insertRegex = new RegExp('(`counter:\\s*' + escapedName + '`)', 'g');
+    return content.replace(insertRegex, `${newValue} $1`);
+  });
 }

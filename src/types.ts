@@ -52,6 +52,7 @@ export interface VitalLogSettings {
   noteContentTemplate_trackers: string;    // template for tracker note lines. Tokens: {time} {name} {value} {note}
   noteContentTemplate_tallies: string;     // template for tally note lines. Tokens: {name} {value} {target}
   noteContentTemplate_specificNoteTally: string; // template for per-tally specific-note lines. Tokens: {dailyNote} {time} {name} {value} {target}
+  mirrorExcludedKeys?: string[]; // property keys never shown in the "Other Properties" section of mirror modals
 }
 
 // Shape written to frontmatter per vitamin property (list element)
@@ -185,6 +186,7 @@ export type CustomFieldType =
 export interface CustomField {
   id: string;
   propertyKey: string;      // frontmatter key, e.g. "dayReview"
+  parentKey?: string;       // if set, written as parentKey.propertyKey in frontmatter
   displayName: string;      // label shown in modal, e.g. "Day Review"
   description: string;      // helper text, e.g. "Review your day from 1-10"
   fieldType: CustomFieldType;
@@ -211,6 +213,13 @@ export type CustomModalItem =
   | { type: 'section'; title: string; defaultOpen: boolean; color?: string }
   | { type: 'section-end' };
 
+export interface MirrorConditionalPin {
+  id: string;
+  conditionType: 'tag' | 'folder';
+  conditionValue: string;   // e.g. "#work" or "Work/"
+  pinnedIds: string[];      // field IDs or tallyCounterIds to always show when condition matches
+}
+
 export interface CustomModalConfig {
   id: string;
   displayName: string;      // e.g. "Daily Review"
@@ -219,8 +228,10 @@ export interface CustomModalConfig {
   useTemplater: boolean;    // trigger Templater on new note creation
   templatePath: string;     // path to template file for Templater
   items: CustomModalItem[];
-  mirrorMode?: boolean;           // only show properties that already exist in the current note
-  mirrorModePinnedIds?: string[]; // field IDs or tallyCounterIds that always show in mirror mode
+  mirrorMode?: boolean;                        // only show properties that already exist in the current note
+  mirrorModePinnedIds?: string[];              // field IDs or tallyCounterIds that always show in mirror mode
+  mirrorModeConditionalPins?: MirrorConditionalPin[]; // tag/folder-conditional pins
+  showOtherProperties?: boolean;               // show collapsed "Other Properties" section with remaining modal fields
 }
 
 export const CUSTOM_FIELD_TYPES: CustomFieldType[] = [
@@ -261,4 +272,5 @@ export const DEFAULT_SETTINGS: VitalLogSettings = {
   noteContentTemplate_trackers: '- {time} {name}: {value}',
   noteContentTemplate_tallies: '- {name}: {value}/{target}',
   noteContentTemplate_specificNoteTally: '- [[{dailyNote}]] {time} : {value}/{target}',
+  mirrorExcludedKeys: [],
 };

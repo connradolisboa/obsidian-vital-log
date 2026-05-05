@@ -4,7 +4,7 @@
 
 import { App, Modal, PluginSettingTab, Setting, setIcon } from 'obsidian';
 import type VitalLogPlugin from '../main';
-import type { CustomModalConfig, CustomField, CustomFieldType, TallyCounterConfig, CustomModalItem, CustomButtonConfig } from './types';
+import type { CustomModalConfig, CustomField, CustomFieldType, TallyCounterConfig, CustomModalItem, CustomButtonConfig, MirrorConditionalPin } from './types';
 import { CUSTOM_FIELD_TYPES } from './types';
 import { ManageModal } from './manageModal';
 
@@ -258,6 +258,26 @@ export class VitalLogSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           })
       );
+
+    // ── Mirror Mode ──
+    el.createEl('h3', { text: 'Mirror Mode' });
+
+    new Setting(el)
+      .setName('Excluded property keys')
+      .setDesc('Property keys that will never appear in the "Other Properties" section of Mirror modals. One key per line (e.g. tags, cssclasses).')
+      .addTextArea((ta) => {
+        ta.setPlaceholder('tags\ncssclasses\ncreated');
+        ta.setValue((this.plugin.settings.mirrorExcludedKeys ?? []).join('\n'));
+        ta.inputEl.rows = 4;
+        ta.inputEl.style.width = '100%';
+        ta.onChange(async (value) => {
+          this.plugin.settings.mirrorExcludedKeys = value
+            .split('\n')
+            .map((s) => s.trim())
+            .filter(Boolean);
+          await this.plugin.saveSettings();
+        });
+      });
 
     // ── Manage Data ──
     el.createEl('h3', { text: 'Manage Data' });
@@ -951,6 +971,25 @@ class CustomModalEditorModal extends Modal {
       text: 'Only show properties that already exist in the note. Pin fields below to always show them.',
     });
 
+    const otherPropsRow = metaSection.createDiv('vital-log-form-row');
+    otherPropsRow.createEl('label', { text: 'Show "Other Properties" section' });
+    const otherPropsCheckbox = otherPropsRow.createEl('input', { type: 'checkbox' });
+    otherPropsCheckbox.checked = this.modal.showOtherProperties ?? false;
+    otherPropsRow.createEl('span', {
+      cls: 'vital-log-form-hint',
+      text: 'Add a collapsed section showing modal fields that are not yet in the note (excludes globally excluded keys).',
+    });
+    otherPropsRow.style.display = mirrorCheckbox.checked ? '' : 'none';
+    mirrorCheckbox.addEventListener('change', () => {
+      otherPropsRow.style.display = mirrorCheckbox.checked ? '' : 'none';
+      conditionalPinsWrapper.style.display = mirrorCheckbox.checked ? '' : 'none';
+    });
+
+    // ── Conditional Pins (mirror mode only) ──
+    const conditionalPinsWrapper = metaSection.createDiv('vital-log-conditional-pins-wrapper');
+    conditionalPinsWrapper.style.display = mirrorCheckbox.checked ? '' : 'none';
+    this.renderConditionalPinsList(conditionalPinsWrapper);
+
     // ── Fields section ──
     const fieldsSection = contentEl.createDiv('vital-log-editor-section');
     fieldsSection.createEl('h3', { text: 'Fields' });
@@ -974,6 +1013,7 @@ class CustomModalEditorModal extends Modal {
       this.modal.useTemplater = templaterCheckbox.checked;
       this.modal.templatePath = templatePathInput.value.trim();
       this.modal.mirrorMode = mirrorCheckbox.checked;
+      this.modal.showOtherProperties = mirrorCheckbox.checked ? otherPropsCheckbox.checked : false;
 
       if (this.isEdit) {
         const idx = this.plugin.settings.customModals.findIndex((m) => m.id === this.modal.id);
@@ -1011,9 +1051,10 @@ class CustomModalEditorModal extends Modal {
       if (item.type === 'field') {
         const field = item.field;
         info.createDiv({ cls: 'vital-log-item-name', text: field.displayName });
+        const keyDisplay = field.parentKey ? `${field.parentKey}.${field.propertyKey}` : field.propertyKey;
         info.createDiv({
           cls: 'vital-log-item-meta',
-          text: `${field.propertyKey} · ${field.fieldType}${this.getFieldMeta(field)}`,
+          text: `${keyDisplay} · ${field.fieldType}${this.getFieldMeta(field)}`,
         });
       } else if (item.type === 'tally') {
         const tc = this.plugin.settings.tallyCounters?.find((t) => t.id === item.tallyCounterId);
@@ -1190,6 +1231,144 @@ class CustomModalEditorModal extends Modal {
       .addEventListener('click', () => {
         this.modal.items.push({ type: 'section-end' });
         this.renderFieldList(fieldListEl);
+      });
+  }
+
+  // ── Conditional Pins (mirror mode) ──────────────────────────
+
+  private renderConditionalPinsList(container: HTMLElement): void {
+    container.empty();
+    container.createEl('h4', { text: 'Conditional Pins' });
+    container.createEl('p', {
+      cls: 'vital-log-settings-helper',
+      text: 'Always show specific fields when the note matches a tag or folder.',
+    });
+
+    const pins = this.modal.mirrorModeConditionalPins ?? [];
+
+    for (let i = 0; i < pins.length; i++) {
+      const pin = pins[i];
+      const row = container.createDiv('vital-log-item-row');
+      const info = row.createDiv('vital-log-item-info');
+      info.createDiv({
+        cls: 'vital-log-item-name',
+        text: `${pin.conditionType === 'tag' ? 'Tag' : 'Folder'}: ${pin.conditionValue}`,
+      });
+      const pinnedLabels = pin.pinnedIds.map((id) => {
+        const fieldItem = this.modal.items.find((it) => it.type === 'field' && it.field.id === id);
+        if (fieldItem && fieldItem.type === 'field') return fieldItem.field.displayName;
+        const tallyConfig = this.plugin.settings.tallyCounters?.find((t) => t.id === id);
+        if (tallyConfig) return tallyConfig.displayName;
+        return id;
+      });
+      info.createDiv({ cls: 'vital-log-item-meta', text: pinnedLabels.join(', ') || 'no fields selected' });
+
+      const actions = row.createDiv('vital-log-item-actions');
+      const editBtn = actions.createEl('button', { text: 'Edit', cls: 'vital-log-btn' });
+      editBtn.addEventListener('click', () => this.renderConditionalPinForm(container, pin, true));
+
+      const delBtn = actions.createEl('button', { text: '×', cls: 'vital-log-btn mod-warning' });
+      delBtn.addEventListener('click', () => {
+        if (!this.modal.mirrorModeConditionalPins) return;
+        this.modal.mirrorModeConditionalPins.splice(i, 1);
+        this.renderConditionalPinsList(container);
+      });
+    }
+
+    if (pins.length === 0) {
+      container.createDiv({ cls: 'vital-log-empty-state', text: 'No conditional pin rules yet.' });
+    }
+
+    const addBtn = container.createEl('button', { text: '+ Add Condition', cls: 'vital-log-btn mod-cta' });
+    addBtn.style.marginTop = '6px';
+    addBtn.addEventListener('click', () => {
+      const newPin: MirrorConditionalPin = {
+        id: crypto.randomUUID(),
+        conditionType: 'tag',
+        conditionValue: '',
+        pinnedIds: [],
+      };
+      if (!this.modal.mirrorModeConditionalPins) this.modal.mirrorModeConditionalPins = [];
+      this.renderConditionalPinForm(container, newPin, false);
+    });
+  }
+
+  private renderConditionalPinForm(
+    container: HTMLElement,
+    pin: MirrorConditionalPin,
+    isEdit: boolean,
+  ): void {
+    const form = container.createDiv('vital-log-inline-form');
+    form.createEl('h4', { text: isEdit ? 'Edit Condition' : 'New Condition' });
+
+    const typeRow = form.createDiv('vital-log-form-row');
+    typeRow.createEl('label', { text: 'Condition type' });
+    const typeSelect = typeRow.createEl('select');
+    typeSelect.createEl('option', { value: 'tag', text: 'Tag' });
+    typeSelect.createEl('option', { value: 'folder', text: 'Folder' });
+    typeSelect.value = pin.conditionType;
+
+    const valueRow = form.createDiv('vital-log-form-row');
+    const valueLabel = valueRow.createEl('label', { text: 'Tag (e.g. #work)' });
+    const valueInput = valueRow.createEl('input', {
+      type: 'text',
+      placeholder: '#work',
+      value: pin.conditionValue,
+    });
+
+    typeSelect.addEventListener('change', () => {
+      if (typeSelect.value === 'tag') {
+        valueLabel.setText('Tag (e.g. #work)');
+        valueInput.placeholder = '#work';
+      } else {
+        valueLabel.setText('Folder path (e.g. Work/)');
+        valueInput.placeholder = 'Work/';
+      }
+    });
+
+    // Field checkboxes
+    form.createEl('label', { text: 'Always show these fields when matched:', cls: 'vital-log-form-section-label' });
+    const checkboxList = form.createDiv('vital-log-conditional-pin-fields');
+
+    const fieldItems = this.modal.items.filter(
+      (it) => it.type === 'field' || it.type === 'tally',
+    ) as Array<Extract<typeof this.modal.items[0], { type: 'field' | 'tally' }>>;
+
+    const selectedIds = new Set(pin.pinnedIds);
+
+    for (const item of fieldItems) {
+      const itemId = item.type === 'field' ? item.field.id : item.tallyCounterId;
+      const label = item.type === 'field'
+        ? item.field.displayName
+        : (this.plugin.settings.tallyCounters?.find((t) => t.id === item.tallyCounterId)?.displayName ?? item.tallyCounterId);
+
+      const row = checkboxList.createDiv('vital-log-form-row vital-log-form-row--compact');
+      const cb = row.createEl('input', { type: 'checkbox' });
+      cb.checked = selectedIds.has(itemId);
+      cb.addEventListener('change', () => {
+        if (cb.checked) selectedIds.add(itemId);
+        else selectedIds.delete(itemId);
+      });
+      row.createSpan({ text: label });
+    }
+
+    const actions = form.createDiv('vital-log-inline-form-actions');
+    actions.createEl('button', { text: 'Cancel', cls: 'vital-log-btn' })
+      .addEventListener('click', () => { form.remove(); });
+
+    actions.createEl('button', { text: 'Save', cls: 'vital-log-btn mod-cta' })
+      .addEventListener('click', () => {
+        const val = valueInput.value.trim();
+        if (!val) return;
+        pin.conditionType = typeSelect.value as 'tag' | 'folder';
+        pin.conditionValue = val;
+        pin.pinnedIds = [...selectedIds];
+        if (!isEdit) {
+          if (!this.modal.mirrorModeConditionalPins) this.modal.mirrorModeConditionalPins = [];
+          this.modal.mirrorModeConditionalPins.push(pin);
+        }
+        form.remove();
+        this.renderConditionalPinsList(container);
       });
   }
 
@@ -1430,6 +1609,14 @@ class CustomModalEditorModal extends Modal {
       });
     }
 
+    const parentKeyRow = form.createDiv('vital-log-form-row');
+    parentKeyRow.createEl('label', { text: 'Nest under key (optional)' });
+    const parentKeyInput = parentKeyRow.createEl('input', {
+      type: 'text',
+      placeholder: 'e.g. health → writes health.propertyKey',
+      value: field.parentKey ?? '',
+    });
+
     const descRow = form.createDiv('vital-log-form-row');
     descRow.createEl('label', { text: 'Description' });
     const descInput = descRow.createEl('input', {
@@ -1507,6 +1694,7 @@ class CustomModalEditorModal extends Modal {
 
       field.displayName = name;
       field.propertyKey = key;
+      field.parentKey = parentKeyInput.value.trim() || undefined;
       field.description = descInput.value.trim();
       field.fieldType = typeSelect.value as CustomFieldType;
 
