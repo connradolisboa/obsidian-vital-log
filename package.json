@@ -1,7 +1,7 @@
 {
   "name": "vital-log",
-  "version": "1.0.0",
-  "description": "Obsidian plugin for logging vitamins and supplements into daily note frontmatter",
+  "version": "1.1.0",
+  "description": "Obsidian plugin for logging vitamins, supplements, trackers, tally counters, and custom forms into your notes",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",

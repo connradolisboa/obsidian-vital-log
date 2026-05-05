@@ -1,74 +1,44 @@
 # Vital Log
 
-A powerful Obsidian plugin for systematically logging vitamins, supplements, stacks, and wellness trackers into your daily notes with minimal friction.
+An Obsidian plugin for logging vitamins, supplements, wellness trackers, tally counters, and custom forms into your notes — with minimal friction.
 
-## Overview
-
-Vital Log transforms supplement tracking in Obsidian. Rather than manually typing entries or remembering what you took, this plugin provides:
-
-- **Quick-logging modals** for vitamins, supplement packs, and custom stacks
-- **Flexible frontmatter storage** with two log modes (per-vitamin keys or flat substances list)
-- **Wellness trackers** (mood, energy, custom metrics) with configurable ranges
-- **Custom modals** for any periodic note with user-defined fields
-- **History viewer** to see all logged entries in your daily notes
-
-Your supplement data lives in your vault's daily notes as clean, queryable YAML frontmatter—giving you full control and the ability to analyze patterns over time.
+All data lands in your vault as clean YAML frontmatter, queryable by DataView or any other plugin.
 
 ---
 
-## Features
+## Table of Contents
 
-### Core Features
+- [Features Overview](#features-overview)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Supplement Logging](#supplement-logging)
+- [Wellness Trackers](#wellness-trackers)
+- [Tally Counters](#tally-counters)
+- [Custom Modals](#custom-modals)
+- [Embedded Modals](#embedded-modals)
+- [Inline Widgets](#inline-widgets)
+- [Note Content Appending](#note-content-appending)
+- [Commands & Ribbon Icons](#commands--ribbon-icons)
+- [Frontmatter Reference](#frontmatter-reference)
+- [Keyboard Shortcuts](#keyboard-shortcuts)
+- [Troubleshooting](#troubleshooting)
 
-#### 1. **Vitamin & Supplement Logging**
-- Log individual vitamins with custom amounts and times
-- Include notes and track the source (manual, pack, or stack)
-- Support for multiple units (mg, IU, mcg, g, etc.)
-- Two logging modes:
-  - **Per-Vitamin**: Each vitamin gets its own frontmatter key (e.g., `vitaminC: [...]`)
-  - **Substances**: All entries in a single flat `substances: [...]` array
+---
 
-#### 2. **Supplement Packs**
-- Group multiple vitamins into reusable packs (e.g., "Multivitamin", "Immune Support Pack")
-- Log entire packs with a single click
-- Each pack item can have custom amounts different from the vitamin's default
-- Automatically track which pack was the source
+## Features Overview
 
-#### 3. **Supplement Stacks**
-- Combine packs and individual vitamins into themed stacks
-- Scheduling hints for organization (Morning, Evening, Pre-workout, Post-workout, Custom)
-- Log all items in a stack simultaneously
-- Perfect for coordinated supplement routines
-
-#### 4. **Wellness Trackers**
-- Pre-configured trackers: Mood and Energy (1–5 scale)
-- Create unlimited custom trackers with:
-  - Custom display names and frontmatter keys
-  - Configurable min/max values
-  - Custom Obsidian icons
-- Each tracker gets its own frontmatter list
-
-#### 5. **Custom Modals**
-- Build custom logging forms for any periodic note
-- Supported field types:
-  - **Sliders** (configurable min/max/step)
-  - **Text input** (single-line)
-  - **Textarea** (multi-line)
-  - **Number input**
-  - **Date picker**
-  - **Checkbox** (toggle)
-  - **Dropdown** (select from options)
-  - **Time picker**
-  - **Rating** (button grid)
-  - **Tags** (multi-select)
-- Optional Templater integration for automatic note creation
-- Each modal writes to its own note path with custom frontmatter keys
-
-#### 6. **History & Analytics**
-- View all logged entries across your daily notes
-- Filter by date range, tracker, or vitamin
-- Analyze patterns in your wellness data
-- Built-in note link previews
+| Feature | Description |
+|---|---|
+| Supplement logging | Log vitamins, packs, and stacks into daily note frontmatter |
+| Wellness trackers | Mood, energy, and custom numeric trackers |
+| Tally counters | Daily running counts with targets, step sizes, and status bar display |
+| Custom modals | Build your own logging forms with 10 field types |
+| Embedded modals | Render any custom modal as an interactive card inside a note |
+| Inline tally widget | `\`tally: Name\`` renders a live counter anywhere in a note |
+| Inline counter widget | `\`counter: Name\`` renders a free-form counter that saves its value on the same line |
+| Mirror mode | Modals that automatically show only the properties the current note already has |
+| Sections | Collapsible, color-coded sections, headers, and dividers inside modals and embeds |
+| Note appending | Optionally write a formatted line to note body content when logging |
 
 ---
 
@@ -77,207 +47,353 @@ Your supplement data lives in your vault's daily notes as clean, queryable YAML 
 ### From Obsidian Community Plugins
 
 1. Open **Settings** → **Community Plugins**
-2. Disable safe mode if needed
-3. Search for "Vital Log"
-4. Install the plugin
-5. Enable it in Community Plugins list
+2. Search for **Vital Log**
+3. Click **Install**, then **Enable**
 
 ### Manual Installation
 
-1. Clone or download this repository
-2. Copy the plugin files to `.obsidian/plugins/vital-log/`
-3. Reload Obsidian
-4. Enable the plugin in Settings
+1. Download the latest release from GitHub
+2. Copy `main.js`, `manifest.json`, and `styles.css` to `.obsidian/plugins/vital-log/`
+3. Reload Obsidian and enable the plugin in **Settings → Community Plugins**
 
 ---
 
 ## Quick Start
 
-### 1. Set Your Daily Note Path
+### 1. Set Your Note Path
 
-In **Settings** → **Vital Log** → **General**:
+In **Settings → Vital Log → General**, configure the path to your daily (or any periodic) note:
 
 ```
 Calendar/Daily/{{YYYY}}/Q{{Q}}/{{YYYY-MM-DD dddd}}
 ```
 
 Supported tokens:
-- `{{YYYY}}` – Full year (e.g., 2026)
-- `{{YY}}` – 2-digit year (e.g., 26)
-- `{{MM}}` – Month (01–12)
-- `{{DD}}` – Day (01–31)
-- `{{dddd}}` – Weekday name (Monday, Tuesday, etc.)
-- `{{ddd}}` – Short weekday (Mon, Tue, etc.)
-- `{{Q}}` – Quarter (1–4)
-- `{{WW}}` – ISO week number
-- `{{MMMM}}` – Month name (January, February, etc.)
 
-### 2. Add Vitamins
+| Token | Output |
+|---|---|
+| `{{YYYY}}` | Full year (2026) |
+| `{{YY}}` | 2-digit year (26) |
+| `{{MM}}` | Month (01–12) |
+| `{{MMMM}}` | Month name (January…) |
+| `{{DD}}` | Day (01–31) |
+| `{{dddd}}` | Weekday name (Monday…) |
+| `{{ddd}}` | Short weekday (Mon…) |
+| `{{Q}}` | Quarter (1–4) |
+| `{{WW}}` | ISO week number |
 
-1. Open **Settings** → **Vital Log** → **General** → **Manage Data** → **Vitamins**
-2. Click **Open Manager**
-3. Add vitamins with:
-   - **Display Name** (e.g., "Vitamin C")
-   - **Property Key** (e.g., "vitaminC" — unique identifier)
-   - **Default Amount** (e.g., 500)
-   - **Unit** (e.g., "mg")
+### 2. Add Vitamins (Optional)
 
-### 3. Create Packs (Optional)
+**Settings → Vital Log → General → Manage Data → Vitamins → Open Manager**
 
-1. Open **Settings** → **Vital Log** → **Manage Packs**
-2. Click **Open Manager**
-3. Create a pack (e.g., "Morning Stack") and add vitamins with specific amounts
+Add vitamins with a display name, property key (e.g. `vitaminC`), default amount, and unit.
 
-### 4. Start Logging
+### 3. Log Something
 
-Press the **Vital Log** ribbon icon or use a command:
-- **Log Vitamin** – Quick-log a single vitamin
-- **Log Pack** – Log an entire pack
-- **Log Stack** – Log all items in a stack
+Press the **pill icon** in the ribbon or use **Cmd/Ctrl+P** → *Log Supplement*.
 
 ---
 
-## Configuration
+## Supplement Logging
 
-### General Settings
+### Vitamins
 
-#### Log Mode
-- **Per-Vitamin**: Each vitamin gets its own frontmatter key
-  ```yaml
-  vitaminC:
-    - time: "09:00"
-      amount: 500
-      unit: "mg"
-      source: "manual"
-  ```
+Log individual vitamins with a custom amount, time, and optional note. Two storage modes:
 
-- **Substances**: Flat list of all logged entries
-  ```yaml
-  substances:
-    - name: "Vitamin C"
-      amount: 500
-      unit: "mg"
-      time: "09:00"
-      source: "manual"
-  ```
-
-#### Log Source
-Toggle to include a `source` field on each entry tracking where it came from:
-- "manual" – logged individually
-- Pack display name – logged as part of a pack
-- Stack display name – logged as part of a stack
-
-#### Log Pack & Stack Entries
-- **Log Pack Entries**: Write a `packs: [...]` array when logging packs
-- **Log Stack Entries**: Write a `stacks: [...]` array when logging stacks
-
-### Trackers Tab
-
-Mood and Energy come pre-configured. Add custom trackers by clicking **Add Tracker**:
-
-- **Display Name**: "Sleep Quality"
-- **Property Key**: "sleepLog" (frontmatter key)
-- **Value Name**: "sleep" (field name inside entries)
-- **Min/Max**: 1–10
-
-### Custom Modals Tab
-
-Create unlimited custom logging forms:
-
-1. Click **Add Custom Modal**
-2. Set a display name, icon, and note path
-3. Add fields with different types
-4. Optional: Enable Templater integration for auto-note-creation
-
-Each custom modal appears as a ribbon icon and command.
-
----
-
-## Use Cases
-
-### Health & Wellness Tracking
-
-Track your daily supplement routine alongside mood, energy, and sleep:
-
+**Per-Vitamin mode** — each vitamin gets its own frontmatter key:
 ```yaml
----
 vitaminC:
   - time: "09:00"
     amount: 500
     unit: "mg"
-    source: "Morning Stack"
-moodLog:
-  - time: "21:00"
-    mood: 7
-    note: "Great day"
-energyLog:
-  - time: "14:00"
-    energy: 5
-  - time: "21:00"
-    energy: 3
+    source: "manual"
+```
+
+**Substances mode** — all entries in a flat list:
+```yaml
+substances:
+  - name: "Vitamin C"
+    amount: 500
+    unit: "mg"
+    time: "09:00"
+    source: "manual"
+```
+
+Switch between modes in **Settings → Vital Log → General → Log Mode**.
+
+### Packs
+
+Group vitamins into reusable packs (e.g. "Morning Vitamins"). Log an entire pack with one click. Each pack item can override the vitamin's default amount.
+
+**Settings → Vital Log → Manage Packs**
+
+```yaml
+packs:
+  - time: "08:00"
+    name: "Morning Vitamins"
+```
+
+### Stacks
+
+Combine packs and individual vitamins into named stacks with a scheduling hint (Morning, Evening, Pre-workout, Post-workout, Custom). Log everything in a stack at once.
+
+**Settings → Vital Log → Manage Stacks**
+
+```yaml
 stacks:
   - time: "09:00"
     name: "Morning Stack"
----
 ```
 
-### Biohacking & Experimentation
+### Log Source Tracking
 
-Log supplements alongside custom metrics (sleep quality, workout performance, digestion):
+Enable **Log Source** in settings to record where each entry came from:
+- `"manual"` — logged individually
+- Pack/stack display name — logged as part of a group
 
-- Create custom modals for **Digestion Score**, **Workout Performance**, **Sleep Duration**
-- Cross-reference your supplement intake with outcomes
-- Identify patterns using Obsidian's DataView or similar plugins
+### Pack & Stack Entry Toggle
 
-### Medication & Supplement Adherence
+Independently enable or disable writing `packs: [...]` and `stacks: [...]` entries to frontmatter.
 
-Track which medications/supplements were taken, at what time, and from which pack:
+---
+
+## Wellness Trackers
+
+Numeric trackers with a configurable range. Two built-in trackers (Mood and Energy, 1–5 scale) and unlimited custom ones.
+
+**Settings → Vital Log → Trackers → Add Tracker**
+
+Fields: display name, frontmatter property key, value field name, min, max, icon.
 
 ```yaml
----
-packs:
-  - time: "08:00"
-    name: "Morning Meds"
-    source: "manual"
-  - time: "20:00"
-    name: "Evening Meds"
-    source: "manual"
----
+moodLog:
+  - time: "21:00"
+    mood: 4
+    note: "Good day"
+energyLog:
+  - time: "14:00"
+    energy: 3
 ```
 
-### Sports & Athletic Performance
-
-Log pre-workout stacks, intra-workout supplements, and post-workout recovery stacks:
-
-- Define stacks: "Pre-Workout", "Intra-Workout", "Post-Workout"
-- Track alongside workout notes and performance metrics
-- Use custom modals to log workout intensity, mood, recovery
-
-### Family Health Management
-
-If tracking multiple people's supplements, create custom modals per person writing to different note paths:
-
-```
-Wellness/{{YYYY-MM-DD}}/Alice/Supplements
-Wellness/{{YYYY-MM-DD}}/Bob/Supplements
-```
+Access via the **activity icon** in the ribbon or *Log Tracker* command.
 
 ---
 
-## Frontmatter Format
+## Tally Counters
 
-### Vitamin Entry (Per-Vitamin Mode)
+Running daily counts with a target. Great for habits, repetitions, servings — anything you want to count toward a goal.
+
+**Settings → Vital Log → Tally Counters → Add Counter**
+
+Options per counter:
+- **Display name** and **icon**
+- **Property key** — frontmatter key
+- **Target** — visual goal shown as `value / target`
+- **Step** — how much each click adds or subtracts
+- **Show in status bar** — display current/target in the Obsidian status bar
+- **Append to note** — optional vault path to append tally lines to a specific note
+
+```yaml
+outreachTally:
+  value: 7
+```
+
+Counters mark themselves complete (visual highlight) once the value reaches the target.
+
+---
+
+## Custom Modals
+
+Build your own logging forms. Each modal becomes a ribbon icon and a command.
+
+**Settings → Vital Log → Custom Modals → Add Custom Modal**
+
+### Field Types
+
+| Type | Description |
+|---|---|
+| `slider` | Horizontal range slider (configurable min/max/step) |
+| `text` | Single-line text input |
+| `textarea` | Multi-line text box |
+| `number` | Numeric input |
+| `date` | Date picker (outputs `YYYY-MM-DD`) |
+| `time` | Time picker (outputs `HH:mm`) |
+| `checkbox` | Toggle (outputs `true`/`false`) |
+| `dropdown` | Select from a list of options |
+| `rating` | Button grid (configurable min/max, outputs a number) |
+| `tags` | Multi-select chip input (outputs a string array) |
+
+### Structure Items
+
+Add visual structure to any modal or embed:
+
+- **Header** — a bold label line
+- **Divider** — a horizontal rule
+- **Section** — a collapsible group with an optional accent color and open/closed default state
+
+### Tally Items
+
+Drop any tally counter directly into a custom modal as a +/− row.
+
+### Button Items
+
+Add action buttons to a modal that either:
+- **Open a file** — navigates to a vault note
+- **Run a command** — executes any Obsidian command by ID
+
+### Templater Integration
+
+Enable **Use Templater** on a modal to automatically create a new note from a template file when the target note doesn't exist yet.
+
+### Mirror Mode
+
+Enable **Mirror Mode** on any custom modal to make it context-aware: instead of showing all configured fields, the modal shows only the fields whose frontmatter keys already exist in the current note.
+
+**Pinned fields** always show in mirror mode regardless. Pin them in the modal settings.
+
+**Conditional pins** pin fields based on the note's tags or folder — e.g. always show `projectLog` when the note has the `#work` tag.
+
+**Other Properties** — optionally show a collapsed "Other Properties" section listing all other frontmatter keys in the note that aren't covered by the modal's fields.
+
+Configure excluded keys (keys to never show in Other Properties) at **Settings → Vital Log → Mirror Excluded Keys**.
+
+---
+
+## Embedded Modals
+
+Render any custom modal as an interactive card directly inside a note using a fenced code block:
+
+````
+```vital-log
+My Modal Name
+```
+````
+
+### Options
+
+Add one option per line after the modal name:
+
+| Option | Effect |
+|---|---|
+| `invisible` | Removes the card border/header — blends into the note |
+| `+` | Collapsible, starts **expanded** |
+| `-` | Collapsible, starts **collapsed** |
+
+**Example — invisible embed:**
+````
+```vital-log
+Daily Review
+invisible
+```
+````
+
+**Example — collapsible, starts collapsed:**
+````
+```vital-log
+Morning Checklist
+-
+```
+````
+
+### Note Path Behaviour
+
+- If the modal's note path is empty, the embed reads from and writes to the **note it lives in**.
+- If the modal has a note path configured, it targets that path (following the same date tokens as daily notes).
+
+---
+
+## Inline Widgets
+
+Render interactive counters anywhere inside a note using inline code syntax. These work in reading view.
+
+### Inline Tally — `tally: Name`
+
+Links to a tally counter defined in settings. Displays the current value, target, and +/− buttons.
+
+```
+Today I did `tally: Pushups` sets.
+```
+
+- Reads and writes to today's daily note
+- Marks complete when the value reaches the counter's target
+- Shows the icon configured in tally settings
+
+If the named tally counter isn't found in settings, it renders an error label.
+
+### Inline Counter — `counter: Name`
+
+A free-form counter that doesn't require any settings configuration. It stores its value directly on the same line in the note file — the number sitting immediately before the counter tag.
+
+```
+Water glasses: 3 `counter: Water`
+Fried chicken: 0 `counter: Fried Chicken`
+```
+
+Clicking + or − updates the number in-place. If no number exists before the tag yet, one is inserted automatically.
+
+---
+
+## Note Content Appending
+
+In addition to writing to frontmatter, Vital Log can append a formatted line to the note body when you log.
+
+Enable the **Append to Note** checkbox in the log modal (or set the default in settings).
+
+### Templates
+
+Customize the appended line in **Settings → Vital Log → General**:
+
+| Template | Available tokens |
+|---|---|
+| Supplements | `{time}` `{name}` `{amount}` `{unit}` `{note}` |
+| Trackers | `{time}` `{name}` `{value}` `{note}` |
+| Tallies | `{name}` `{value}` `{target}` |
+| Tally specific-note | `{dailyNote}` `{time}` `{name}` `{value}` `{target}` |
+
+Default supplement template:
+```
+- {time} {name} {amount}{unit}
+```
+
+---
+
+## Commands & Ribbon Icons
+
+### Ribbon Icons
+
+| Icon | Action |
+|---|---|
+| Pill | Open main supplement log modal |
+| Activity | Open tracker modal |
+| Grid | Open custom modal chooser |
+| One icon per custom modal | Open that specific modal directly |
+
+### Command Palette
+
+- **Log Vitamin** — open log modal on the Vitamin tab
+- **Log Pack** — open log modal on the Pack tab
+- **Log Stack** — open log modal on the Stack tab
+- **Log Tracker** — open tracker modal
+- **View History** — browse all logged entries across daily notes
+- **Manage Vitamins / Packs / Stacks** — open management interface
+- *One command per custom modal* — auto-generated from modal display names
+
+---
+
+## Frontmatter Reference
+
+### Vitamin — Per-Vitamin Mode
 
 ```yaml
 vitaminC:
-  - time: "09:00"           # HH:mm format
+  - time: "09:00"
     amount: 500
     unit: "mg"
     note: "With food"       # optional
-    source: "manual"        # optional (if logSource=true)
+    source: "Morning Stack" # optional
 ```
 
-### Vitamin Entry (Substances Mode)
+### Vitamin — Substances Mode
 
 ```yaml
 substances:
@@ -294,7 +410,7 @@ substances:
 ```yaml
 packs:
   - time: "09:00"
-    name: "Multivitamin"
+    name: "Morning Vitamins"
     source: "manual"        # optional
 ```
 
@@ -311,13 +427,18 @@ stacks:
 ```yaml
 moodLog:
   - time: "21:00"
-    mood: 7                 # configurable field name
-    note: "Great day"       # optional
+    mood: 4
+    note: "Good day"        # optional
+```
+
+### Tally Counter Entry
+
+```yaml
+outreachTally:
+  value: 7
 ```
 
 ### Custom Modal Entry
-
-Custom modals create frontmatter keys based on your field definitions:
 
 ```yaml
 dayReview: 9
@@ -328,109 +449,45 @@ tags: ["productive", "energized"]
 
 ---
 
-## Commands
+## Keyboard Shortcuts
 
-### Ribbon Icons
-- **Vital Log: Log Supplement** (pill icon) – Main logging modal
-- **Vital Log: Log Tracker** (activity icon) – Quick tracker logging
-- **Vital Log: Custom Modals** (grid icon) – Custom modal chooser
-
-### Commands
-- **Log Vitamin** – Open log modal with Vitamin tab active
-- **Log Pack** – Open log modal with Pack tab active
-- **Log Stack** – Open log modal with Stack tab active
-- **Log Tracker** – Open tracker modal
-- **View History** – View all logged entries
-- **Manage Vitamins / Packs / Stacks** – Open management interface
-- *Custom Modal Commands* – One command per custom modal (auto-generated)
-
----
-
-## Tips & Best Practices
-
-### Organization
-- **Group related vitamins** into packs (e.g., "Immune Support", "Energy Boost")
-- **Create stacks for routines** (Morning, Evening, Pre-workout, Post-workout)
-- **Name packs/stacks clearly** so the source field is meaningful
-
-### Analytics
-- Use **Obsidian DataView** or **JavaScript Queries** to aggregate your logs
-- Example: "Show average mood on days when I took the Morning Stack"
-- Create custom dashboard notes that query your daily notes
-
-### Custom Modals
-- Use custom modals for **non-supplement data** (mood details, workout notes, food intake)
-- Enable **Templater integration** to auto-create new note structures
-- **Multiple custom modals** can write to the same note (they append)
-
-### Data Consistency
-- Keep frontmatter keys **lowercase and camelCase** (auto-slugified)
-- Avoid changing property keys once you've started logging (they become part of your data structure)
-- Use **source field** to distinguish manual vs. automated logs
+All features are reachable from:
+- **Ribbon icons** — one-click access from the left sidebar
+- **Command Palette** — Cmd/Ctrl+P
+- **Custom hotkeys** — assign any command in **Settings → Hotkeys**
 
 ---
 
 ## Troubleshooting
 
-### "Daily note path doesn't exist"
+**Daily note not found**
 
-**Solution**: Ensure the path template matches your vault structure and enable "Create missing files" in Obsidian's Daily Notes plugin settings.
+Verify your note path template in settings matches your vault's folder structure. Use the date tokens listed in Quick Start. Enable *Create missing files* in Obsidian's Daily Notes plugin if you use it.
 
-### "Vitamin not found in pack"
+**Vitamin missing from pack**
 
-This happens when you delete a vitamin but don't remove it from a pack. **Fix**: Open the pack manager and remove the missing vitamin.
+Happens when you delete a vitamin that's still referenced by a pack. Open the pack manager and remove the stale item.
 
-### Custom modals aren't appearing
+**Custom modal not appearing as a ribbon icon**
 
-**Solution**:
-1. Ensure you've created the modal in Settings
-2. Reload Obsidian with Cmd/Ctrl+R
-3. Check the ribbon icon or open the Custom Modal Chooser
+After creating a new modal, reload Obsidian (Cmd/Ctrl+R) once so the ribbon and command are registered.
 
-### Templateer isn't running
+**Templater not running**
 
-**Solution**: Ensure the Templater plugin is installed and enabled, and that your template file exists at the specified path.
+Ensure the Templater community plugin is installed and enabled, and that the template file path in Vital Log settings points to an existing note.
 
----
+**Inline `tally: Name` shows an error**
 
-## Keyboard Shortcuts
-
-All features are accessible through:
-- **Ribbon icons** (quick access from sidebar)
-- **Command Palette** (Cmd/Ctrl+P)
-- **Custom hotkeys** (set in Obsidian Settings → Hotkeys)
-
----
-
-## Roadmap & Future Features
-
-Potential enhancements:
-- Visualization of supplement intake patterns
-- Integration with health APIs
-- Batch logging UI
-- Import/export for backup and sharing
-- Monthly/quarterly summaries
-- Supplement interaction warnings
-- Mobile optimizations
-
----
-
-## Support & Feedback
-
-If you encounter bugs or have feature requests, please open an issue on [GitHub](https://github.com/yourusername/vital-log).
+The name must exactly match the **Display Name** of a tally counter in settings (case-insensitive).
 
 ---
 
 ## License
 
-MIT License – feel free to use, modify, and distribute.
+MIT — use, modify, and distribute freely.
 
 ---
 
 ## Contributing
 
-Contributions are welcome! Feel free to submit pull requests or open issues for discussion.
-
----
-
-**Start tracking your wellness today with Vital Log!** 💊✨
+Issues and pull requests are welcome on [GitHub](https://github.com/yourusername/vital-log).

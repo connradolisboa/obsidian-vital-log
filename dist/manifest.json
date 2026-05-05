@@ -1,9 +1,9 @@
 {
   "id": "vital-log",
   "name": "Vital Log",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "minAppVersion": "1.4.0",
-  "description": "Log vitamins, supplement packs, and stacks into your daily note frontmatter.",
+  "description": "Log vitamins, supplements, trackers, tally counters, and custom forms into your notes.",
   "author": "Vital Log",
   "authorUrl": "",
   "fundingUrl": "",
