@@ -2087,63 +2087,103 @@
 .vital-log-inline-counter {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 2px;
   background: var(--background-secondary);
   border: 1px solid var(--background-modifier-border);
-  border-radius: var(--radius-s);
-  padding: 1px 5px;
+  border-radius: 999px;
+  padding: 1px 4px;
   font-size: var(--font-ui-small);
-  vertical-align: middle;
-  line-height: 1.4;
+  vertical-align: baseline;
+  line-height: 1.5;
   white-space: nowrap;
+  user-select: none;
+  transition: background 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.vital-log-inline-tally:hover,
+.vital-log-inline-counter:hover {
+  border-color: var(--background-modifier-border-hover, var(--text-muted));
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 
 .vital-log-inline-tally.is-complete {
   border-color: var(--color-green);
-  background: rgba(var(--color-green-rgb, 68, 168, 106), 0.08);
+  background: rgba(var(--color-green-rgb, 68, 168, 106), 0.12);
 }
 
+.vital-log-inline-tally.is-complete .vital-log-inline-value {
+  color: var(--color-green);
+}
+
+.vital-log-inline-tally.is-complete .vital-log-inline-btn--inc {
+  color: var(--color-green);
+}
+
+/* Ad-hoc tallies (auto-created in current note frontmatter) */
+.vital-log-inline-tally--adhoc {
+  border-style: dashed;
+}
+
+.vital-log-inline-tally--adhoc:hover {
+  border-style: solid;
+}
+
+/* Error pill (preserved for any other inline error states) */
 .vital-log-inline-error {
   color: var(--text-error);
+  border-color: var(--text-error);
+  background: rgba(var(--color-red-rgb, 230, 80, 80), 0.08);
 }
 
 .vital-log-inline-icon {
   display: inline-flex;
   align-items: center;
   color: var(--text-muted);
+  margin: 0 1px 0 4px;
 }
 
 .vital-log-inline-icon svg {
-  width: 11px;
-  height: 11px;
+  width: 12px;
+  height: 12px;
+}
+
+/* No icon? Give the name a little breathing room from the dec button */
+.vital-log-inline-btn--dec + .vital-log-inline-name {
+  padding-left: 4px;
 }
 
 .vital-log-inline-name {
-  font-weight: 600;
+  font-weight: 500;
   color: var(--text-normal);
 }
 
 .vital-log-inline-value {
   font-variant-numeric: tabular-nums;
-  color: var(--text-muted);
-  min-width: 24px;
+  font-weight: 600;
+  color: var(--text-accent);
+  padding: 0 6px;
+  min-width: 22px;
   text-align: center;
 }
 
 .vital-log-inline-btn {
-  background: none;
+  background: transparent;
   border: none;
   cursor: pointer;
-  padding: 0 2px;
+  padding: 0;
+  width: 18px;
+  height: 18px;
   font-size: 13px;
+  font-weight: 700;
   line-height: 1;
   color: var(--text-muted);
-  border-radius: 2px;
-  min-width: 16px;
+  border-radius: 50%;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.1s, color 0.1s;
+  transition: background 0.1s ease, color 0.1s ease, transform 0.08s ease;
+  -webkit-tap-highlight-color: transparent;
+  flex-shrink: 0;
 }
 
 .vital-log-inline-btn:hover {
@@ -2151,8 +2191,16 @@
   color: var(--text-normal);
 }
 
+.vital-log-inline-btn:active {
+  transform: scale(0.9);
+}
+
 .vital-log-inline-btn--inc {
-  color: var(--color-green, #44a86a);
+  color: var(--interactive-accent);
+}
+
+.vital-log-inline-btn--inc:hover {
+  background: rgba(var(--color-accent-rgb, 124, 77, 255), 0.14);
 }
 
 .vital-log-inline-btn--dec {

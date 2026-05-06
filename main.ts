@@ -15,7 +15,7 @@ import { TrackerModal } from './src/trackerModal';
 import { CustomLogModal } from './src/customLogModal';
 import { CustomModalChooser } from './src/customModalChooser';
 import { registerEmbedRenderer } from './src/embedRenderer';
-import { registerInlineRenderers } from './src/inlineRenderer';
+import { registerInlineRenderers, buildInlineEditorExtension } from './src/inlineRenderer';
 
 export default class VitalLogPlugin extends Plugin {
   settings: VitalLogSettings = DEFAULT_SETTINGS;
@@ -115,6 +115,7 @@ export default class VitalLogPlugin extends Plugin {
     this.registerCustomModalCommands();
     registerEmbedRenderer(this);
     registerInlineRenderers(this);
+    this.registerEditorExtension(buildInlineEditorExtension(this));
 
     // ── Status bar for tally counters ─────────────────────
     this.initStatusBar();
