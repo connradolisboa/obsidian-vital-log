@@ -357,9 +357,12 @@ export class VitalLogSettingTab extends PluginSettingTab {
         setIcon(iconSpan, tracker.icon);
       }
       trackerNameEl.createSpan({ text: tracker.displayName });
+      const isMinuteTracker = tracker.trackerType === 'minutes';
       info.createDiv({
         cls: 'vital-log-item-meta',
-        text: `${tracker.propertyKey} · ${tracker.valueName} · ${tracker.min}–${tracker.max}`,
+        text: isMinuteTracker
+          ? `${tracker.propertyKey} · ${tracker.valueName} · minutes`
+          : `${tracker.propertyKey} · ${tracker.valueName} · ${tracker.min}–${tracker.max}`,
       });
       const actions = row.createDiv('vital-log-item-actions');
 
@@ -753,6 +756,12 @@ export class VitalLogSettingTab extends PluginSettingTab {
     insertBefore.parentElement?.insertBefore(form, insertBefore.nextSibling);
     form.createEl('h4', { text: 'New Tracker' });
 
+    const typeRow = form.createDiv('vital-log-form-row');
+    typeRow.createEl('label', { text: 'Type' });
+    const typeSelect = typeRow.createEl('select');
+    typeSelect.createEl('option', { value: 'rating', text: 'Rating (1–N scale)' });
+    typeSelect.createEl('option', { value: 'minutes', text: 'Minutes (duration)' });
+
     const nameRow = form.createDiv('vital-log-form-row');
     nameRow.createEl('label', { text: 'Display Name' });
     const nameInput = nameRow.createEl('input', { type: 'text', placeholder: 'e.g. Mood' });
@@ -777,6 +786,22 @@ export class VitalLogSettingTab extends PluginSettingTab {
     maxRow.createEl('label', { text: 'Max' });
     const maxInput = maxRow.createEl('input', { type: 'number', value: '5' });
 
+    const syncTypeUI = () => {
+      const isMinutes = typeSelect.value === 'minutes';
+      minRow.style.display = isMinutes ? 'none' : '';
+      maxRow.style.display = isMinutes ? 'none' : '';
+      if (isMinutes && !valInput.value) valInput.value = 'minutes';
+      if (!isMinutes && valInput.value === 'minutes') valInput.value = '';
+    };
+    typeSelect.addEventListener('change', syncTypeUI);
+
+    nameInput.addEventListener('input', () => {
+      keyInput.value = slugify(nameInput.value) + 'Log';
+      if (typeSelect.value === 'rating' && !valInput.value) {
+        valInput.value = slugify(nameInput.value);
+      }
+    });
+
     const actions = form.createDiv('vital-log-inline-form-actions');
     const cancelBtn = actions.createEl('button', { text: 'Cancel', cls: 'vital-log-btn' });
     cancelBtn.addEventListener('click', () => { form.remove(); });
@@ -788,11 +813,13 @@ export class VitalLogSettingTab extends PluginSettingTab {
       const val = valInput.value.trim();
       if (!name || !key || !val) return;
 
+      const trackerType = typeSelect.value as 'rating' | 'minutes';
       this.plugin.settings.trackers.push({
         id: crypto.randomUUID(),
         displayName: name,
         propertyKey: key,
         valueName: val,
+        trackerType,
         min: parseInt(minInput.value) || 1,
         max: parseInt(maxInput.value) || 5,
         icon: iconInput.value.trim() || 'activity',
@@ -810,6 +837,13 @@ export class VitalLogSettingTab extends PluginSettingTab {
     const form = containerEl.createDiv('vital-log-inline-form');
     insertBefore.parentElement?.insertBefore(form, insertBefore.nextSibling);
     form.createEl('h4', { text: `Edit: ${tracker.displayName}` });
+
+    const typeRow = form.createDiv('vital-log-form-row');
+    typeRow.createEl('label', { text: 'Type' });
+    const typeSelect = typeRow.createEl('select');
+    typeSelect.createEl('option', { value: 'rating', text: 'Rating (1–N scale)' });
+    typeSelect.createEl('option', { value: 'minutes', text: 'Minutes (duration)' });
+    typeSelect.value = tracker.trackerType ?? 'rating';
 
     const nameRow = form.createDiv('vital-log-form-row');
     nameRow.createEl('label', { text: 'Display Name' });
@@ -835,6 +869,14 @@ export class VitalLogSettingTab extends PluginSettingTab {
     maxRow.createEl('label', { text: 'Max' });
     const maxInput = maxRow.createEl('input', { type: 'number', value: String(tracker.max) });
 
+    const syncTypeUI = () => {
+      const isMinutes = typeSelect.value === 'minutes';
+      minRow.style.display = isMinutes ? 'none' : '';
+      maxRow.style.display = isMinutes ? 'none' : '';
+    };
+    syncTypeUI();
+    typeSelect.addEventListener('change', syncTypeUI);
+
     const actions = form.createDiv('vital-log-inline-form-actions');
     const cancelBtn = actions.createEl('button', { text: 'Cancel', cls: 'vital-log-btn' });
     cancelBtn.addEventListener('click', () => { form.remove(); });
@@ -849,6 +891,7 @@ export class VitalLogSettingTab extends PluginSettingTab {
       tracker.displayName = name;
       tracker.propertyKey = key;
       tracker.valueName = val;
+      tracker.trackerType = typeSelect.value as 'rating' | 'minutes';
       tracker.icon = iconInput.value.trim() || 'activity';
       tracker.min = parseInt(minInput.value) || 1;
       tracker.max = parseInt(maxInput.value) || 5;

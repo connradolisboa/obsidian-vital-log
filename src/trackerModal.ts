@@ -105,30 +105,46 @@ export class TrackerModal extends Modal {
     const tracker = this.tracker;
     if (!tracker) return;
 
-    // ── Value selector (grid of buttons) ────────────────────
-    const valueSection = contentEl.createDiv('vital-log-modal-section');
-    valueSection.createEl('label', {
-      text: `${tracker.displayName} (${tracker.min}–${tracker.max})`,
-    });
+    const isMinutes = tracker.trackerType === 'minutes';
 
-    const valueGrid = valueSection.createDiv('vital-log-tracker-grid');
-    const count = tracker.max - tracker.min + 1;
-    for (let v = tracker.min; v <= tracker.max; v++) {
-      const vBtn = valueGrid.createEl('button', {
-        text: String(v),
-        cls: 'vital-log-tracker-value-btn' +
-          (this.selectedValue === v ? ' is-selected' : ''),
+    // ── Value selector ───────────────────────────────────────
+    const valueSection = contentEl.createDiv('vital-log-modal-section');
+
+    if (isMinutes) {
+      valueSection.createEl('label', { text: `${tracker.displayName} (minutes)` });
+      const minutesInput = valueSection.createEl('input', {
+        type: 'number',
+        attr: { min: '0', step: '1', placeholder: '0' },
       });
-      // Scale button size based on range
-      if (count <= 5) {
-        vBtn.addClass('vital-log-tracker-value-btn--large');
-      } else if (count <= 10) {
-        vBtn.addClass('vital-log-tracker-value-btn--medium');
+      minutesInput.style.width = '100%';
+      if (this.selectedValue !== null) minutesInput.value = String(this.selectedValue);
+      minutesInput.addEventListener('input', () => {
+        const v = parseFloat(minutesInput.value);
+        this.selectedValue = isNaN(v) ? null : v;
+      });
+      minutesInput.focus();
+    } else {
+      valueSection.createEl('label', {
+        text: `${tracker.displayName} (${tracker.min}–${tracker.max})`,
+      });
+      const valueGrid = valueSection.createDiv('vital-log-tracker-grid');
+      const count = tracker.max - tracker.min + 1;
+      for (let v = tracker.min; v <= tracker.max; v++) {
+        const vBtn = valueGrid.createEl('button', {
+          text: String(v),
+          cls: 'vital-log-tracker-value-btn' +
+            (this.selectedValue === v ? ' is-selected' : ''),
+        });
+        if (count <= 5) {
+          vBtn.addClass('vital-log-tracker-value-btn--large');
+        } else if (count <= 10) {
+          vBtn.addClass('vital-log-tracker-value-btn--medium');
+        }
+        vBtn.addEventListener('click', () => {
+          this.selectedValue = v;
+          this.render();
+        });
       }
-      vBtn.addEventListener('click', () => {
-        this.selectedValue = v;
-        this.render();
-      });
     }
 
     // ── Time field ───────────────────────────────────────────
@@ -179,7 +195,8 @@ export class TrackerModal extends Modal {
         return;
       }
       if (this.selectedValue === null) {
-        new Notice(`Please select a ${tracker.displayName.toLowerCase()} value.`);
+        const label = isMinutes ? 'minutes' : tracker.displayName.toLowerCase() + ' value';
+        new Notice(`Please enter ${label}.`);
         return;
       }
       timeError.style.display = 'none';

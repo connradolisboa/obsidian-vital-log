@@ -128,13 +128,16 @@ export function isArray(v: unknown): v is unknown[] {
 
 // ── Tracker types (mood, energy, etc.) ──────────────────────
 
+export type TrackerType = 'rating' | 'minutes';
+
 export interface TrackerConfig {
   id: string;
   displayName: string;   // e.g. "Mood", "Energy"
   propertyKey: string;   // frontmatter key, e.g. "moodLog"
-  valueName: string;     // field name inside entries, e.g. "mood", "energy"
-  min: number;           // minimum value (e.g. 1)
-  max: number;           // maximum value (e.g. 5)
+  valueName: string;     // field name inside entries, e.g. "mood", "energy", "minutes"
+  trackerType?: TrackerType; // 'rating' (default) | 'minutes'
+  min: number;           // minimum value (e.g. 1) — used only for 'rating' type
+  max: number;           // maximum value (e.g. 5) — used only for 'rating' type
   icon: string;          // Obsidian icon name, e.g. "smile", "zap"
 }
 
