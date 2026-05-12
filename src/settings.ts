@@ -4,7 +4,7 @@
 
 import { App, Modal, PluginSettingTab, Setting, setIcon } from 'obsidian';
 import type VitalLogPlugin from '../main';
-import type { CustomModalConfig, CustomField, CustomFieldType, TallyCounterConfig, CustomModalItem, CustomButtonConfig, MirrorConditionalPin } from './types';
+import type { CustomModalConfig, CustomField, CustomFieldType, TallyCounterConfig, TrackerConfig, CustomModalItem, CustomButtonConfig, MirrorConditionalPin } from './types';
 import { CUSTOM_FIELD_TYPES } from './types';
 import { ManageModal } from './manageModal';
 
@@ -1106,6 +1106,13 @@ class CustomModalEditorModal extends Modal {
           cls: 'vital-log-item-meta',
           text: tc ? `${tc.propertyKey} · tally · target ${tc.target}` : item.tallyCounterId,
         });
+      } else if (item.type === 'tracker') {
+        const tr = this.plugin.settings.trackers?.find((t) => t.id === item.trackerId);
+        info.createDiv({ cls: 'vital-log-item-name', text: tr?.displayName ?? '(deleted tracker)' });
+        info.createDiv({
+          cls: 'vital-log-item-meta',
+          text: tr ? `${tr.propertyKey} · tracker · ${tr.trackerType ?? 'rating'}` : item.trackerId,
+        });
       } else if (item.type === 'button') {
         info.createDiv({ cls: 'vital-log-item-name', text: item.button.displayName });
         info.createDiv({
@@ -1179,9 +1186,9 @@ class CustomModalEditorModal extends Modal {
         });
       }
 
-      // Pin button for field/tally items (controls mirror mode visibility)
-      if (item.type === 'field' || item.type === 'tally') {
-        const itemId = item.type === 'field' ? item.field.id : item.tallyCounterId;
+      // Pin button for field/tally/tracker items (controls mirror mode visibility)
+      if (item.type === 'field' || item.type === 'tally' || item.type === 'tracker') {
+        const itemId = item.type === 'field' ? item.field.id : item.type === 'tally' ? item.tallyCounterId : item.trackerId;
         if (!this.modal.mirrorModePinnedIds) this.modal.mirrorModePinnedIds = [];
         const isPinned = this.modal.mirrorModePinnedIds.includes(itemId);
 
@@ -1240,6 +1247,21 @@ class CustomModalEditorModal extends Modal {
       addRow.createEl('span', {
         cls: 'vital-log-item-meta',
         text: ' \u00b7 No tally counters defined yet. Add them in the Tally Counters tab.',
+      });
+    }
+
+    const availableTrackers = (this.plugin.settings.trackers ?? []).filter(
+      (tr) => !this.modal.items.some((it) => it.type === 'tracker' && it.trackerId === tr.id)
+    );
+    if (availableTrackers.length > 0) {
+      const addTrackerBtn = addRow.createEl('button', { text: '+ Add Tracker', cls: 'vital-log-btn' });
+      addTrackerBtn.addEventListener('click', () => {
+        this.renderTrackerPickerForm(fieldListEl, availableTrackers);
+      });
+    } else if ((this.plugin.settings.trackers ?? []).length === 0) {
+      addRow.createEl('span', {
+        cls: 'vital-log-item-meta',
+        text: ' \u00b7 No trackers defined yet. Add them in the Trackers tab.',
       });
     }
 
@@ -1434,6 +1456,30 @@ class CustomModalEditorModal extends Modal {
     addBtn.addEventListener('click', () => {
       if (!select.value) return;
       this.modal.items.push({ type: 'tally', tallyCounterId: select.value });
+      form.remove();
+      this.renderFieldList(fieldListEl);
+    });
+  }
+
+  private renderTrackerPickerForm(fieldListEl: HTMLElement, available: TrackerConfig[]): void {
+    const form = fieldListEl.createDiv('vital-log-inline-form');
+    form.createEl('h4', { text: 'Add Tracker' });
+
+    const row = form.createDiv('vital-log-form-row');
+    row.createEl('label', { text: 'Tracker' });
+    const select = row.createEl('select');
+    for (const tr of available) {
+      select.createEl('option', { value: tr.id, text: `${tr.displayName} (${tr.propertyKey})` });
+    }
+
+    const actions = form.createDiv('vital-log-inline-form-actions');
+    const cancelBtn = actions.createEl('button', { text: 'Cancel', cls: 'vital-log-btn' });
+    cancelBtn.addEventListener('click', () => { form.remove(); });
+
+    const addBtn = actions.createEl('button', { text: 'Add', cls: 'vital-log-btn mod-cta' });
+    addBtn.addEventListener('click', () => {
+      if (!select.value) return;
+      this.modal.items.push({ type: 'tracker', trackerId: select.value });
       form.remove();
       this.renderFieldList(fieldListEl);
     });

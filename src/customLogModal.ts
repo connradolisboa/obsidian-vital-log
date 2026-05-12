@@ -11,12 +11,14 @@ import type {
   CustomModalItem,
   CustomField,
   TallyCounterConfig,
+  TrackerConfig,
   CustomButtonConfig,
   MirrorConditionalPin,
 } from './types';
 import { resolveNote, getNoteIfExists, resolvePathTemplate } from './dailyNoteResolver';
 import * as yaml from './yamlManager';
 import * as tally from './tallyManager';
+import * as tm from './trackerManager';
 
 // moment is bundled with Obsidian
 declare const moment: (date?: Date | string) => {
@@ -39,6 +41,9 @@ export class CustomLogModal extends Modal {
   private tallyNotes: Map<string, string> = new Map();    // tallyCounterId → current note
   private appendTallies: boolean = false;
   private tallyNotesSaved = false;
+
+  // Tracker state
+  private trackerValues: Map<string, number | null> = new Map(); // trackerId → selected value
 
   // Mirror mode: items visible after frontmatter filtering
   private visibleItems: CustomModalItem[] = [];
@@ -137,6 +142,21 @@ export class CustomLogModal extends Modal {
         this.tallyValues.set(item.tallyCounterId, entry.value);
         this.tallyNotes.set(item.tallyCounterId, entry.note ?? '');
       }
+
+      // Load tracker values (last logged entry)
+      for (const item of this.config.items) {
+        if (item.type !== 'tracker') continue;
+        const config = this.settings.trackers?.find((t) => t.id === item.trackerId);
+        if (!config) continue;
+        const entries = fm[config.propertyKey];
+        if (Array.isArray(entries) && entries.length > 0) {
+          const last = entries[entries.length - 1] as Record<string, unknown>;
+          const val = last[config.valueName];
+          this.trackerValues.set(item.trackerId, typeof val === 'number' ? val : null);
+        } else {
+          this.trackerValues.set(item.trackerId, null);
+        }
+      }
     } else {
       this.fieldValues.clear();
       // Keep tally state as-is (defaults to 0 / empty note)
@@ -184,6 +204,12 @@ export class CustomLogModal extends Modal {
         const val = fm[tallyConfig.propertyKey];
         return (val !== undefined && val !== null) || pinnedIds.has(item.tallyCounterId);
       }
+      if (item.type === 'tracker') {
+        const trackerConfig = this.settings.trackers?.find((t) => t.id === item.trackerId);
+        if (!trackerConfig) return false;
+        const val = fm[trackerConfig.propertyKey];
+        return (val !== undefined && val !== null) || pinnedIds.has(item.trackerId);
+      }
       if (item.type === 'button') return true;
       // Structural items (header, divider, section, section-end) are skipped in mirror mode
       return false;
@@ -228,6 +254,9 @@ export class CustomLogModal extends Modal {
         coveredKeys.add(item.field.parentKey ?? item.field.propertyKey);
       } else if (item.type === 'tally') {
         const tc = this.settings.tallyCounters.find((t) => t.id === item.tallyCounterId);
+        if (tc) coveredKeys.add(tc.propertyKey);
+      } else if (item.type === 'tracker') {
+        const tc = this.settings.trackers?.find((t) => t.id === item.trackerId);
         if (tc) coveredKeys.add(tc.propertyKey);
       }
     }
@@ -349,6 +378,11 @@ export class CustomLogModal extends Modal {
         const config = this.settings.tallyCounters.find((t) => t.id === item.tallyCounterId);
         if (config) {
           this.renderTallyCounter(currentContainer, config);
+        }
+      } else if (item.type === 'tracker') {
+        const config = this.settings.trackers?.find((t) => t.id === item.trackerId);
+        if (config) {
+          this.renderTrackerItem(currentContainer, config);
         }
       } else if (item.type === 'button') {
         this.renderButton(currentContainer, item.button);
@@ -527,6 +561,52 @@ export class CustomLogModal extends Modal {
     noteTextarea.addEventListener('input', () => {
       this.tallyNotes.set(config.id, noteTextarea.value);
     });
+  }
+
+  // ── Render tracker ────────────────────────────────────────
+
+  private renderTrackerItem(container: HTMLElement, config: TrackerConfig): void {
+    const section = container.createDiv('vital-log-custom-field');
+
+    const labelEl = section.createEl('label', { cls: 'vital-log-tally-label' });
+    if (config.icon) {
+      const iconSpan = labelEl.createSpan({ cls: 'vital-log-tally-icon' });
+      setIcon(iconSpan, config.icon);
+    }
+    labelEl.createSpan({ text: config.displayName });
+
+    const isMinutes = config.trackerType === 'minutes';
+    const currentValue = this.trackerValues.get(config.id) ?? null;
+
+    if (isMinutes) {
+      const row = section.createDiv('vital-log-slider-row');
+      const input = row.createEl('input', {
+        type: 'number',
+        attr: { min: '0', step: '1', placeholder: '0' },
+      });
+      input.style.width = '100%';
+      input.addClass('vital-log-custom-input');
+      if (currentValue !== null) input.value = String(currentValue);
+      input.addEventListener('input', () => {
+        const v = parseFloat(input.value);
+        this.trackerValues.set(config.id, isNaN(v) ? null : v);
+      });
+    } else {
+      const grid = section.createDiv('vital-log-tracker-grid');
+      const count = config.max - config.min + 1;
+      for (let v = config.min; v <= config.max; v++) {
+        const btn = grid.createEl('button', {
+          text: String(v),
+          cls: 'vital-log-tracker-value-btn' + (currentValue === v ? ' is-selected' : ''),
+        });
+        if (count <= 5) btn.addClass('vital-log-tracker-value-btn--large');
+        else if (count <= 10) btn.addClass('vital-log-tracker-value-btn--medium');
+        btn.addEventListener('click', () => {
+          this.trackerValues.set(config.id, v);
+          this.render();
+        });
+      }
+    }
   }
 
   // ── Render individual field by type ───────────────────────
@@ -870,6 +950,19 @@ export class CustomLogModal extends Modal {
       // Save tally notes
       await this.persistTallyNotes(file);
       this.tallyNotesSaved = true;
+
+      // Log tracker values
+      for (const item of this.visibleItems) {
+        if (item.type !== 'tracker') continue;
+        const config = this.settings.trackers?.find((t) => t.id === item.trackerId);
+        if (!config) continue;
+        const val = this.trackerValues.get(item.trackerId);
+        if (val === null || val === undefined) continue;
+        await tm.logTracker(this.app, file, config, {
+          time: moment().format('HH:mm'),
+          value: val,
+        }, this.settings);
+      }
 
       // Append tallies to note body (or specific note) if requested
       if (this.appendTallies) {

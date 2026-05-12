@@ -22,11 +22,17 @@
 
 import { App, setIcon, TFile } from 'obsidian';
 import type VitalLogPlugin from '../main';
-import type { TallyCounterConfig, CustomField, CustomButtonConfig, CustomModalConfig, CustomModalItem, VitalLogSettings } from './types';
+import type { TallyCounterConfig, TrackerConfig, CustomField, CustomButtonConfig, CustomModalConfig, CustomModalItem, VitalLogSettings } from './types';
 import { getDailyNoteIfExists } from './dailyNoteResolver';
 import * as yaml from './yamlManager';
 import * as tally from './tallyManager';
+import * as tm from './trackerManager';
 import { CustomLogModal } from './customLogModal';
+
+function nowHHmm(): string {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
 
 export function registerEmbedRenderer(plugin: VitalLogPlugin): void {
   plugin.registerMarkdownCodeBlockProcessor('vital-log', async (source, el, ctx) => {
@@ -145,6 +151,7 @@ async function renderEmbed(
       // Pure-tally/button mode: preserve the 2-column grid layout
       const validItemCount = visibleItems.filter((item) => {
         if (item.type === 'tally') return settings.tallyCounters.some((t) => t.id === item.tallyCounterId);
+        if (item.type === 'tracker') return (settings.trackers ?? []).some((t) => t.id === item.trackerId);
         if (item.type === 'button') return true;
         return false;
       }).length;
@@ -165,6 +172,10 @@ async function renderEmbed(
               ? ((raw as Record<string, unknown>)['value'] as number) ?? 0
               : 0;
           renderTallyRow(app, talliesEl, config, currentValue, targetNote);
+        } else if (item.type === 'tracker') {
+          const config = (settings.trackers ?? []).find((t) => t.id === item.trackerId);
+          if (!config) continue;
+          renderTrackerColumnItem(app, talliesEl, config, fm, targetNote);
         } else if (item.type === 'button') {
           renderButtonRow(app, talliesEl, item.button, 'tally-grid');
         }
@@ -204,6 +215,12 @@ function getMirrorFilteredItems(
       const val = fm[tallyConfig.propertyKey];
       return (val !== undefined && val !== null) || pinnedIds.includes(item.tallyCounterId);
     }
+    if (item.type === 'tracker') {
+      const trackerConfig = (settings.trackers ?? []).find((t) => t.id === item.trackerId);
+      if (!trackerConfig) return false;
+      const val = fm[trackerConfig.propertyKey];
+      return (val !== undefined && val !== null) || pinnedIds.includes(item.trackerId);
+    }
     if (item.type === 'button') return true;
     return false;
   });
@@ -225,6 +242,9 @@ function getOtherProps(
       coveredKeys.add((item.field as any).parentKey ?? item.field.propertyKey);
     } else if (item.type === 'tally') {
       const tc = settings.tallyCounters.find((t) => t.id === item.tallyCounterId);
+      if (tc) coveredKeys.add(tc.propertyKey);
+    } else if (item.type === 'tracker') {
+      const tc = (settings.trackers ?? []).find((t) => t.id === item.trackerId);
       if (tc) coveredKeys.add(tc.propertyKey);
     }
   }
@@ -313,7 +333,7 @@ function renderEmbedOtherPropsSection(
 
 // ── Mixed-mode item renderer (supports sections, headers, dividers) ──
 
-type EmbedSettings = { tallyCounters: TallyCounterConfig[] };
+type EmbedSettings = { tallyCounters: TallyCounterConfig[]; trackers: TrackerConfig[] };
 
 function renderMixedItems(
   app: App,
@@ -327,6 +347,7 @@ function renderMixedItems(
 
   const isColumnEligible = (it: typeof items[number]): boolean =>
     it.type === 'tally' ||
+    it.type === 'tracker' ||
     it.type === 'button' ||
     (it.type === 'field' && it.field.fieldType === 'checkbox');
 
@@ -382,6 +403,7 @@ function renderMixedItems(
 
       const validCount = run.filter((it) => {
         if (it.type === 'tally') return settings.tallyCounters.some((c) => c.id === it.tallyCounterId);
+        if (it.type === 'tracker') return (settings.trackers ?? []).some((c) => c.id === it.trackerId);
         return true;
       }).length;
 
@@ -401,6 +423,10 @@ function renderMixedItems(
               ? ((raw as Record<string, unknown>)['value'] as number) ?? 0
               : 0;
           renderTallyRow(app, groupEl, config, currentValue, targetNote);
+        } else if (runItem.type === 'tracker') {
+          const config = (settings.trackers ?? []).find((c) => c.id === runItem.trackerId);
+          if (!config) continue;
+          renderTrackerColumnItem(app, groupEl, config, fm, targetNote);
         } else if (runItem.type === 'button') {
           renderButtonRow(app, groupEl, runItem.button, 'tally-grid');
         } else if (runItem.type === 'field') {
@@ -463,6 +489,86 @@ function renderButtonRow(
     const arrowSpan = btn.createSpan({ cls: 'vital-log-embed-action-btn-arrow' });
     setIcon(arrowSpan, button.buttonType === 'filelink' ? 'file-symlink' : 'terminal');
     btn.addEventListener('click', handleClick);
+  }
+}
+
+// ── Tracker column item ───────────────────────────────────
+
+function renderTrackerColumnItem(
+  app: App,
+  container: HTMLElement,
+  config: TrackerConfig,
+  fm: Record<string, unknown>,
+  targetNote: TFile | null
+): void {
+  // Get last logged value
+  let lastValue: number | null = null;
+  const entries = fm[config.propertyKey];
+  if (Array.isArray(entries) && entries.length > 0) {
+    const last = entries[entries.length - 1] as Record<string, unknown>;
+    const v = last[config.valueName];
+    if (typeof v === 'number') lastValue = v;
+  }
+
+  const row = container.createDiv('vital-log-embed-tally-row');
+
+  const labelEl = row.createDiv('vital-log-embed-tally-label');
+  if (config.icon) {
+    const iconSpan = labelEl.createSpan({ cls: 'vital-log-embed-tally-icon' });
+    setIcon(iconSpan, config.icon);
+  }
+  labelEl.createSpan({ cls: 'vital-log-embed-tally-name', text: config.displayName });
+
+  const isMinutes = config.trackerType === 'minutes';
+
+  if (isMinutes) {
+    const controls = row.createDiv('vital-log-embed-tally-controls');
+    const input = controls.createEl('input', {
+      type: 'number',
+      attr: { min: '0', step: '1', placeholder: '0' },
+    });
+    input.addClass('vital-log-embed-tracker-minutes-input');
+    if (lastValue !== null) input.value = String(lastValue);
+    const logBtn = controls.createEl('button', {
+      text: '✓',
+      cls: 'vital-log-embed-tally-btn vital-log-embed-tally-btn--inc',
+      attr: { 'aria-label': `Log ${config.displayName}` },
+    });
+    logBtn.addEventListener('click', async () => {
+      const v = parseFloat(input.value);
+      if (isNaN(v) || !targetNote) return;
+      try {
+        await tm.logTracker(app, targetNote, config, { time: nowHHmm(), value: v });
+      } catch (err) {
+        console.error('Vital Log embed tracker:', err);
+      }
+    });
+  } else {
+    // Rating type: compact value buttons
+    const controls = row.createDiv('vital-log-embed-tally-controls vital-log-embed-tracker-rating-controls');
+    let selected = lastValue;
+
+    const renderBtns = () => {
+      controls.empty();
+      for (let v = config.min; v <= config.max; v++) {
+        const btn = controls.createEl('button', {
+          text: String(v),
+          cls: 'vital-log-tracker-value-btn vital-log-tracker-value-btn--embed' + (selected === v ? ' is-selected' : ''),
+          attr: { 'aria-label': `${config.displayName}: ${v}` },
+        });
+        btn.addEventListener('click', async () => {
+          selected = v;
+          renderBtns();
+          if (!targetNote) return;
+          try {
+            await tm.logTracker(app, targetNote, config, { time: nowHHmm(), value: v });
+          } catch (err) {
+            console.error('Vital Log embed tracker:', err);
+          }
+        });
+      }
+    };
+    renderBtns();
   }
 }
 

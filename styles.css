@@ -864,6 +864,33 @@
   border-color: var(--interactive-accent);
 }
 
+/* Compact tracker buttons for embed column cells */
+.vital-log-tracker-value-btn--embed {
+  min-width: 1.6em;
+  min-height: 1.6em;
+  width: 1.6em;
+  height: 1.6em;
+  font-size: 0.78em;
+  border-radius: 4px;
+  padding: 0;
+}
+
+.vital-log-embed-tracker-rating-controls {
+  flex-wrap: wrap;
+  gap: 0.15em;
+}
+
+.vital-log-embed-tracker-minutes-input {
+  width: 3.5em;
+  font-size: 0.85em;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  padding: 0 0.25em;
+  text-align: center;
+}
+
 /* ── Custom modal date row ── */
 .vital-log-custom-date-row {
   display: flex;
