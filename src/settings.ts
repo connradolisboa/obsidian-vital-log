@@ -430,10 +430,13 @@ export class VitalLogSettingTab extends PluginSettingTab {
       cls: 'vital-log-settings-helper',
     });
 
+    const activeModals = this.plugin.settings.customModals.filter((m) => !m.archived);
+    const archivedModals = this.plugin.settings.customModals.filter((m) => m.archived);
+
     const modalList = el.createDiv('vital-log-item-list');
     let modalDragIdx = -1;
-    for (let i = 0; i < this.plugin.settings.customModals.length; i++) {
-      const modal = this.plugin.settings.customModals[i];
+    for (let i = 0; i < activeModals.length; i++) {
+      const modal = activeModals[i];
       const row = modalList.createDiv('vital-log-item-row');
       row.draggable = true;
       const handle = row.createDiv({ cls: 'vital-log-drag-handle' });
@@ -461,8 +464,14 @@ export class VitalLogSettingTab extends PluginSettingTab {
         row.classList.remove('drag-over');
         if (modalDragIdx !== -1 && modalDragIdx !== i) {
           const arr = this.plugin.settings.customModals;
-          const [moved] = arr.splice(modalDragIdx, 1);
-          arr.splice(i, 0, moved);
+          const fromModal = activeModals[modalDragIdx];
+          const toModal = activeModals[i];
+          const fromIdx = arr.indexOf(fromModal);
+          const toIdx = arr.indexOf(toModal);
+          if (fromIdx !== -1 && toIdx !== -1) {
+            const [moved] = arr.splice(fromIdx, 1);
+            arr.splice(toIdx, 0, moved);
+          }
           modalDragIdx = -1;
           await this.plugin.saveSettings();
           this.plugin.registerCustomModalCommands();
@@ -480,7 +489,9 @@ export class VitalLogSettingTab extends PluginSettingTab {
         const copy: import('./types').CustomModalConfig = JSON.parse(JSON.stringify(modal));
         copy.id = crypto.randomUUID();
         copy.displayName = `Copy of ${modal.displayName}`;
-        this.plugin.settings.customModals.splice(i + 1, 0, copy);
+        delete copy.archived;
+        const origIdx = this.plugin.settings.customModals.indexOf(modal);
+        this.plugin.settings.customModals.splice(origIdx + 1, 0, copy);
         await this.plugin.saveSettings();
         this.plugin.registerCustomModalCommands();
         this.display();
@@ -491,16 +502,17 @@ export class VitalLogSettingTab extends PluginSettingTab {
         new CustomModalEditorModal(this.app, this.plugin, modal, true, () => this.display()).open();
       });
 
-      const delBtn = actions.createEl('button', { text: 'Delete', cls: 'vital-log-btn mod-warning' });
-      delBtn.addEventListener('click', async () => {
-        this.plugin.settings.customModals = this.plugin.settings.customModals.filter((m) => m.id !== modal.id);
+      const archiveBtn = actions.createEl('button', { text: 'Archive', cls: 'vital-log-btn' });
+      archiveBtn.title = 'Hide from commands but keep working in embeds';
+      archiveBtn.addEventListener('click', async () => {
+        modal.archived = true;
         await this.plugin.saveSettings();
         this.plugin.registerCustomModalCommands();
         this.display();
       });
     }
 
-    if (this.plugin.settings.customModals.length === 0) {
+    if (activeModals.length === 0) {
       modalList.createDiv({ cls: 'vital-log-empty-state', text: 'No custom modals yet.' });
     }
 
@@ -522,6 +534,40 @@ export class VitalLogSettingTab extends PluginSettingTab {
             new CustomModalEditorModal(this.app, this.plugin, newModal, false, () => this.display()).open();
           })
       );
+
+    // ── Archived modals ───────────────────────────────────────
+    if (archivedModals.length > 0) {
+      const details = el.createEl('details', { cls: 'vital-log-archived-modals' });
+      details.createEl('summary', { text: `Archived modals (${archivedModals.length})` });
+      const archivedList = details.createDiv('vital-log-item-list');
+
+      for (const modal of archivedModals) {
+        const row = archivedList.createDiv('vital-log-item-row vital-log-item-row--archived');
+        const info = row.createDiv('vital-log-item-info');
+        info.createDiv({ cls: 'vital-log-item-name', text: modal.displayName });
+        info.createDiv({
+          cls: 'vital-log-item-meta',
+          text: `${modal.items.length} item${modal.items.length !== 1 ? 's' : ''} · ${modal.notePath || '(no path)'}`,
+        });
+        const actions = row.createDiv('vital-log-item-actions');
+
+        const restoreBtn = actions.createEl('button', { text: 'Restore', cls: 'vital-log-btn' });
+        restoreBtn.addEventListener('click', async () => {
+          delete modal.archived;
+          await this.plugin.saveSettings();
+          this.plugin.registerCustomModalCommands();
+          this.display();
+        });
+
+        const delBtn = actions.createEl('button', { text: 'Delete', cls: 'vital-log-btn mod-warning' });
+        delBtn.addEventListener('click', async () => {
+          this.plugin.settings.customModals = this.plugin.settings.customModals.filter((m) => m.id !== modal.id);
+          await this.plugin.saveSettings();
+          this.plugin.registerCustomModalCommands();
+          this.display();
+        });
+      }
+    }
   }
 
   // ── Tally Counters tab ───────────────────────────────────────
@@ -1455,7 +1501,8 @@ class CustomModalEditorModal extends Modal {
     const addBtn = actions.createEl('button', { text: 'Add', cls: 'vital-log-btn mod-cta' });
     addBtn.addEventListener('click', () => {
       if (!select.value) return;
-      this.modal.items.push({ type: 'tally', tallyCounterId: select.value });
+      const tc = available.find((t) => t.id === select.value);
+      this.modal.items.push({ type: 'tally', tallyCounterId: select.value, tallySnapshot: tc ? { ...tc } : undefined });
       form.remove();
       this.renderFieldList(fieldListEl);
     });
@@ -1479,7 +1526,8 @@ class CustomModalEditorModal extends Modal {
     const addBtn = actions.createEl('button', { text: 'Add', cls: 'vital-log-btn mod-cta' });
     addBtn.addEventListener('click', () => {
       if (!select.value) return;
-      this.modal.items.push({ type: 'tracker', trackerId: select.value });
+      const tr = available.find((t) => t.id === select.value);
+      this.modal.items.push({ type: 'tracker', trackerId: select.value, trackerSnapshot: tr ? { ...tr } : undefined });
       form.remove();
       this.renderFieldList(fieldListEl);
     });

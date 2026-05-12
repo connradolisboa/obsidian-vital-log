@@ -46,6 +46,37 @@ export function registerEmbedRenderer(plugin: VitalLogPlugin): void {
   });
 }
 
+// Keeps tallySnapshot/trackerSnapshot current so embeds survive tracker/tally deletion.
+// Only writes settings when something actually changed.
+async function syncSnapshots(plugin: VitalLogPlugin, modalConfig: import('./types').CustomModalConfig): Promise<void> {
+  let dirty = false;
+  for (const item of modalConfig.items) {
+    if (item.type === 'tally') {
+      const live = plugin.settings.tallyCounters.find((t) => t.id === item.tallyCounterId);
+      if (live) {
+        const s = item.tallySnapshot;
+        if (!s || s.displayName !== live.displayName || s.propertyKey !== live.propertyKey ||
+            s.target !== live.target || s.step !== live.step || s.icon !== live.icon) {
+          item.tallySnapshot = { ...live };
+          dirty = true;
+        }
+      }
+    } else if (item.type === 'tracker') {
+      const live = (plugin.settings.trackers ?? []).find((t) => t.id === item.trackerId);
+      if (live) {
+        const s = item.trackerSnapshot;
+        if (!s || s.displayName !== live.displayName || s.propertyKey !== live.propertyKey ||
+            s.valueName !== live.valueName || s.trackerType !== live.trackerType ||
+            s.min !== live.min || s.max !== live.max || s.icon !== live.icon) {
+          item.trackerSnapshot = { ...live };
+          dirty = true;
+        }
+      }
+    }
+  }
+  if (dirty) await plugin.saveSettings();
+}
+
 async function renderEmbed(
   plugin: VitalLogPlugin,
   container: HTMLElement,
@@ -61,6 +92,7 @@ async function renderEmbed(
 
   const { app, settings } = plugin;
 
+  // Archived modals still resolve for embeds — that's the point of archiving.
   const modalConfig = settings.customModals.find(
     (m) => m.displayName.toLowerCase() === modalName.toLowerCase()
   );
@@ -80,6 +112,9 @@ async function renderEmbed(
     });
     return;
   }
+
+  // Keep snapshots fresh so embeds survive tracker/tally deletion.
+  await syncSnapshots(plugin, modalConfig);
 
   // When notePath is empty, target the note this embed lives in (sourcePath).
   // Otherwise fall back to the daily note (legacy behaviour for path-based modals).
@@ -150,8 +185,8 @@ async function renderEmbed(
     if (!hasStructure) {
       // Pure-tally/button mode: preserve the 2-column grid layout
       const validItemCount = visibleItems.filter((item) => {
-        if (item.type === 'tally') return settings.tallyCounters.some((t) => t.id === item.tallyCounterId);
-        if (item.type === 'tracker') return (settings.trackers ?? []).some((t) => t.id === item.trackerId);
+        if (item.type === 'tally') return !!(settings.tallyCounters.some((t) => t.id === item.tallyCounterId) || item.tallySnapshot);
+        if (item.type === 'tracker') return !!((settings.trackers ?? []).some((t) => t.id === item.trackerId) || item.trackerSnapshot);
         if (item.type === 'button') return true;
         return false;
       }).length;
@@ -164,7 +199,7 @@ async function renderEmbed(
 
       for (const item of visibleItems) {
         if (item.type === 'tally') {
-          const config = settings.tallyCounters.find((t) => t.id === item.tallyCounterId);
+          const config = settings.tallyCounters.find((t) => t.id === item.tallyCounterId) ?? item.tallySnapshot;
           if (!config) continue;
           const raw = fm[config.propertyKey];
           const currentValue =
@@ -173,7 +208,7 @@ async function renderEmbed(
               : 0;
           renderTallyRow(app, talliesEl, config, currentValue, targetNote);
         } else if (item.type === 'tracker') {
-          const config = (settings.trackers ?? []).find((t) => t.id === item.trackerId);
+          const config = (settings.trackers ?? []).find((t) => t.id === item.trackerId) ?? item.trackerSnapshot;
           if (!config) continue;
           renderTrackerColumnItem(app, talliesEl, config, fm, targetNote);
         } else if (item.type === 'button') {
@@ -210,13 +245,13 @@ function getMirrorFilteredItems(
       return (val !== undefined && val !== null) || pinnedIds.includes(item.field.id);
     }
     if (item.type === 'tally') {
-      const tallyConfig = settings.tallyCounters.find((t) => t.id === item.tallyCounterId);
+      const tallyConfig = settings.tallyCounters.find((t) => t.id === item.tallyCounterId) ?? item.tallySnapshot;
       if (!tallyConfig) return false;
       const val = fm[tallyConfig.propertyKey];
       return (val !== undefined && val !== null) || pinnedIds.includes(item.tallyCounterId);
     }
     if (item.type === 'tracker') {
-      const trackerConfig = (settings.trackers ?? []).find((t) => t.id === item.trackerId);
+      const trackerConfig = (settings.trackers ?? []).find((t) => t.id === item.trackerId) ?? item.trackerSnapshot;
       if (!trackerConfig) return false;
       const val = fm[trackerConfig.propertyKey];
       return (val !== undefined && val !== null) || pinnedIds.includes(item.trackerId);
@@ -402,8 +437,8 @@ function renderMixedItems(
       }
 
       const validCount = run.filter((it) => {
-        if (it.type === 'tally') return settings.tallyCounters.some((c) => c.id === it.tallyCounterId);
-        if (it.type === 'tracker') return (settings.trackers ?? []).some((c) => c.id === it.trackerId);
+        if (it.type === 'tally') return !!(settings.tallyCounters.some((c) => c.id === it.tallyCounterId) || it.tallySnapshot);
+        if (it.type === 'tracker') return !!((settings.trackers ?? []).some((c) => c.id === it.trackerId) || it.trackerSnapshot);
         return true;
       }).length;
 
@@ -415,7 +450,7 @@ function renderMixedItems(
 
       for (const runItem of run) {
         if (runItem.type === 'tally') {
-          const config = settings.tallyCounters.find((c) => c.id === runItem.tallyCounterId);
+          const config = settings.tallyCounters.find((c) => c.id === runItem.tallyCounterId) ?? runItem.tallySnapshot;
           if (!config) continue;
           const raw = fm[config.propertyKey];
           const currentValue =
@@ -424,7 +459,7 @@ function renderMixedItems(
               : 0;
           renderTallyRow(app, groupEl, config, currentValue, targetNote);
         } else if (runItem.type === 'tracker') {
-          const config = (settings.trackers ?? []).find((c) => c.id === runItem.trackerId);
+          const config = (settings.trackers ?? []).find((c) => c.id === runItem.trackerId) ?? runItem.trackerSnapshot;
           if (!config) continue;
           renderTrackerColumnItem(app, groupEl, config, fm, targetNote);
         } else if (runItem.type === 'button') {

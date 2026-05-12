@@ -209,8 +209,8 @@ export interface CustomButtonConfig {
 
 export type CustomModalItem =
   | { type: 'field'; field: CustomField }
-  | { type: 'tally'; tallyCounterId: string }
-  | { type: 'tracker'; trackerId: string }
+  | { type: 'tally'; tallyCounterId: string; tallySnapshot?: TallyCounterConfig }
+  | { type: 'tracker'; trackerId: string; trackerSnapshot?: TrackerConfig }
   | { type: 'button'; button: CustomButtonConfig }
   | { type: 'header'; text: string }
   | { type: 'divider' }
@@ -232,6 +232,7 @@ export interface CustomModalConfig {
   useTemplater: boolean;    // trigger Templater on new note creation
   templatePath: string;     // path to template file for Templater
   items: CustomModalItem[];
+  archived?: boolean;                          // archived modals are hidden from commands/ribbon but still resolve for embeds
   mirrorMode?: boolean;                        // only show properties that already exist in the current note
   mirrorModePinnedIds?: string[];              // field IDs or tallyCounterIds that always show in mirror mode
   mirrorModeConditionalPins?: MirrorConditionalPin[]; // tag/folder-conditional pins

@@ -150,8 +150,9 @@ export default class VitalLogPlugin extends Plugin {
     }
     this.customModalCommandIds = [];
 
-    // Register a command for each custom modal
+    // Register a command for each active (non-archived) custom modal
     for (const modal of this.settings.customModals) {
+      if (modal.archived) continue;
       const cmdId = `custom-modal-${modal.id}`;
       this.addCommand({
         id: cmdId,
