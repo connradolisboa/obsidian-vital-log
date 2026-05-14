@@ -111,22 +111,36 @@ export class TrackerModal extends Modal {
     const valueSection = contentEl.createDiv('vital-log-modal-section');
 
     if (isMinutes) {
-      valueSection.createEl('label', { text: `${tracker.displayName} (minutes)` });
-      const minutesInput = valueSection.createEl('input', {
+      valueSection.createEl('label', { text: tracker.displayName });
+      const stepper = valueSection.createDiv('vital-log-tracker-stepper');
+      const decBtn = stepper.createEl('button', { text: '−', cls: 'vital-log-tracker-step-btn' });
+      const minutesInput = stepper.createEl('input', {
+        cls: 'vital-log-tracker-stepper-input',
         type: 'number',
         attr: { min: '0', step: '1', placeholder: '0' },
       });
-      minutesInput.style.width = '100%';
       if (this.selectedValue !== null) minutesInput.value = String(this.selectedValue);
+      const incBtn = stepper.createEl('button', { text: '+', cls: 'vital-log-tracker-step-btn' });
       minutesInput.addEventListener('input', () => {
         const v = parseFloat(minutesInput.value);
         this.selectedValue = isNaN(v) ? null : v;
       });
+      decBtn.addEventListener('click', () => {
+        const next = Math.max(0, (this.selectedValue ?? 0) - 1);
+        this.selectedValue = next;
+        minutesInput.value = String(next);
+      });
+      incBtn.addEventListener('click', () => {
+        const next = (this.selectedValue ?? 0) + 1;
+        this.selectedValue = next;
+        minutesInput.value = String(next);
+      });
       minutesInput.focus();
     } else {
-      valueSection.createEl('label', {
-        text: `${tracker.displayName} (${tracker.min}–${tracker.max})`,
-      });
+      const labelText = this.selectedValue !== null
+        ? `${tracker.displayName} — ${this.selectedValue}`
+        : tracker.displayName;
+      valueSection.createEl('label', { text: labelText });
       const valueGrid = valueSection.createDiv('vital-log-tracker-grid');
       const count = tracker.max - tracker.min + 1;
       for (let v = tracker.min; v <= tracker.max; v++) {

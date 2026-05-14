@@ -586,11 +586,19 @@
   display: flex;
   gap: 0.4rem;
   margin-bottom: 0.85rem;
+  overflow-x: auto;
+  flex-wrap: nowrap;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.vital-log-type-selector::-webkit-scrollbar {
+  display: none;
 }
 
 .vital-log-type-btn {
-  flex: 1;
-  padding: 0.55rem 0;
+  flex: 1 0 auto;
+  padding: 0.55rem 0.75rem;
   min-height: 44px;
   border-radius: 5px;
   border: 1px solid var(--background-modifier-border);
@@ -601,6 +609,7 @@
   color: var(--text-muted);
   transition: all 0.15s;
   -webkit-tap-highlight-color: transparent;
+  white-space: nowrap;
 }
 
 .vital-log-type-btn:hover {
@@ -616,6 +625,58 @@
   background: var(--interactive-accent);
   color: var(--text-on-accent);
   border-color: var(--interactive-accent);
+}
+
+/* ── Minutes stepper ── */
+.vital-log-tracker-stepper {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+}
+
+.vital-log-tracker-step-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  cursor: pointer;
+  font-size: 1.5rem;
+  line-height: 1;
+  color: var(--text-normal);
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.vital-log-tracker-step-btn:hover {
+  background: var(--background-modifier-hover);
+}
+
+.vital-log-tracker-step-btn:active {
+  opacity: 0.75;
+}
+
+.vital-log-tracker-stepper-input {
+  flex: 1;
+  min-height: 44px;
+  font-size: 1.4rem;
+  font-weight: 600;
+  text-align: center;
+  border: 2px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+}
+
+.vital-log-tracker-stepper-input:focus {
+  border-color: var(--interactive-accent);
+  outline: none;
+  box-shadow: none;
 }
 
 /* ── Pack/stack contents preview (log modal) ── */
@@ -862,6 +923,10 @@
   background: var(--interactive-accent);
   color: var(--text-on-accent);
   border-color: var(--interactive-accent);
+  transform: scale(1.08);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  z-index: 1;
+  position: relative;
 }
 
 /* Compact tracker buttons for embed column cells */
