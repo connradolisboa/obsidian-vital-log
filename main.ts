@@ -118,6 +118,18 @@ export default class VitalLogPlugin extends Plugin {
     registerInlineRenderers(this);
     this.registerEditorExtension(buildInlineEditorExtension(this));
 
+    // Scroll focused inputs into view when the soft keyboard resizes the viewport
+    if (window.visualViewport) {
+      const onViewportResize = () => {
+        const el = document.activeElement as HTMLElement | null;
+        if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT')) {
+          el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+      };
+      window.visualViewport.addEventListener('resize', onViewportResize);
+      this.register(() => window.visualViewport?.removeEventListener('resize', onViewportResize));
+    }
+
     // ── Status bar for tally counters ─────────────────────
     this.initStatusBar();
     this.app.workspace.onLayoutReady(() => this.updateStatusBar());

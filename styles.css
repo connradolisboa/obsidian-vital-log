@@ -1323,8 +1323,11 @@
   input[type="text"],
   input[type="number"],
   input[type="date"],
+  input[type="time"],
+  textarea,
   select {
     font-size: 1rem !important; /* prevents iOS auto-zoom on focus */
+    scroll-margin-bottom: 8px; /* keeps input clear of keyboard edge when scrolled into view */
   }
 
   /* Tighter modal chrome */
