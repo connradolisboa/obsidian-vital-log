@@ -2233,3 +2233,214 @@
 .vital-log-inline-btn--dec {
   color: var(--text-faint);
 }
+
+/* ── Key Diagnostic Modal ── */
+.vital-log-diagnostic-modal .modal-content {
+  max-width: 680px;
+  width: 100%;
+  padding: 1.25rem;
+  box-sizing: border-box;
+}
+
+.vital-log-diagnostic-modal h2 {
+  margin-top: 0;
+  margin-bottom: 0.4rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.vital-log-diagnostic-desc,
+.vital-log-diagnostic-empty {
+  margin: 0 0 1rem;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.vital-log-diagnostic-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.vital-log-diagnostic-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 6px;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  transition: opacity 0.2s;
+}
+
+.vital-log-diagnostic-row--done {
+  opacity: 0.5;
+}
+
+.vital-log-diagnostic-row--skipped {
+  opacity: 0.4;
+}
+
+.vital-log-diagnostic-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  background: var(--background-modifier-hover);
+  border-radius: 4px;
+  padding: 0.2rem 0.45rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.vital-log-diagnostic-badge-icon {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+}
+
+.vital-log-diagnostic-badge-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.vital-log-diagnostic-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.vital-log-diagnostic-entity-name {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-normal);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vital-log-diagnostic-modal-name {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.vital-log-diagnostic-keys {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.vital-log-diagnostic-key-row {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+  font-size: 0.8rem;
+}
+
+.vital-log-diagnostic-sub-label {
+  color: var(--text-faint);
+  font-size: 0.75rem;
+}
+
+.vital-log-diagnostic-arrow {
+  color: var(--text-muted);
+}
+
+.vital-log-key-old {
+  background: rgba(var(--color-red-rgb, 220, 50, 47), 0.12);
+  color: var(--text-error, var(--color-red));
+  padding: 0.1em 0.35em;
+  border-radius: 3px;
+  text-decoration: line-through;
+  font-size: 0.8rem;
+}
+
+.vital-log-key-new {
+  background: rgba(var(--color-green-rgb, 46, 160, 67), 0.12);
+  color: var(--color-green, var(--text-success));
+  padding: 0.1em 0.35em;
+  border-radius: 3px;
+  font-size: 0.8rem;
+}
+
+.vital-log-diagnostic-count {
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.vital-log-diagnostic-count-badge {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  padding: 0.15em 0.5em;
+  border-radius: 10px;
+  font-size: 0.75rem;
+  cursor: default;
+}
+
+.vital-log-diagnostic-count-zero {
+  color: var(--text-faint);
+}
+
+.vital-log-diagnostic-scanning {
+  color: var(--text-faint);
+  font-style: italic;
+}
+
+.vital-log-diagnostic-done-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--color-green, var(--text-success));
+}
+
+.vital-log-diagnostic-done-label svg {
+  width: 14px;
+  height: 14px;
+}
+
+.vital-log-diagnostic-skipped-label {
+  color: var(--text-faint);
+  font-style: italic;
+}
+
+.vital-log-diagnostic-actions {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.vital-log-diagnostic-btn {
+  padding: 0.25rem 0.65rem;
+  font-size: 0.8rem;
+  min-height: 28px;
+  cursor: pointer;
+}
+
+.vital-log-diagnostic-footer {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.vital-log-diagnostic-footer button {
+  min-height: 36px;
+}
+
+.vital-log-diagnostic-migrate-all {
+  flex-shrink: 0;
+}
+
+.vital-log-diagnostic-sync {
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid var(--background-modifier-border);
+  font-size: 0.85rem;
+}

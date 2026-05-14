@@ -53,6 +53,7 @@ export interface VitalLogSettings {
   noteContentTemplate_tallies: string;     // template for tally note lines. Tokens: {name} {value} {target}
   noteContentTemplate_specificNoteTally: string; // template for per-tally specific-note lines. Tokens: {dailyNote} {time} {name} {value} {target}
   mirrorExcludedKeys?: string[]; // property keys never shown in the "Other Properties" section of mirror modals
+  propertyKeySnapshot?: PropertyKeySnapshot; // snapshot of all property keys for rename detection
 }
 
 // Shape written to frontmatter per vitamin property (list element)
@@ -253,6 +254,24 @@ export const SCHEDULING_HINTS = [
 ] as const;
 
 export type SchedulingHint = (typeof SCHEDULING_HINTS)[number];
+
+// ── Key Snapshot types ───────────────────────────────────────
+
+export interface SnapshotRecord {
+  id: string;
+  entityType: 'tracker' | 'tally' | 'vitamin' | 'customField';
+  entityName: string;
+  propertyKey: string;
+  valueName?: string;    // trackers: sub-key within each entry object
+  parentKey?: string;    // custom fields: parent container key
+  modalId?: string;      // custom fields only
+  modalName?: string;    // custom fields only
+}
+
+export interface PropertyKeySnapshot {
+  records: SnapshotRecord[];
+  capturedAt: string;
+}
 
 export const DEFAULT_SETTINGS: VitalLogSettings = {
   dailyNotePath: 'Calendar/Daily/{{YYYY}}/Q{{Q}}/{{YYYY-MM-DD dddd}}',

@@ -7,6 +7,8 @@ import type VitalLogPlugin from '../main';
 import type { CustomModalConfig, CustomField, CustomFieldType, TallyCounterConfig, TrackerConfig, CustomModalItem, CustomButtonConfig, MirrorConditionalPin } from './types';
 import { CUSTOM_FIELD_TYPES } from './types';
 import { ManageModal } from './manageModal';
+import { KeyDiagnosticModal } from './keyDiagnosticModal';
+import { buildSnapshot } from './keySnapshotManager';
 
 function slugify(name: string): string {
   return name
@@ -329,6 +331,30 @@ export class VitalLogSettingTab extends PluginSettingTab {
               this.plugin.settings,
               () => this.plugin.saveSettings(),
               'stacks'
+            ).open();
+          })
+      );
+
+    // ── Maintenance ──
+    el.createEl('h3', { text: 'Maintenance' });
+
+    new Setting(el)
+      .setName('Diagnose changed keys')
+      .setDesc(
+        'Scan your vault for notes that still use old property keys after renaming a tracker, tally, vitamin, or custom field. ' +
+        'Supports nested (sub-property) keys that Obsidian\'s built-in rename cannot handle.'
+      )
+      .addButton((btn) =>
+        btn
+          .setButtonText('Diagnose Changed Keys')
+          .onClick(() => {
+            new KeyDiagnosticModal(
+              this.app,
+              this.plugin.settings,
+              async () => {
+                this.plugin.settings.propertyKeySnapshot = buildSnapshot(this.plugin.settings);
+                await this.plugin.saveSettings();
+              }
             ).open();
           })
       );

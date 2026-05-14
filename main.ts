@@ -6,6 +6,7 @@
 import { Plugin, Notice, setIcon, TFile } from 'obsidian';
 import type { VitalLogSettings, CustomField, TallyCounterConfig } from './src/types';
 import { DEFAULT_SETTINGS } from './src/types';
+import { buildSnapshot } from './src/keySnapshotManager';
 import { getDailyNoteIfExists } from './src/dailyNoteResolver';
 import { VitalLogSettingTab } from './src/settings';
 import { LogModal } from './src/logModal';
@@ -218,6 +219,12 @@ export default class VitalLogPlugin extends Plugin {
         }
       }
       if (needsSave) await this.saveSettings();
+
+      // Take an initial snapshot if none exists yet
+      if (!this.settings.propertyKeySnapshot) {
+        this.settings.propertyKeySnapshot = buildSnapshot(this.settings);
+        await this.saveSettings();
+      }
     } catch (err) {
       new Notice('Vital Log: Failed to load settings. Using defaults.');
       console.error('Vital Log loadSettings:', err);

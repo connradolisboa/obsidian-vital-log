@@ -166,6 +166,86 @@ export async function setTallyEntry(
 }
 
 /**
+ * Rename a frontmatter key at an arbitrary dot-path.
+ * e.g. "health.bloodPressure" → "health.bp"  or  "moodLog" → "emotionLog"
+ * If the old path does not exist in a file, the file is left unchanged.
+ */
+export async function renameTopLevelKey(
+  app: App,
+  file: TFile,
+  oldDotPath: string,
+  newDotPath: string
+): Promise<void> {
+  await processFrontmatter(app, file, (fm) => {
+    const oldParts = oldDotPath.split('.');
+    const newParts = newDotPath.split('.');
+
+    // Resolve the value at oldDotPath
+    let cursor: unknown = fm;
+    for (const part of oldParts) {
+      if (typeof cursor !== 'object' || cursor === null || !(part in (cursor as Record<string, unknown>))) return;
+      cursor = (cursor as Record<string, unknown>)[part];
+    }
+    const value = cursor;
+
+    // Delete old key
+    deleteNestedKey(fm, oldParts);
+
+    // Set new key
+    setNestedKey(fm, newParts, value);
+  });
+}
+
+/**
+ * Rename a sub-key inside every entry of a list property.
+ * e.g. rename "meditationTiming" → "minutes" inside all entries of "meditationLog[]"
+ */
+export async function renameEntrySubKey(
+  app: App,
+  file: TFile,
+  listKey: string,
+  oldSubKey: string,
+  newSubKey: string
+): Promise<void> {
+  await processFrontmatter(app, file, (fm) => {
+    const entries = fm[listKey];
+    if (!Array.isArray(entries)) return;
+    for (const entry of entries) {
+      if (typeof entry !== 'object' || entry === null) continue;
+      const obj = entry as Record<string, unknown>;
+      if (oldSubKey in obj) {
+        obj[newSubKey] = obj[oldSubKey];
+        delete obj[oldSubKey];
+      }
+    }
+  });
+}
+
+function deleteNestedKey(obj: Record<string, unknown>, parts: string[]): void {
+  if (parts.length === 0) return;
+  if (parts.length === 1) {
+    delete obj[parts[0]];
+    return;
+  }
+  const child = obj[parts[0]];
+  if (typeof child === 'object' && child !== null) {
+    deleteNestedKey(child as Record<string, unknown>, parts.slice(1));
+  }
+}
+
+function setNestedKey(obj: Record<string, unknown>, parts: string[], value: unknown): void {
+  if (parts.length === 0) return;
+  if (parts.length === 1) {
+    obj[parts[0]] = value;
+    return;
+  }
+  if (typeof obj[parts[0]] !== 'object' || obj[parts[0]] === null) {
+    obj[parts[0]] = {};
+  }
+  setNestedKey(obj[parts[0]] as Record<string, unknown>, parts.slice(1), value);
+}
+
+/**
  * Append a line of text to the note body (after the frontmatter).
  * The line is appended at the end of the file, preceded by a newline if needed.
  */
