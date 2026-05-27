@@ -166,7 +166,7 @@ async function renderEmbed(
     });
     setIcon(openBtn, 'external-link');
     openBtn.addEventListener('click', () => {
-      new CustomLogModal(app, settings, plugin.saveSettings.bind(plugin), modalConfig).open();
+      new CustomLogModal(app, settings, plugin.saveSettings.bind(plugin), modalConfig, undefined, sourcePath).open();
     });
   }
 

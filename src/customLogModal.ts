@@ -45,6 +45,9 @@ export class CustomLogModal extends Modal {
   // Tracker state
   private trackerValues: Map<string, number | null> = new Map(); // trackerId → selected value
 
+  // When opened from an embed, the path of the note containing the embed
+  private sourceFilePath?: string;
+
   // Mirror mode: items visible after frontmatter filtering
   private visibleItems: CustomModalItem[] = [];
   // Mirror mode: note frontmatter keys not covered by the modal, shown in "Other Properties"
@@ -56,7 +59,8 @@ export class CustomLogModal extends Modal {
     settings: VitalLogSettings,
     saveSettings: () => Promise<void>,
     config: CustomModalConfig,
-    initialDate?: Date
+    initialDate?: Date,
+    sourceFilePath?: string,
   ) {
     super(app);
     this.settings = settings;
@@ -64,6 +68,7 @@ export class CustomLogModal extends Modal {
     this.config = config;
     this.selectedDate = initialDate ?? new Date();
     this.appendTallies = settings.appendToNoteDefault_tallies ?? false;
+    this.sourceFilePath = sourceFilePath;
   }
 
   async onOpen(): Promise<void> {
@@ -87,10 +92,14 @@ export class CustomLogModal extends Modal {
   }
 
   // Returns the existing target file without creating it.
-  // In current-note mode: the active editor file.
+  // In current-note mode: the embed's source note (if opened from embed), otherwise the active editor file.
   // Otherwise: the path-template–resolved file for the selected date.
   private getTargetFile(): TFile | null {
     if (this.isCurrentNoteMode) {
+      if (this.sourceFilePath) {
+        const f = this.app.vault.getAbstractFileByPath(this.sourceFilePath);
+        return f instanceof TFile ? f : null;
+      }
       return this.app.workspace.getActiveFile();
     }
     return getNoteIfExists(this.app, this.config.notePath, this.selectedDate);
@@ -99,6 +108,11 @@ export class CustomLogModal extends Modal {
   // Resolves (and creates if needed) the target file for saving.
   private async resolveTargetFile(): Promise<TFile | null> {
     if (this.isCurrentNoteMode) {
+      if (this.sourceFilePath) {
+        const f = this.app.vault.getAbstractFileByPath(this.sourceFilePath);
+        if (!f || !(f instanceof TFile)) new Notice('Vital Log: Source note not found.');
+        return f instanceof TFile ? f : null;
+      }
       const file = this.app.workspace.getActiveFile();
       if (!file) new Notice('Vital Log: No note is currently open.');
       return file;
@@ -288,10 +302,10 @@ export class CustomLogModal extends Modal {
     // Date picker (hidden in current-note mode)
     const dateSection = contentEl.createDiv('vital-log-custom-date-row');
     if (this.isCurrentNoteMode) {
-      const activeFile = this.app.workspace.getActiveFile();
+      const displayFile = this.getTargetFile();
       const statusEl = dateSection.createDiv({ cls: 'vital-log-note-status' });
-      if (activeFile) {
-        statusEl.setText(activeFile.basename);
+      if (displayFile) {
+        statusEl.setText(displayFile.basename);
         statusEl.addClass('vital-log-note-status--exists');
       } else {
         statusEl.setText('No note open');
