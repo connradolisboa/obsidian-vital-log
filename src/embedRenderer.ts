@@ -23,7 +23,7 @@
 import { App, setIcon, TFile } from 'obsidian';
 import type VitalLogPlugin from '../main';
 import type { TallyCounterConfig, TrackerConfig, CustomField, CustomButtonConfig, CustomModalConfig, CustomModalItem, VitalLogSettings } from './types';
-import { getDailyNoteIfExists } from './dailyNoteResolver';
+import { getDailyNoteIfExists, getNoteIfExists, pathMatchesTemplate, extractDateFromPath } from './dailyNoteResolver';
 import * as yaml from './yamlManager';
 import * as tally from './tallyManager';
 import * as tm from './trackerManager';
@@ -116,14 +116,22 @@ async function renderEmbed(
   // Keep snapshots fresh so embeds survive tracker/tally deletion.
   await syncSnapshots(plugin, modalConfig);
 
-  // When notePath is empty, target the note this embed lives in (sourcePath).
-  // Otherwise fall back to the daily note (legacy behaviour for path-based modals).
-  let targetNote: TFile | null;
-  if (!modalConfig.notePath.trim() && sourcePath) {
-    const f = app.vault.getAbstractFileByPath(sourcePath);
-    targetNote = f instanceof TFile ? f : null;
-  } else {
-    targetNote = getDailyNoteIfExists(app, settings);
+  // Prefer the note the embed lives in when (a) the modal is current-note mode,
+  // or (b) the source note matches the modal's notePath template (e.g. a past
+  // daily note for a daily-note modal). Otherwise fall back to today's resolved
+  // target — modal's own notePath if set, else the global daily note.
+  let targetNote: TFile | null = null;
+  if (sourcePath) {
+    const isCurrentNoteMode = !modalConfig.notePath.trim();
+    if (isCurrentNoteMode || pathMatchesTemplate(sourcePath, modalConfig.notePath)) {
+      const f = app.vault.getAbstractFileByPath(sourcePath);
+      if (f instanceof TFile) targetNote = f;
+    }
+  }
+  if (!targetNote) {
+    targetNote = modalConfig.notePath.trim()
+      ? getNoteIfExists(app, modalConfig.notePath)
+      : getDailyNoteIfExists(app, settings);
   }
 
   const fm: Record<string, unknown> = targetNote
@@ -166,7 +174,12 @@ async function renderEmbed(
     });
     setIcon(openBtn, 'external-link');
     openBtn.addEventListener('click', () => {
-      new CustomLogModal(app, settings, plugin.saveSettings.bind(plugin), modalConfig, undefined, sourcePath).open();
+      // If the embed is in a periodic note matching this modal's template,
+      // open the modal scoped to that note's date rather than today's.
+      const initialDate = sourcePath && modalConfig.notePath.trim()
+        ? extractDateFromPath(sourcePath, modalConfig.notePath) ?? undefined
+        : undefined;
+      new CustomLogModal(app, settings, plugin.saveSettings.bind(plugin), modalConfig, initialDate, sourcePath).open();
     });
   }
 

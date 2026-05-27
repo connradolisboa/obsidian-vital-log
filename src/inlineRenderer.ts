@@ -22,7 +22,7 @@ import {
 import { Range } from '@codemirror/state';
 import { syntaxTree } from '@codemirror/language';
 import type VitalLogPlugin from '../main';
-import { getDailyNoteIfExists } from './dailyNoteResolver';
+import { getDailyNoteIfExists, pathMatchesTemplate } from './dailyNoteResolver';
 import * as yaml from './yamlManager';
 import * as tally from './tallyManager';
 
@@ -114,7 +114,14 @@ function buildTallyWidget(
     attr: { 'aria-label': `Increase ${config.displayName}`, type: 'button' },
   });
 
-  const targetNote = getDailyNoteIfExists(app, settings);
+  // If the widget lives in a note matching the daily-note template
+  // (e.g. a past daily note), operate on that note. Otherwise fall back
+  // to today's daily note.
+  const widgetFile = getFile();
+  const targetNote =
+    widgetFile && pathMatchesTemplate(widgetFile.path, settings.dailyNotePath)
+      ? widgetFile
+      : getDailyNoteIfExists(app, settings);
   const handleStep = async (delta: number) => {
     value = Math.max(0, value + delta * config.step);
     refresh();

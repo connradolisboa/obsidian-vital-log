@@ -124,6 +124,79 @@ export function getDailyNoteIfExists(
   return getNoteIfExists(app, settings.dailyNotePath, date);
 }
 
+const TEMPLATE_TOKEN_RE =
+  /\{\{(YYYY-MM-DD dddd|YYYY-MM-DD|YYYY-MM|YYYY|YY|MMMM|MM|DD|dddd|ddd|WW|Q)\}\}/g;
+
+const TOKEN_REGEX_MAP: Record<string, string> = {
+  'YYYY-MM-DD dddd': '\\d{4}-\\d{2}-\\d{2} [A-Za-z]+',
+  'YYYY-MM-DD': '\\d{4}-\\d{2}-\\d{2}',
+  'YYYY-MM': '\\d{4}-\\d{2}',
+  'YYYY': '\\d{4}',
+  'YY': '\\d{2}',
+  'MMMM': '[A-Za-z]+',
+  'MM': '\\d{2}',
+  'DD': '\\d{2}',
+  'dddd': '[A-Za-z]+',
+  'ddd': '[A-Za-z]{3}',
+  'WW': '\\d{2}',
+  'Q': '[1-4]',
+};
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function templateToRegex(template: string): RegExp {
+  let pattern = '';
+  let lastIndex = 0;
+  TEMPLATE_TOKEN_RE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = TEMPLATE_TOKEN_RE.exec(template)) !== null) {
+    pattern += escapeRegex(template.substring(lastIndex, match.index));
+    pattern += TOKEN_REGEX_MAP[match[1]];
+    lastIndex = TEMPLATE_TOKEN_RE.lastIndex;
+  }
+  pattern += escapeRegex(template.substring(lastIndex)) + '\\.md';
+  return new RegExp('^' + pattern + '$');
+}
+
+/**
+ * Returns true if `path` could have been produced by `pathTemplate` for some date.
+ * Used so embeds know whether the note they live in is "the" periodic note
+ * the modal targets (and should be operated on directly).
+ */
+export function pathMatchesTemplate(path: string, pathTemplate: string): boolean {
+  if (!pathTemplate.trim()) return false;
+  try {
+    return templateToRegex(pathTemplate).test(path);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Brute-force search ±5 years around today for a date that resolves
+ * `pathTemplate` to `path`. Returns the matching Date, or null if none.
+ */
+export function extractDateFromPath(path: string, pathTemplate: string): Date | null {
+  if (!pathMatchesTemplate(path, pathTemplate)) return null;
+  const target = path.endsWith('.md') ? path.substring(0, path.length - 3) : path;
+  const today = new Date();
+  today.setHours(12, 0, 0, 0);
+  const MAX_DAYS = 365 * 5;
+  for (let offset = 0; offset <= MAX_DAYS; offset++) {
+    const past = new Date(today);
+    past.setDate(today.getDate() - offset);
+    if (resolvePathTemplate(pathTemplate, past) === target) return past;
+    if (offset > 0) {
+      const future = new Date(today);
+      future.setDate(today.getDate() + offset);
+      if (resolvePathTemplate(pathTemplate, future) === target) return future;
+    }
+  }
+  return null;
+}
+
 // ── Helpers ─────────────────────────────────────────────────
 
 async function ensureFolderExists(app: App, folderPath: string): Promise<void> {

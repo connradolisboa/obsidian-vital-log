@@ -15,7 +15,7 @@ import type {
   CustomButtonConfig,
   MirrorConditionalPin,
 } from './types';
-import { resolveNote, getNoteIfExists, resolvePathTemplate } from './dailyNoteResolver';
+import { resolveNote, getNoteIfExists, resolvePathTemplate, pathMatchesTemplate } from './dailyNoteResolver';
 import * as yaml from './yamlManager';
 import * as tally from './tallyManager';
 import * as tm from './trackerManager';
@@ -91,6 +91,17 @@ export class CustomLogModal extends Modal {
     return !this.config.notePath.trim();
   }
 
+  // True when the modal was opened from an embed in a note that matches
+  // this modal's notePath template AND the selected date still resolves to
+  // that same source file. Acts as a safety net when initialDate extraction
+  // succeeded (the date picker stays authoritative if the user changes it).
+  private get isSourceMatchingPeriodicNote(): boolean {
+    if (!this.sourceFilePath || this.isCurrentNoteMode) return false;
+    if (!pathMatchesTemplate(this.sourceFilePath, this.config.notePath)) return false;
+    const resolved = resolvePathTemplate(this.config.notePath, this.selectedDate) + '.md';
+    return resolved === this.sourceFilePath;
+  }
+
   // Returns the existing target file without creating it.
   // In current-note mode: the embed's source note (if opened from embed), otherwise the active editor file.
   // Otherwise: the path-template–resolved file for the selected date.
@@ -101,6 +112,10 @@ export class CustomLogModal extends Modal {
         return f instanceof TFile ? f : null;
       }
       return this.app.workspace.getActiveFile();
+    }
+    if (this.isSourceMatchingPeriodicNote) {
+      const f = this.app.vault.getAbstractFileByPath(this.sourceFilePath!);
+      if (f instanceof TFile) return f;
     }
     return getNoteIfExists(this.app, this.config.notePath, this.selectedDate);
   }
@@ -116,6 +131,10 @@ export class CustomLogModal extends Modal {
       const file = this.app.workspace.getActiveFile();
       if (!file) new Notice('Vital Log: No note is currently open.');
       return file;
+    }
+    if (this.isSourceMatchingPeriodicNote) {
+      const f = this.app.vault.getAbstractFileByPath(this.sourceFilePath!);
+      if (f instanceof TFile) return f;
     }
     return resolveNote(this.app, this.config.notePath, this.selectedDate);
   }
