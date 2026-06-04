@@ -11,13 +11,14 @@ import type { App, TFile } from 'obsidian';
 import type {
   VitalLogSettings,
   TrackerConfig,
+  TrackerGoalPlan,
   StatType,
   ScheduleItem,
 } from './types';
 import { isTrackerEntry, defaultPrimaryStat } from './types';
 import { getNoteIfExists } from './dailyNoteResolver';
 import { readAllFrontmatter } from './yamlManager';
-import { fromISODate } from './planManager';
+import { fromISODate, resolveGoal, shiftDaysISO, todayISO } from './planManager';
 
 type Fm = Record<string, unknown>;
 
@@ -155,4 +156,48 @@ export async function collectSeriesForRange(
     out.push({ date: iso, value: computeStat(values, stat) });
   }
   return out;
+}
+
+// ── Goal streaks ────────────────────────────────────────────
+
+const MAX_STREAK_LOOKBACK = 366;
+
+/**
+ * Count consecutive days (ending at `endISO`) where the tracker met its goal,
+ * using the goal in effect on each day. An unfinished *today* doesn't reset
+ * the streak — it counts from yesterday instead. Stops at the first miss, or
+ * once no goal was defined that far back.
+ */
+export async function computeGoalStreak(
+  app: App,
+  settings: VitalLogSettings,
+  tracker: TrackerConfig,
+  plan: TrackerGoalPlan,
+  endISO: string
+): Promise<number> {
+  const stat = trackerPrimaryStat(tracker);
+
+  const isMet = async (iso: string): Promise<boolean | null> => {
+    const goal = resolveGoal(plan, iso);
+    if (goal === null || goal <= 0) return null; // no goal in effect → stop
+    const fm = await getFrontmatterForDate(app, settings, fromISODate(iso));
+    const value = computeStat(extractTrackerValues(fm, tracker), stat);
+    if (value === null) return false;
+    return value >= goal;
+  };
+
+  let cursor = endISO;
+  if (endISO === todayISO()) {
+    const metToday = await isMet(endISO);
+    if (metToday !== true) cursor = shiftDaysISO(endISO, -1);
+  }
+
+  let streak = 0;
+  for (let i = 0; i < MAX_STREAK_LOOKBACK; i++) {
+    const met = await isMet(cursor);
+    if (met !== true) break;
+    streak++;
+    cursor = shiftDaysISO(cursor, -1);
+  }
+  return streak;
 }

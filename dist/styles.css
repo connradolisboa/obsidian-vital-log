@@ -2702,20 +2702,63 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* ── Logged today ── */
-.vital-log-logged-list {
+/* ── Logged today: summary chips ── */
+.vital-log-summary-row {
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem;
+  margin-bottom: 0.7rem;
 }
-.vital-log-logged-chip {
+.vital-log-summary-chip {
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
-  padding: 0.25rem 0.5rem;
+  padding: 0.25rem 0.55rem;
   border-radius: 999px;
   background: var(--background-secondary);
   font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+.vital-log-summary-chip.is-streak {
+  background: var(--background-modifier-success, var(--background-secondary));
+  font-weight: 500;
+}
+.vital-log-summary-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-muted);
+}
+.vital-log-summary-chip.is-streak .vital-log-summary-icon {
+  color: var(--color-orange, var(--text-accent));
+}
+.vital-log-summary-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* ── Logged today (grouped by time of day) ── */
+.vital-log-logged-group {
+  margin-bottom: 0.7rem;
+}
+.vital-log-logged-group:last-child {
+  margin-bottom: 0;
+}
+.vital-log-logged-group-title {
+  font-weight: 600;
+  font-size: 0.85rem;
+  margin-bottom: 0.3rem;
+}
+.vital-log-logged-entry {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0.3rem 0.2rem 0.6rem;
+  font-size: 0.85rem;
+}
+.vital-log-logged-time {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  min-width: 3.1rem;
 }
 .vital-log-logged-empty {
   color: var(--text-muted);

@@ -28,6 +28,7 @@ import {
   trackerPrimaryStat,
   readTallyValue,
   isScheduleItemDone,
+  computeGoalStreak,
 } from './statsEngine';
 import { LogModal } from './logModal';
 import { TrackerModal } from './trackerModal';
@@ -129,7 +130,7 @@ async function renderDayDashboard(
 
     buildGoalsSection(plugin, container, currentISO, fm, isToday, paint);
     buildScheduleSection(plugin, container, currentISO, fm, isToday, paint);
-    buildLoggedSection(plugin, container, fm);
+    await buildLoggedSection(plugin, container, currentISO, fm);
   };
 
   await paint();
@@ -300,56 +301,196 @@ function buildScheduleSection(
   }
 }
 
-function buildLoggedSection(
-  plugin: VitalLogPlugin,
-  container: HTMLElement,
-  fm: Fm | null
-): void {
-  const section = container.createDiv('vital-log-dashboard-section');
-  section.createEl('h3', { text: 'Logged today', cls: 'vital-log-dashboard-section-title' });
-  const list = section.createDiv('vital-log-logged-list');
-  let any = false;
+interface LoggedItem {
+  time: string | null; // "HH:mm" or null (untimed, e.g. tallies)
+  icon?: string;
+  text: string;
+}
 
-  // Trackers with entries
-  for (const tracker of plugin.settings.trackers ?? []) {
-    const values = extractTrackerValues(fm, tracker);
-    if (values.length === 0) continue;
-    any = true;
-    const primary = trackerPrimaryStat(tracker);
-    addLoggedChip(list, tracker.icon, `${tracker.displayName}: ${computeStat(values, primary)}`);
-  }
+type TimeBucket = 'morning' | 'afternoon' | 'night' | 'anytime';
 
-  // Tallies with a value
-  for (const t of plugin.settings.tallyCounters ?? []) {
-    const v = readTallyValue(fm, t.propertyKey);
-    if (v <= 0) continue;
-    any = true;
-    addLoggedChip(list, t.icon, `${t.displayName}: ${v}/${t.target}`);
-  }
+const TIME_BUCKETS: { key: TimeBucket; title: string }[] = [
+  { key: 'anytime', title: 'Anytime' },
+  { key: 'morning', title: 'Morning' },
+  { key: 'afternoon', title: 'Afternoon' },
+  { key: 'night', title: 'Night' },
+];
 
-  // Vitamins / packs / stacks present in the note
-  if (fm) {
+function isObj(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+function asStr(v: unknown): string | null {
+  return typeof v === 'string' && v.trim() ? v : null;
+}
+
+function amountSuffix(e: Record<string, unknown>): string {
+  const amount = e['amount'];
+  const unit = typeof e['unit'] === 'string' ? e['unit'] : '';
+  return typeof amount === 'number' ? ` ${amount}${unit}` : '';
+}
+
+function bucketForTime(time: string | null): TimeBucket {
+  if (!time) return 'anytime';
+  const hour = parseInt(time.split(':')[0], 10);
+  if (isNaN(hour)) return 'anytime';
+  if (hour < 12) return 'morning';
+  if (hour < 18) return 'afternoon';
+  return 'night';
+}
+
+/** Collect every timed/untimed entry logged in the note into a flat list. */
+function collectLoggedItems(plugin: VitalLogPlugin, fm: Fm): LoggedItem[] {
+  const items: LoggedItem[] = [];
+
+  // Vitamins — flat substances[] mode, or per-vitamin keys
+  if (plugin.settings.logMode === 'substances') {
+    const arr = fm['substances'];
+    if (Array.isArray(arr)) {
+      for (const e of arr) {
+        if (!isObj(e)) continue;
+        const name = asStr(e['name']);
+        if (!name) continue;
+        items.push({ time: asStr(e['time']), icon: 'pill', text: `${name}${amountSuffix(e)}` });
+      }
+    }
+  } else {
     for (const v of plugin.settings.vitamins ?? []) {
       const arr = fm[v.propertyKey];
-      if (Array.isArray(arr) && arr.length > 0) {
-        any = true;
-        addLoggedChip(list, 'pill', `${v.displayName} ×${arr.length}`);
+      if (!Array.isArray(arr)) continue;
+      for (const e of arr) {
+        if (!isObj(e)) continue;
+        items.push({ time: asStr(e['time']), icon: 'pill', text: `${v.displayName}${amountSuffix(e)}` });
       }
     }
   }
 
-  if (!any) {
-    list.createDiv({ cls: 'vital-log-logged-empty', text: 'Nothing logged yet.' });
+  // Packs / stacks (entries carry their own name + time)
+  for (const [key, icon] of [['packs', 'package'], ['stacks', 'layers']] as const) {
+    const arr = fm[key];
+    if (!Array.isArray(arr)) continue;
+    for (const e of arr) {
+      if (!isObj(e)) continue;
+      const name = asStr(e['name']);
+      if (!name) continue;
+      items.push({ time: asStr(e['time']), icon, text: name });
+    }
   }
+
+  // Trackers — one entry per logged value
+  for (const tracker of plugin.settings.trackers ?? []) {
+    const arr = fm[tracker.propertyKey];
+    if (!Array.isArray(arr)) continue;
+    for (const e of arr) {
+      if (!isObj(e)) continue;
+      const value = e[tracker.valueName];
+      if (typeof value !== 'number') continue;
+      items.push({
+        time: asStr(e['time']),
+        icon: tracker.icon,
+        text: `${tracker.displayName}: ${value}`,
+      });
+    }
+  }
+
+  // Tallies — untimed running totals
+  for (const t of plugin.settings.tallyCounters ?? []) {
+    const v = readTallyValue(fm, t.propertyKey);
+    if (v <= 0) continue;
+    items.push({ time: null, icon: t.icon, text: `${t.displayName}: ${v}/${t.target}` });
+  }
+
+  return items;
 }
 
-function addLoggedChip(list: HTMLElement, icon: string | undefined, text: string): void {
-  const chip = list.createDiv('vital-log-logged-chip');
+/** Top-of-section summary: per-tracker primary stat + goal streaks. */
+async function buildSummary(
+  plugin: VitalLogPlugin,
+  section: HTMLElement,
+  dateISO: string,
+  fm: Fm | null
+): Promise<void> {
+  const row = section.createDiv('vital-log-summary-row');
+  let any = false;
+
+  // Per-tracker primary stat for the day
+  for (const tracker of plugin.settings.trackers ?? []) {
+    const values = extractTrackerValues(fm, tracker);
+    if (values.length === 0) continue;
+    const primary = trackerPrimaryStat(tracker);
+    const value = computeStat(values, primary);
+    if (value === null) continue;
+    any = true;
+    addSummaryChip(
+      row,
+      tracker.icon,
+      `${tracker.displayName} ${STAT_LABELS[primary].toLowerCase()} ${value}`
+    );
+  }
+
+  // Goal streaks
+  for (const plan of plugin.settings.plannedLogs.trackerGoals ?? []) {
+    if (!plan.enabled) continue;
+    const tracker = (plugin.settings.trackers ?? []).find((t) => t.id === plan.trackerId);
+    if (!tracker) continue;
+    const streak = await computeGoalStreak(plugin.app, plugin.settings, tracker, plan, dateISO);
+    if (streak <= 0) continue;
+    any = true;
+    addSummaryChip(row, 'flame', `${tracker.displayName} ${streak}-day streak`, 'is-streak');
+  }
+
+  if (!any) row.remove();
+}
+
+function addSummaryChip(
+  row: HTMLElement,
+  icon: string | undefined,
+  text: string,
+  extraClass?: string
+): void {
+  const chip = row.createDiv(`vital-log-summary-chip${extraClass ? ' ' + extraClass : ''}`);
   if (icon) {
-    const ic = chip.createSpan({ cls: 'vital-log-logged-icon' });
+    const ic = chip.createSpan({ cls: 'vital-log-summary-icon' });
     setIcon(ic, icon);
   }
   chip.createSpan({ text });
+}
+
+async function buildLoggedSection(
+  plugin: VitalLogPlugin,
+  container: HTMLElement,
+  dateISO: string,
+  fm: Fm | null
+): Promise<void> {
+  const section = container.createDiv('vital-log-dashboard-section');
+  section.createEl('h3', { text: 'Logged today', cls: 'vital-log-dashboard-section-title' });
+
+  await buildSummary(plugin, section, dateISO, fm);
+
+  const items = fm ? collectLoggedItems(plugin, fm) : [];
+  if (items.length === 0) {
+    section.createDiv({ cls: 'vital-log-logged-empty', text: 'Nothing logged yet.' });
+    return;
+  }
+
+  for (const bucket of TIME_BUCKETS) {
+    const groupItems = items
+      .filter((it) => bucketForTime(it.time) === bucket.key)
+      .sort((a, b) => (a.time ?? '').localeCompare(b.time ?? ''));
+    if (groupItems.length === 0) continue;
+
+    const group = section.createDiv('vital-log-logged-group');
+    group.createDiv({ cls: 'vital-log-logged-group-title', text: bucket.title });
+    for (const it of groupItems) {
+      const row = group.createDiv('vital-log-logged-entry');
+      if (it.icon) {
+        const ic = row.createSpan({ cls: 'vital-log-logged-icon' });
+        setIcon(ic, it.icon);
+      }
+      if (it.time) row.createSpan({ cls: 'vital-log-logged-time', text: it.time });
+      row.createSpan({ text: it.text });
+    }
+  }
 }
 
 // ── Range dashboard (sparklines) ────────────────────────────
