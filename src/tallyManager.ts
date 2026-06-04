@@ -7,6 +7,7 @@
 import { App, TFile } from 'obsidian';
 import type { TallyCounterConfig, TallyEntry } from './types';
 import { readTallyEntry, setTallyEntry, appendLineToBody } from './yamlManager';
+import { applyTemplate } from './template';
 
 export async function readTally(
   app: App,
@@ -46,9 +47,10 @@ export async function appendTallyToNote(
   entry: TallyEntry,
   template: string
 ): Promise<void> {
-  const line = template
-    .replace('{name}', config.displayName)
-    .replace('{value}', String(entry.value))
-    .replace('{target}', String(config.target));
+  const line = applyTemplate(template, {
+    name: config.displayName,
+    value: String(entry.value),
+    target: String(config.target),
+  });
   await appendLineToBody(app, file, line);
 }

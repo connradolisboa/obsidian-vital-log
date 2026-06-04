@@ -17,20 +17,7 @@ import type {
   StackItemType,
 } from './types';
 import * as yaml from './yamlManager';
-
-// ── Template helper ──────────────────────────────────────────
-
-/**
- * Substitute {token} placeholders in a template string.
- * Unknown/missing tokens are replaced with empty string.
- * Collapses multiple consecutive spaces and trims the result.
- */
-function applyTemplate(template: string, vars: Record<string, string>): string {
-  let result = template.replace(/\{(\w+)\}/g, (_, key) => vars[key] ?? '');
-  // Collapse runs of spaces that result from empty tokens
-  result = result.replace(/ {2,}/g, ' ').trimEnd();
-  return result;
-}
+import { applyTemplate } from './template';
 
 const DEFAULT_SUPPLEMENT_TEMPLATE = '- {time} {name} {amount}{unit}';
 

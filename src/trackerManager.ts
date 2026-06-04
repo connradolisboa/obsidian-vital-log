@@ -7,14 +7,9 @@
 import { App, TFile } from 'obsidian';
 import type { TrackerConfig, VitalLogSettings } from './types';
 import * as yaml from './yamlManager';
+import { applyTemplate } from './template';
 
 const DEFAULT_TRACKER_TEMPLATE = '- {time} {name}: {value}';
-
-function applyTemplate(template: string, vars: Record<string, string>): string {
-  let result = template.replace(/\{(\w+)\}/g, (_, key) => vars[key] ?? '');
-  result = result.replace(/ {2,}/g, ' ').trimEnd();
-  return result;
-}
 
 /**
  * Log a single tracker entry (e.g. mood: 3 at 14:00).

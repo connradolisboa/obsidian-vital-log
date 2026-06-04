@@ -19,6 +19,8 @@ import { resolveNote, getNoteIfExists, resolvePathTemplate, pathMatchesTemplate 
 import * as yaml from './yamlManager';
 import * as tally from './tallyManager';
 import * as tm from './trackerManager';
+import { executeCommandById, getTemplaterPlugin } from './internal';
+import { applyTemplate } from './template';
 
 // moment is bundled with Obsidian
 declare const moment: (date?: Date | string) => {
@@ -928,7 +930,7 @@ export class CustomLogModal extends Modal {
       if (button.buttonType === 'filelink') {
         void this.app.workspace.openLinkText(button.target, '', false);
       } else {
-        (this.app as any).commands.executeCommandById(button.target);
+        executeCommandById(this.app, button.target);
       }
     });
   }
@@ -1025,12 +1027,13 @@ export class CustomLogModal extends Modal {
               targetFile = await this.app.vault.create(config.appendToNoteName + '.md', '---\n---\n');
             }
             if (targetFile) {
-              const line = specificTemplate
-                .replace('{dailyNote}', dailyNoteBasename)
-                .replace('{time}', timeStr)
-                .replace('{name}', config.displayName)
-                .replace('{value}', String(entry.value))
-                .replace('{target}', String(config.target));
+              const line = applyTemplate(specificTemplate, {
+                dailyNote: dailyNoteBasename,
+                time: timeStr,
+                name: config.displayName,
+                value: String(entry.value),
+                target: String(config.target),
+              });
               await yaml.appendLineToBody(this.app, targetFile, line);
             }
           } else {
@@ -1065,7 +1068,7 @@ export class CustomLogModal extends Modal {
 
   private async triggerTemplater(file: TFile): Promise<void> {
     try {
-      const templater = (this.app as any).plugins?.plugins?.['templater-obsidian'];
+      const templater = getTemplaterPlugin(this.app);
       if (!templater) {
         new Notice('Vital Log: Templater plugin not found. Skipping template.');
         return;

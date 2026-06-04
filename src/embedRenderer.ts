@@ -28,6 +28,7 @@ import * as yaml from './yamlManager';
 import * as tally from './tallyManager';
 import * as tm from './trackerManager';
 import { CustomLogModal } from './customLogModal';
+import { executeCommandById } from './internal';
 
 function nowHHmm(): string {
   const d = new Date();
@@ -287,7 +288,7 @@ function getOtherProps(
   const coveredKeys = new Set<string>();
   for (const item of modalConfig.items) {
     if (item.type === 'field') {
-      coveredKeys.add((item.field as any).parentKey ?? item.field.propertyKey);
+      coveredKeys.add(item.field.parentKey ?? item.field.propertyKey);
     } else if (item.type === 'tally') {
       const tc = settings.tallyCounters.find((t) => t.id === item.tallyCounterId);
       if (tc) coveredKeys.add(tc.propertyKey);
@@ -504,7 +505,7 @@ function renderButtonRow(
     if (button.buttonType === 'filelink') {
       void app.workspace.openLinkText(button.target, '', false);
     } else {
-      (app as any).commands.executeCommandById(button.target);
+      executeCommandById(app, button.target);
     }
   };
 

@@ -10,7 +10,7 @@
 //   `counter: Name` → free-form per-note counter (value lives on the same line)
 // ============================================================
 
-import { App, TFile, editorLivePreviewField, setIcon } from 'obsidian';
+import { App, TFile, editorLivePreviewField } from 'obsidian';
 import {
   Decoration,
   DecorationSet,
@@ -25,6 +25,7 @@ import type VitalLogPlugin from '../main';
 import { getDailyNoteIfExists, pathMatchesTemplate } from './dailyNoteResolver';
 import * as yaml from './yamlManager';
 import * as tally from './tallyManager';
+import { buildInlineWidget } from './widgets';
 
 const INLINE_RE = /`(tally|counter):\s+([^`\n]+?)`/g;
 const INLINE_TEXT_RE = /^(tally|counter):\s+(.+)$/;
@@ -58,18 +59,9 @@ export function registerInlineRenderers(plugin: VitalLogPlugin): void {
   });
 }
 
-// ─── Widget builders (shared) ──────────────────────────
-
-function attachWidgetGuards(widget: HTMLElement): void {
-  // Stop the editor from grabbing the click (which would move the cursor
-  // into the underlying source range and dissolve the widget).
-  const stop = (e: Event) => {
-    e.preventDefault();
-    e.stopPropagation();
-  };
-  widget.addEventListener('mousedown', stop);
-  widget.addEventListener('pointerdown', stop);
-}
+// ─── Widget builders ───────────────────────────────────
+// All three share the inline span skeleton in widgets.ts; only their
+// load/persist behaviour differs.
 
 function buildTallyWidget(
   plugin: VitalLogPlugin,
@@ -84,36 +76,6 @@ function buildTallyWidget(
     return buildAdHocTally(app, name, getFile);
   }
 
-  const widget = document.createElement('span');
-  widget.className = 'vital-log-inline-tally';
-  attachWidgetGuards(widget);
-
-  const decBtn = widget.createEl('button', {
-    text: '−',
-    cls: 'vital-log-inline-btn vital-log-inline-btn--dec',
-    attr: { 'aria-label': `Decrease ${config.displayName}`, type: 'button' },
-  });
-
-  if (config.icon) {
-    const iconSpan = widget.createSpan({ cls: 'vital-log-inline-icon' });
-    setIcon(iconSpan, config.icon);
-  }
-  widget.createSpan({ cls: 'vital-log-inline-name', text: config.displayName });
-
-  let value = 0;
-  const valueSpan = widget.createSpan({ cls: 'vital-log-inline-value' });
-  const refresh = () => {
-    valueSpan.textContent = `${value}/${config.target}`;
-    widget.toggleClass('is-complete', value >= config.target);
-  };
-  refresh();
-
-  const incBtn = widget.createEl('button', {
-    text: '+',
-    cls: 'vital-log-inline-btn vital-log-inline-btn--inc',
-    attr: { 'aria-label': `Increase ${config.displayName}`, type: 'button' },
-  });
-
   // If the widget lives in a note matching the daily-note template
   // (e.g. a past daily note), operate on that note. Otherwise fall back
   // to today's daily note.
@@ -122,28 +84,25 @@ function buildTallyWidget(
     widgetFile && pathMatchesTemplate(widgetFile.path, settings.dailyNotePath)
       ? widgetFile
       : getDailyNoteIfExists(app, settings);
-  const handleStep = async (delta: number) => {
-    value = Math.max(0, value + delta * config.step);
-    refresh();
-    if (targetNote) {
-      await tally.updateTallyValue(app, targetNote, config, value);
-    }
-  };
-  decBtn.addEventListener('click', (e) => { e.preventDefault(); void handleStep(-1); });
-  incBtn.addEventListener('click', (e) => { e.preventDefault(); void handleStep(1); });
 
-  // Async load of the current value
-  void (async () => {
-    const fm = targetNote ? await yaml.readAllFrontmatter(app, targetNote) : {};
-    const raw = fm[config.propertyKey];
-    value =
-      typeof raw === 'object' && raw !== null && 'value' in raw
+  return buildInlineWidget({
+    className: 'vital-log-inline-tally',
+    name: config.displayName,
+    icon: config.icon,
+    step: config.step,
+    format: (v) => `${v}/${config.target}`,
+    isComplete: (v) => v >= config.target,
+    persist: async (v) => {
+      if (targetNote) await tally.updateTallyValue(app, targetNote, config, v);
+    },
+    load: async () => {
+      const fm = targetNote ? await yaml.readAllFrontmatter(app, targetNote) : {};
+      const raw = fm[config.propertyKey];
+      return typeof raw === 'object' && raw !== null && 'value' in raw
         ? ((raw as Record<string, unknown>)['value'] as number) ?? 0
         : 0;
-    refresh();
-  })();
-
-  return widget;
+    },
+  });
 }
 
 // Ad-hoc tally: when `tally: Name` doesn't match a registered counter,
@@ -154,54 +113,27 @@ function buildAdHocTally(
   name: string,
   getFile: () => TFile | null,
 ): HTMLElement {
-  const widget = document.createElement('span');
-  widget.className = 'vital-log-inline-tally vital-log-inline-tally--adhoc';
-  attachWidgetGuards(widget);
-
-  const decBtn = widget.createEl('button', {
-    text: '−',
-    cls: 'vital-log-inline-btn vital-log-inline-btn--dec',
-    attr: { 'aria-label': `Decrease ${name}`, type: 'button' },
-  });
-  widget.createSpan({ cls: 'vital-log-inline-name', text: name });
-
-  let value = 0;
-  const valueSpan = widget.createSpan({ cls: 'vital-log-inline-value' });
-  const refresh = () => { valueSpan.textContent = String(value); };
-  refresh();
-
-  const incBtn = widget.createEl('button', {
-    text: '+',
-    cls: 'vital-log-inline-btn vital-log-inline-btn--inc',
-    attr: { 'aria-label': `Increase ${name}`, type: 'button' },
-  });
-
   const propKey = name.trim();
-
-  const handleStep = async (delta: number) => {
-    value = Math.max(0, value + delta);
-    refresh();
-    const file = getFile();
-    if (file) {
-      await app.fileManager.processFrontMatter(file, (fm) => {
-        fm[propKey] = value;
-      });
-    }
-  };
-  decBtn.addEventListener('click', (e) => { e.preventDefault(); void handleStep(-1); });
-  incBtn.addEventListener('click', (e) => { e.preventDefault(); void handleStep(1); });
-
-  // Async load of the current value
-  void (async () => {
-    const file = getFile();
-    if (!file) return;
-    const fm = await yaml.readAllFrontmatter(app, file);
-    const raw = fm[propKey];
-    value = typeof raw === 'number' ? raw : 0;
-    refresh();
-  })();
-
-  return widget;
+  return buildInlineWidget({
+    className: 'vital-log-inline-tally vital-log-inline-tally--adhoc',
+    name,
+    format: (v) => String(v),
+    persist: async (v) => {
+      const file = getFile();
+      if (file) {
+        await app.fileManager.processFrontMatter(file, (fm) => {
+          fm[propKey] = v;
+        });
+      }
+    },
+    load: async () => {
+      const file = getFile();
+      if (!file) return 0;
+      const fm = await yaml.readAllFrontmatter(app, file);
+      const raw = fm[propKey];
+      return typeof raw === 'number' ? raw : 0;
+    },
+  });
 }
 
 function buildCounterWidget(
@@ -209,44 +141,18 @@ function buildCounterWidget(
   name: string,
   getFile: () => TFile | null,
 ): HTMLElement {
-  let value = 0;
-
-  const widget = document.createElement('span');
-  widget.className = 'vital-log-inline-counter';
-  attachWidgetGuards(widget);
-
-  const decBtn = widget.createEl('button', {
-    text: '−',
-    cls: 'vital-log-inline-btn vital-log-inline-btn--dec',
-    attr: { 'aria-label': `Decrease ${name}`, type: 'button' },
-  });
-  widget.createSpan({ cls: 'vital-log-inline-name', text: name });
-
-  const valueSpan = widget.createSpan({ cls: 'vital-log-inline-value' });
-  const refresh = () => { valueSpan.textContent = String(value); };
-  refresh();
-
-  const incBtn = widget.createEl('button', {
-    text: '+',
-    cls: 'vital-log-inline-btn vital-log-inline-btn--inc',
-    attr: { 'aria-label': `Increase ${name}`, type: 'button' },
-  });
-
-  const handleStep = async (delta: number) => {
-    value = Math.max(0, value + delta);
-    refresh();
-    const file = getFile();
-    if (file) {
-      await writeCounterToLine(app, file, name, value);
-    }
-  };
-  decBtn.addEventListener('click', (e) => { e.preventDefault(); void handleStep(-1); });
-  incBtn.addEventListener('click', (e) => { e.preventDefault(); void handleStep(1); });
-
-  // Load the initial value from the surrounding line
-  const file = getFile();
-  if (file) {
-    void app.vault.read(file).then((content) => {
+  return buildInlineWidget({
+    className: 'vital-log-inline-counter',
+    name,
+    format: (v) => String(v),
+    persist: async (v) => {
+      const file = getFile();
+      if (file) await writeCounterToLine(app, file, name, v);
+    },
+    load: async () => {
+      const file = getFile();
+      if (!file) return 0;
+      const content = await app.vault.read(file);
       const escapedName = escapeRegex(name);
       const lineRegex = new RegExp('`counter:\\s*' + escapedName + '`');
       for (const line of content.split('\n')) {
@@ -254,15 +160,13 @@ function buildCounterWidget(
           const counterPos = line.search(lineRegex);
           const beforeCounter = line.slice(0, counterPos);
           const numMatch = beforeCounter.match(/(\d+)\s*$/);
-          if (numMatch) value = parseInt(numMatch[1], 10);
+          if (numMatch) return parseInt(numMatch[1], 10);
           break;
         }
       }
-      refresh();
-    });
-  }
-
-  return widget;
+      return 0;
+    },
+  });
 }
 
 // Replaces the number immediately before the counter tag; inserts one if absent.

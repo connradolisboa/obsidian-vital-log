@@ -21,6 +21,7 @@ import { registerMobileKeyboard } from './src/mobileKeyboard';
 import { DashboardView, VIEW_TYPE_VITAL_DASHBOARD } from './src/dashboardView';
 import { DashboardModal } from './src/dashboardModal';
 import { registerDashboardEmbed } from './src/dashboardEmbed';
+import { removeCommand } from './src/internal';
 
 export default class VitalLogPlugin extends Plugin {
   settings: VitalLogSettings = DEFAULT_SETTINGS;
@@ -187,12 +188,7 @@ export default class VitalLogPlugin extends Plugin {
   registerCustomModalCommands(): void {
     // Remove previously registered custom modal commands
     for (const cmdId of this.customModalCommandIds) {
-      // Obsidian doesn't have a public removeCommand API, but we can
-      // delete from the internal command registry
-      const fullId = `${this.manifest.id}:${cmdId}`;
-      if ((this.app as any).commands?.commands?.[fullId]) {
-        delete (this.app as any).commands.commands[fullId];
-      }
+      removeCommand(this.app, `${this.manifest.id}:${cmdId}`);
     }
     this.customModalCommandIds = [];
 
