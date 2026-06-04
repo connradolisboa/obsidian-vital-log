@@ -11,6 +11,7 @@
   box-sizing: border-box;
 }
 
+
 .vital-log-modal h2 {
   margin-top: 0;
   margin-bottom: 1rem;
@@ -1343,10 +1344,21 @@
     padding: 0.65rem;
   }
 
-  /* While a field is focused, add bottom slack so a field at the end of
-     the modal can scroll up above the soft keyboard. */
-  .vital-log-modal.vital-log-kb-open .modal-content {
-    padding-bottom: 50vh;
+  /* Make the modal content scrollable and add empty space at the bottom
+     so a field near the end can be scrolled up above the soft keyboard.
+     Covers both class placements: most modals put `vital-log-modal` on the
+     content element (.vital-log-modal.modal-content); a few (dashboard,
+     custom-modal editor) put it on the wrapper (.vital-log-modal > .modal-content). */
+  .vital-log-modal.modal-content,
+  .vital-log-modal > .modal-content {
+    max-height: 80vh;
+    overflow-y: auto;
+  }
+  .vital-log-modal.modal-content::after,
+  .vital-log-modal > .modal-content::after {
+    content: "";
+    display: block;
+    height: 55vh;
   }
 
   /* Compact item rows */
