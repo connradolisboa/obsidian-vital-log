@@ -1077,18 +1077,26 @@
 .vital-log-checkbox-row {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
+  gap: 0.5rem;
+  min-height: unset;
+  line-height: 1.2;
+  cursor: pointer;
 }
 
 .vital-log-custom-checkbox {
-  width: 20px;
-  height: 20px;
+  width: 16px;
+  height: 16px;
+  min-height: unset;
+  margin: 0;
+  flex: 0 0 auto;
+  vertical-align: middle;
   cursor: pointer;
   accent-color: var(--interactive-accent);
 }
 
 .vital-log-checkbox-label {
   font-size: 0.9rem;
+  line-height: 1.2;
   color: var(--text-muted);
 }
 
@@ -1333,6 +1341,12 @@
   /* Tighter modal chrome */
   .vital-log-modal .modal-content {
     padding: 0.65rem;
+  }
+
+  /* While a field is focused, add bottom slack so a field at the end of
+     the modal can scroll up above the soft keyboard. */
+  .vital-log-modal.vital-log-kb-open .modal-content {
+    padding-bottom: 50vh;
   }
 
   /* Compact item rows */
@@ -2511,4 +2525,259 @@
   background: transparent;
   border: 1px solid var(--background-modifier-border);
   font-size: 0.85rem;
+}
+
+/* ============================================================
+   Dashboard
+   ============================================================ */
+
+.vital-log-dashboard {
+  padding: 0.5rem 0.25rem;
+}
+
+.vital-log-dashboard-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.vital-log-dashboard-date {
+  font-weight: 600;
+  font-size: 1rem;
+  flex: 1 1 auto;
+  text-align: center;
+}
+
+.vital-log-dashboard-nav {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-primary);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.vital-log-dashboard-nav:hover {
+  color: var(--text-normal);
+  background: var(--background-modifier-hover);
+}
+
+.vital-log-dashboard-section {
+  margin-bottom: 1.1rem;
+}
+
+.vital-log-dashboard-section-title {
+  margin: 0 0 0.5rem 0;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+/* ── Goals ── */
+.vital-log-goal-row {
+  padding: 0.5rem 0.6rem;
+  margin-bottom: 0.5rem;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-primary);
+}
+.vital-log-goal-row.is-clickable .vital-log-goal-label {
+  cursor: pointer;
+}
+.vital-log-goal-row.is-clickable .vital-log-goal-label:hover {
+  color: var(--interactive-accent);
+}
+
+.vital-log-goal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.vital-log-goal-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 500;
+}
+.vital-log-goal-icon,
+.vital-log-schedule-icon,
+.vital-log-logged-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-muted);
+}
+.vital-log-goal-icon svg,
+.vital-log-schedule-icon svg,
+.vital-log-logged-icon svg,
+.vital-log-schedule-check svg {
+  width: 16px;
+  height: 16px;
+}
+
+.vital-log-goal-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.vital-log-goal-current {
+  color: var(--text-normal);
+  font-weight: 600;
+}
+.vital-log-goal-input {
+  width: 4rem;
+  padding: 0.1rem 0.3rem;
+  font-size: 0.85rem;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+}
+
+.vital-log-goal-bar {
+  margin-top: 0.45rem;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--background-modifier-border);
+  overflow: hidden;
+}
+.vital-log-goal-bar-fill {
+  height: 100%;
+  background: var(--interactive-accent);
+  border-radius: 3px;
+  transition: width 0.2s ease;
+}
+.vital-log-goal-bar-fill.is-complete {
+  background: var(--color-green, var(--interactive-accent));
+}
+
+.vital-log-goal-stats {
+  margin-top: 0.4rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Schedule ── */
+.vital-log-schedule-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.5rem;
+  border-radius: 6px;
+}
+.vital-log-schedule-row.is-clickable {
+  cursor: pointer;
+}
+.vital-log-schedule-row.is-clickable:hover {
+  background: var(--background-modifier-hover);
+}
+.vital-log-schedule-check {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-muted);
+}
+.vital-log-schedule-row.is-done .vital-log-schedule-check {
+  color: var(--color-green, var(--interactive-accent));
+}
+.vital-log-schedule-row.is-done .vital-log-schedule-name {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+.vital-log-schedule-name {
+  flex: 1 1 auto;
+}
+.vital-log-schedule-meta {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Logged today ── */
+.vital-log-logged-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.vital-log-logged-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 999px;
+  background: var(--background-secondary);
+  font-size: 0.8rem;
+}
+.vital-log-logged-empty {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-style: italic;
+}
+
+/* ── Range / sparklines ── */
+.vital-log-range-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+.vital-log-range-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 7rem;
+  font-weight: 500;
+}
+.vital-log-range-chart {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+}
+.vital-log-sparkline-line {
+  stroke: var(--interactive-accent);
+  stroke-width: 1.5;
+}
+.vital-log-sparkline-dot {
+  fill: var(--interactive-accent);
+}
+.vital-log-range-summary {
+  min-width: 6rem;
+  text-align: right;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.vital-log-dashboard-error {
+  color: var(--text-error);
+  font-size: 0.85rem;
+}
+
+/* ── Settings: stat checkbox groups ── */
+.vital-log-stat-checkboxes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.vital-log-stat-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.vital-log-stat-checkbox input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
 }

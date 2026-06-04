@@ -782,7 +782,7 @@ export class CustomLogModal extends Modal {
   // ── Checkbox ──────────────────────────────────────────────
 
   private renderCheckbox(container: HTMLElement, field: CustomField, value: unknown): void {
-    const row = container.createDiv('vital-log-checkbox-row');
+    const row = container.createEl('label', { cls: 'vital-log-checkbox-row' });
     const checkbox = row.createEl('input', { type: 'checkbox' });
     checkbox.checked = value === true;
     checkbox.addClass('vital-log-custom-checkbox');

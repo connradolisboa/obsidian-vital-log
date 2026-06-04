@@ -17,6 +17,10 @@ import { CustomLogModal } from './src/customLogModal';
 import { CustomModalChooser } from './src/customModalChooser';
 import { registerEmbedRenderer } from './src/embedRenderer';
 import { registerInlineRenderers, buildInlineEditorExtension } from './src/inlineRenderer';
+import { registerMobileKeyboard } from './src/mobileKeyboard';
+import { DashboardView, VIEW_TYPE_VITAL_DASHBOARD } from './src/dashboardView';
+import { DashboardModal } from './src/dashboardModal';
+import { registerDashboardEmbed } from './src/dashboardEmbed';
 
 export default class VitalLogPlugin extends Plugin {
   settings: VitalLogSettings = DEFAULT_SETTINGS;
@@ -92,6 +96,28 @@ export default class VitalLogPlugin extends Plugin {
       },
     });
 
+    // ── Dashboard ─────────────────────────────────────────
+    this.registerView(
+      VIEW_TYPE_VITAL_DASHBOARD,
+      (leaf) => new DashboardView(leaf, this)
+    );
+
+    this.addRibbonIcon('layout-dashboard', 'Vital Log: Dashboard', () => {
+      void this.activateDashboardView();
+    });
+
+    this.addCommand({
+      id: 'open-dashboard',
+      name: 'Open Dashboard',
+      callback: () => void this.activateDashboardView(),
+    });
+
+    this.addCommand({
+      id: 'open-dashboard-modal',
+      name: 'Open Dashboard (modal)',
+      callback: () => new DashboardModal(this.app, this).open(),
+    });
+
     this.addCommand({
       id: 'manage',
       name: 'Manage Vitamins / Packs / Stacks',
@@ -115,20 +141,12 @@ export default class VitalLogPlugin extends Plugin {
 
     this.registerCustomModalCommands();
     registerEmbedRenderer(this);
+    registerDashboardEmbed(this);
     registerInlineRenderers(this);
     this.registerEditorExtension(buildInlineEditorExtension(this));
 
-    // Scroll focused inputs into view when the soft keyboard resizes the viewport
-    if (window.visualViewport) {
-      const onViewportResize = () => {
-        const el = document.activeElement as HTMLElement | null;
-        if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT')) {
-          el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-        }
-      };
-      window.visualViewport.addEventListener('resize', onViewportResize);
-      this.register(() => window.visualViewport?.removeEventListener('resize', onViewportResize));
-    }
+    // Keep focused inputs visible above the soft keyboard on mobile
+    registerMobileKeyboard(this);
 
     // ── Status bar for tally counters ─────────────────────
     this.initStatusBar();
@@ -145,6 +163,21 @@ export default class VitalLogPlugin extends Plugin {
 
   onunload(): void {
     // Obsidian automatically closes all registered modals and event listeners.
+  }
+
+  /** Reveal the dashboard pane, reusing an existing leaf or opening one on the right. */
+  async activateDashboardView(): Promise<void> {
+    const { workspace } = this.app;
+    const existing = workspace.getLeavesOfType(VIEW_TYPE_VITAL_DASHBOARD);
+    if (existing.length > 0) {
+      await workspace.revealLeaf(existing[0]);
+      return;
+    }
+    const leaf = workspace.getRightLeaf(false);
+    if (leaf) {
+      await leaf.setViewState({ type: VIEW_TYPE_VITAL_DASHBOARD, active: true });
+      await workspace.revealLeaf(leaf);
+    }
   }
 
   /**
@@ -218,6 +251,14 @@ export default class VitalLogPlugin extends Plugin {
     try {
       const stored = await this.loadData() as Partial<VitalLogSettings> | null;
       this.settings = Object.assign({}, DEFAULT_SETTINGS, stored ?? {});
+
+      // Ensure planned-logs structure exists with its own object/arrays
+      // (don't share the DEFAULT_SETTINGS reference).
+      const pl = this.settings.plannedLogs;
+      this.settings.plannedLogs = {
+        trackerGoals: pl?.trackerGoals ?? [],
+        schedule: pl?.schedule ?? [],
+      };
 
       // Migrate legacy CustomModalConfig.fields → items
       let needsSave = false;

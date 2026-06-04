@@ -4,8 +4,9 @@
 
 import { App, Modal, PluginSettingTab, Setting, setIcon } from 'obsidian';
 import type VitalLogPlugin from '../main';
-import type { CustomModalConfig, CustomField, CustomFieldType, TallyCounterConfig, TrackerConfig, CustomModalItem, CustomButtonConfig, MirrorConditionalPin } from './types';
-import { CUSTOM_FIELD_TYPES } from './types';
+import type { CustomModalConfig, CustomField, CustomFieldType, TallyCounterConfig, TrackerConfig, CustomModalItem, CustomButtonConfig, MirrorConditionalPin, StatType, ScheduleItem, ScheduleKind, Frequency } from './types';
+import { CUSTOM_FIELD_TYPES, STAT_TYPES, STAT_LABELS, defaultPrimaryStat, defaultDisplayStats } from './types';
+import { setGoalFromToday, getGoalPlan, todayISO, resolveGoal, describeFrequency } from './planManager';
 import { ManageModal } from './manageModal';
 import { KeyDiagnosticModal } from './keyDiagnosticModal';
 import { buildSnapshot } from './keySnapshotManager';
@@ -18,7 +19,7 @@ function slugify(name: string): string {
     .replace(/^(.)/, (_, c) => c.toLowerCase());
 }
 
-type SettingsTab = 'general' | 'trackers' | 'tallyCounters' | 'customModals';
+type SettingsTab = 'general' | 'library' | 'trackers' | 'tallyCounters' | 'plan' | 'customModals';
 
 export class VitalLogSettingTab extends PluginSettingTab {
   private plugin: VitalLogPlugin;
@@ -38,8 +39,10 @@ export class VitalLogSettingTab extends PluginSettingTab {
     const tabBar = containerEl.createDiv('vital-log-settings-tabs');
     const tabs: { id: SettingsTab; label: string }[] = [
       { id: 'general', label: 'General' },
+      { id: 'library', label: 'Library' },
       { id: 'trackers', label: 'Trackers' },
       { id: 'tallyCounters', label: 'Tally Counters' },
+      { id: 'plan', label: 'Plan' },
       { id: 'customModals', label: 'Custom Modals' },
     ];
 
@@ -61,11 +64,17 @@ export class VitalLogSettingTab extends PluginSettingTab {
       case 'general':
         this.renderGeneralTab(content);
         break;
+      case 'library':
+        this.renderLibraryTab(content);
+        break;
       case 'trackers':
         this.renderTrackersTab(content);
         break;
       case 'tallyCounters':
         this.renderTallyCountersTab(content);
+        break;
+      case 'plan':
+        this.renderPlanTab(content);
         break;
       case 'customModals':
         this.renderCustomModalsTab(content);
@@ -281,8 +290,38 @@ export class VitalLogSettingTab extends PluginSettingTab {
         });
       });
 
-    // ── Manage Data ──
-    el.createEl('h3', { text: 'Manage Data' });
+    // ── Maintenance ──
+    el.createEl('h3', { text: 'Maintenance' });
+
+    new Setting(el)
+      .setName('Diagnose changed keys')
+      .setDesc(
+        'Scan your vault for notes that still use old property keys after renaming a tracker, tally, vitamin, or custom field. ' +
+        'Supports nested (sub-property) keys that Obsidian\'s built-in rename cannot handle.'
+      )
+      .addButton((btn) =>
+        btn
+          .setButtonText('Diagnose Changed Keys')
+          .onClick(() => {
+            new KeyDiagnosticModal(
+              this.app,
+              this.plugin.settings,
+              async () => {
+                this.plugin.settings.propertyKeySnapshot = buildSnapshot(this.plugin.settings);
+                await this.plugin.saveSettings();
+              }
+            ).open();
+          })
+      );
+  }
+
+  // ── Library tab ──────────────────────────────────────────────
+
+  private renderLibraryTab(el: HTMLElement): void {
+    el.createEl('p', {
+      text: 'Manage your supplement library: individual vitamins, packs (groups of vitamins), and stacks (scheduled collections).',
+      cls: 'vital-log-settings-helper',
+    });
 
     new Setting(el)
       .setName('Vitamins')
@@ -334,30 +373,195 @@ export class VitalLogSettingTab extends PluginSettingTab {
             ).open();
           })
       );
+  }
 
-    // ── Maintenance ──
-    el.createEl('h3', { text: 'Maintenance' });
+  // ── Plan tab (dashboard goals + schedule) ────────────────────
 
-    new Setting(el)
-      .setName('Diagnose changed keys')
-      .setDesc(
-        'Scan your vault for notes that still use old property keys after renaming a tracker, tally, vitamin, or custom field. ' +
-        'Supports nested (sub-property) keys that Obsidian\'s built-in rename cannot handle.'
-      )
-      .addButton((btn) =>
-        btn
-          .setButtonText('Diagnose Changed Keys')
-          .onClick(() => {
-            new KeyDiagnosticModal(
-              this.app,
-              this.plugin.settings,
-              async () => {
-                this.plugin.settings.propertyKeySnapshot = buildSnapshot(this.plugin.settings);
-                await this.plugin.saveSettings();
-              }
-            ).open();
-          })
+  private scheduleRefName(kind: ScheduleKind, refId: string): string | null {
+    const s = this.plugin.settings;
+    switch (kind) {
+      case 'vitamin': return s.vitamins.find((v) => v.id === refId)?.displayName ?? null;
+      case 'pack': return s.packs.find((p) => p.id === refId)?.displayName ?? null;
+      case 'stack': return s.stacks.find((st) => st.id === refId)?.displayName ?? null;
+      case 'tally': return s.tallyCounters.find((t) => t.id === refId)?.displayName ?? null;
+    }
+  }
+
+  private scheduleRefOptions(kind: ScheduleKind): { id: string; name: string }[] {
+    const s = this.plugin.settings;
+    switch (kind) {
+      case 'vitamin': return s.vitamins.map((v) => ({ id: v.id, name: v.displayName }));
+      case 'pack': return s.packs.map((p) => ({ id: p.id, name: p.displayName }));
+      case 'stack': return s.stacks.map((st) => ({ id: st.id, name: st.displayName }));
+      case 'tally': return s.tallyCounters.map((t) => ({ id: t.id, name: t.displayName }));
+    }
+  }
+
+  private renderPlanTab(el: HTMLElement): void {
+    el.createEl('p', {
+      text: 'Configure the dashboard: which tracker goals to show, and a schedule of supplements/tallies due each day.',
+      cls: 'vital-log-settings-helper',
+    });
+
+    // ── Goals ──
+    el.createEl('h3', { text: 'Tracker Goals' });
+    el.createEl('p', {
+      text: 'Enable a tracker to show its goal on the dashboard. Setting a goal here applies from today onward; ' +
+        'change it day-to-day from the dashboard. Past days keep the goal that was in effect then.',
+      cls: 'vital-log-settings-helper',
+    });
+
+    const trackers = this.plugin.settings.trackers ?? [];
+    if (trackers.length === 0) {
+      el.createEl('p', { text: 'No trackers yet. Add some in the Trackers tab.', cls: 'vital-log-settings-helper' });
+    }
+    for (const tracker of trackers) {
+      const plan = getGoalPlan(this.plugin.settings, tracker.id);
+      const goalToday = plan ? resolveGoal(plan, todayISO()) : null;
+
+      const setting = new Setting(el).setName(tracker.displayName);
+      setting.addToggle((tg) =>
+        tg.setValue(plan?.enabled ?? false).onChange(async (on) => {
+          let p = getGoalPlan(this.plugin.settings, tracker.id);
+          if (!p) {
+            p = { trackerId: tracker.id, enabled: on, goalHistory: [] };
+            this.plugin.settings.plannedLogs.trackerGoals.push(p);
+          } else {
+            p.enabled = on;
+          }
+          await this.plugin.saveSettings();
+        })
       );
+      setting.addText((tx) => {
+        tx.setPlaceholder('goal').setValue(goalToday !== null ? String(goalToday) : '');
+        tx.inputEl.type = 'number';
+        tx.inputEl.style.width = '6rem';
+        tx.onChange(async (val) => {
+          const v = parseFloat(val);
+          if (isNaN(v)) return;
+          setGoalFromToday(this.plugin.settings, tracker.id, v);
+          await this.plugin.saveSettings();
+        });
+      });
+    }
+
+    // ── Schedule ──
+    el.createEl('h3', { text: 'Daily Schedule' });
+    el.createEl('p', {
+      text: 'Items the dashboard lists under "To take / do today" based on their frequency.',
+      cls: 'vital-log-settings-helper',
+    });
+
+    const schedule = this.plugin.settings.plannedLogs.schedule;
+    for (const item of schedule) {
+      const name = this.scheduleRefName(item.kind, item.refId);
+      const setting = new Setting(el)
+        .setName(name ?? `(missing ${item.kind})`)
+        .setDesc(`${item.kind} · ${describeFrequency(item.frequency)}`);
+      setting.addExtraButton((btn) =>
+        btn.setIcon('trash').setTooltip('Remove').onClick(async () => {
+          this.plugin.settings.plannedLogs.schedule = schedule.filter((s) => s.id !== item.id);
+          await this.plugin.saveSettings();
+          this.display();
+        })
+      );
+    }
+
+    const addBtnRow = new Setting(el);
+    addBtnRow.addButton((btn) =>
+      btn.setButtonText('Add scheduled item').setCta().onClick(() => {
+        this.renderScheduleAddForm(el, addBtnRow.settingEl);
+        btn.setDisabled(true);
+      })
+    );
+  }
+
+  private renderScheduleAddForm(containerEl: HTMLElement, insertBefore: HTMLElement): void {
+    const form = containerEl.createDiv('vital-log-inline-form');
+    insertBefore.parentElement?.insertBefore(form, insertBefore);
+    form.createEl('h4', { text: 'New scheduled item' });
+
+    const kindRow = form.createDiv('vital-log-form-row');
+    kindRow.createEl('label', { text: 'Type' });
+    const kindSelect = kindRow.createEl('select');
+    const kinds: ScheduleKind[] = ['vitamin', 'pack', 'stack', 'tally'];
+    for (const k of kinds) kindSelect.createEl('option', { value: k, text: k[0].toUpperCase() + k.slice(1) });
+
+    const refRow = form.createDiv('vital-log-form-row');
+    refRow.createEl('label', { text: 'Item' });
+    const refSelect = refRow.createEl('select');
+    const syncRefOptions = () => {
+      refSelect.empty();
+      const opts = this.scheduleRefOptions(kindSelect.value as ScheduleKind);
+      if (opts.length === 0) {
+        refSelect.createEl('option', { value: '', text: '(none configured)' });
+      }
+      for (const o of opts) refSelect.createEl('option', { value: o.id, text: o.name });
+    };
+    syncRefOptions();
+    kindSelect.addEventListener('change', syncRefOptions);
+
+    const freqRow = form.createDiv('vital-log-form-row');
+    freqRow.createEl('label', { text: 'Frequency' });
+    const freqSelect = freqRow.createEl('select');
+    freqSelect.createEl('option', { value: 'daily', text: 'Every day' });
+    freqSelect.createEl('option', { value: 'weekdays', text: 'Specific weekdays' });
+    freqSelect.createEl('option', { value: 'everyNDays', text: 'Every N days' });
+
+    // weekday checkboxes
+    const weekRow = form.createDiv('vital-log-form-row');
+    weekRow.createEl('label', { text: 'Days' });
+    const weekWrap = weekRow.createDiv('vital-log-stat-checkboxes');
+    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const dayBoxes: HTMLInputElement[] = [];
+    dayNames.forEach((dn, idx) => {
+      const lbl = weekWrap.createEl('label', { cls: 'vital-log-stat-checkbox' });
+      const cb = lbl.createEl('input', { type: 'checkbox' });
+      cb.checked = idx >= 1 && idx <= 5; // default weekdays
+      lbl.createSpan({ text: dn });
+      dayBoxes[idx] = cb;
+    });
+
+    // every-N input
+    const nRow = form.createDiv('vital-log-form-row');
+    nRow.createEl('label', { text: 'Every (days)' });
+    const nInput = nRow.createEl('input', { type: 'number', value: '2' });
+
+    const syncFreqUI = () => {
+      const f = freqSelect.value;
+      weekRow.style.display = f === 'weekdays' ? '' : 'none';
+      nRow.style.display = f === 'everyNDays' ? '' : 'none';
+    };
+    syncFreqUI();
+    freqSelect.addEventListener('change', syncFreqUI);
+
+    const actions = form.createDiv('vital-log-inline-form-actions');
+    const cancelBtn = actions.createEl('button', { text: 'Cancel', cls: 'vital-log-btn' });
+    cancelBtn.addEventListener('click', () => this.display());
+
+    const saveBtn = actions.createEl('button', { text: 'Add', cls: 'vital-log-btn mod-cta' });
+    saveBtn.addEventListener('click', async () => {
+      const kind = kindSelect.value as ScheduleKind;
+      const refId = refSelect.value;
+      if (!refId) return;
+
+      let frequency: Frequency;
+      if (freqSelect.value === 'weekdays') {
+        const days = dayBoxes.map((cb, i) => (cb.checked ? i : -1)).filter((i) => i >= 0);
+        if (days.length === 0) return;
+        frequency = { type: 'weekdays', days };
+      } else if (freqSelect.value === 'everyNDays') {
+        const n = parseInt(nInput.value) || 1;
+        frequency = { type: 'everyNDays', n, anchor: todayISO() };
+      } else {
+        frequency = { type: 'daily' };
+      }
+
+      const item: ScheduleItem = { id: crypto.randomUUID(), kind, refId, frequency };
+      this.plugin.settings.plannedLogs.schedule.push(item);
+      await this.plugin.saveSettings();
+      this.display();
+    });
   }
 
   // ── Trackers tab ─────────────────────────────────────────────
@@ -941,6 +1145,26 @@ export class VitalLogSettingTab extends PluginSettingTab {
     maxRow.createEl('label', { text: 'Max' });
     const maxInput = maxRow.createEl('input', { type: 'number', value: String(tracker.max) });
 
+    // ── Dashboard stats ──
+    const primaryRow = form.createDiv('vital-log-form-row');
+    primaryRow.createEl('label', { text: 'Goal stat' });
+    const primarySelect = primaryRow.createEl('select');
+    for (const s of STAT_TYPES) primarySelect.createEl('option', { value: s, text: STAT_LABELS[s] });
+    primarySelect.value = tracker.primaryStat ?? defaultPrimaryStat(tracker.trackerType);
+
+    const statsRow = form.createDiv('vital-log-form-row');
+    statsRow.createEl('label', { text: 'Show stats' });
+    const statsWrap = statsRow.createDiv('vital-log-stat-checkboxes');
+    const currentStats = new Set(tracker.displayStats ?? defaultDisplayStats(tracker.trackerType));
+    const statBoxes = new Map<StatType, HTMLInputElement>();
+    for (const s of STAT_TYPES) {
+      const lbl = statsWrap.createEl('label', { cls: 'vital-log-stat-checkbox' });
+      const cb = lbl.createEl('input', { type: 'checkbox' });
+      cb.checked = currentStats.has(s);
+      lbl.createSpan({ text: STAT_LABELS[s] });
+      statBoxes.set(s, cb);
+    }
+
     const syncTypeUI = () => {
       const isMinutes = typeSelect.value === 'minutes';
       minRow.style.display = isMinutes ? 'none' : '';
@@ -967,6 +1191,8 @@ export class VitalLogSettingTab extends PluginSettingTab {
       tracker.icon = iconInput.value.trim() || 'activity';
       tracker.min = parseInt(minInput.value) || 1;
       tracker.max = parseInt(maxInput.value) || 5;
+      tracker.primaryStat = primarySelect.value as StatType;
+      tracker.displayStats = STAT_TYPES.filter((s) => statBoxes.get(s)?.checked);
       await this.plugin.saveSettings();
       this.display();
     });

@@ -40,6 +40,7 @@ export interface VitalLogSettings {
   trackers: TrackerConfig[];  // mood, energy, etc.
   tallyCounters: TallyCounterConfig[];  // running daily counts
   customModals: CustomModalConfig[];  // user-defined log modals
+  plannedLogs: PlannedLogs;  // dashboard goals + supplement/tally schedule
   sameFolderPrefix: string;  // reserved for future use
   logMode: 'perVitamin' | 'substances'; // perVitamin: each vitamin gets its own key; substances: all go into substances[]
   logSource: boolean;         // whether to include the source field on entries
@@ -131,6 +132,31 @@ export function isArray(v: unknown): v is unknown[] {
 
 export type TrackerType = 'rating' | 'minutes';
 
+// Aggregation applied to a day's tracker values for the dashboard.
+export type StatType = 'sum' | 'average' | 'min' | 'max' | 'count' | 'latest';
+
+export const STAT_TYPES: StatType[] = ['sum', 'average', 'min', 'max', 'count', 'latest'];
+
+export const STAT_LABELS: Record<StatType, string> = {
+  sum: 'Total',
+  average: 'Average',
+  min: 'Lowest',
+  max: 'Highest',
+  count: 'Count',
+  latest: 'Latest',
+};
+
+// Default stat config when a tracker hasn't customised it.
+export function defaultPrimaryStat(type: TrackerType | undefined): StatType {
+  return type === 'minutes' ? 'sum' : 'average';
+}
+
+export function defaultDisplayStats(type: TrackerType | undefined): StatType[] {
+  return type === 'minutes'
+    ? ['sum', 'count']
+    : ['average', 'min', 'max', 'count'];
+}
+
 export interface TrackerConfig {
   id: string;
   displayName: string;   // e.g. "Mood", "Energy"
@@ -140,6 +166,8 @@ export interface TrackerConfig {
   min: number;           // minimum value (e.g. 1) — used only for 'rating' type
   max: number;           // maximum value (e.g. 5) — used only for 'rating' type
   icon: string;          // Obsidian icon name, e.g. "smile", "zap"
+  primaryStat?: StatType;    // aggregation used for the dashboard goal bar (default by type)
+  displayStats?: StatType[]; // which stats to show on the dashboard (default by type)
 }
 
 export interface TrackerEntry {
@@ -171,6 +199,41 @@ export interface TallyCounterConfig {
 export interface TallyEntry {
   value: number;
   note?: string;
+}
+
+// ── Planned Logs: goals + schedule (dashboard) ──────────────
+
+// A single goal value effective from a given date forward.
+// History is kept sorted ascending by effectiveFrom; the goal for a
+// viewed date is the latest record whose effectiveFrom <= that date.
+export interface GoalRecord {
+  value: number;
+  effectiveFrom: string; // "YYYY-MM-DD"
+}
+
+export interface TrackerGoalPlan {
+  trackerId: string;
+  enabled: boolean;          // show this tracker's goal in the dashboard
+  goalHistory: GoalRecord[];
+}
+
+export type Frequency =
+  | { type: 'daily' }
+  | { type: 'weekdays'; days: number[] }              // 0=Sun … 6=Sat
+  | { type: 'everyNDays'; n: number; anchor: string }; // anchor = "YYYY-MM-DD"
+
+export type ScheduleKind = 'vitamin' | 'pack' | 'stack' | 'tally';
+
+export interface ScheduleItem {
+  id: string;
+  kind: ScheduleKind;
+  refId: string;             // vitaminId / packId / stackId / tallyCounterId
+  frequency: Frequency;
+}
+
+export interface PlannedLogs {
+  trackerGoals: TrackerGoalPlan[];
+  schedule: ScheduleItem[];
 }
 
 // ── Custom Modal types ──────────────────────────────────────
@@ -284,6 +347,7 @@ export const DEFAULT_SETTINGS: VitalLogSettings = {
   ],
   tallyCounters: [],
   customModals: [],
+  plannedLogs: { trackerGoals: [], schedule: [] },
   sameFolderPrefix: '',
   logMode: 'perVitamin',
   logSource: true,
