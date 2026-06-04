@@ -142,6 +142,23 @@ const TOKEN_REGEX_MAP: Record<string, string> = {
   'Q': '[1-4]',
 };
 
+/** The set of `{{token}}` names the resolver understands. */
+export const VALID_PATH_TOKENS: string[] = Object.keys(TOKEN_REGEX_MAP);
+
+/**
+ * Return the inner names of any `{{...}}` tokens in `template` that the
+ * resolver doesn't understand (and so would be left in the path verbatim).
+ */
+export function findUnknownPathTokens(template: string): string[] {
+  const re = /\{\{([^}]*)\}\}/g;
+  const unknown: string[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(template)) !== null) {
+    if (!(match[1] in TOKEN_REGEX_MAP)) unknown.push(match[1]);
+  }
+  return unknown;
+}
+
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

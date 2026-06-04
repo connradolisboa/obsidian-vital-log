@@ -15,6 +15,7 @@ import type {
 } from './types';
 import { SCHEDULING_HINTS } from './types';
 import { confirm } from './confirmModal';
+import { validatePropertyKey, allKeyOwners } from './validation';
 
 export type ManageTab = 'vitamins' | 'packs' | 'stacks';
 
@@ -28,15 +29,6 @@ function slugify(name: string): string {
     .replace(/[^a-zA-Z0-9_]/g, '_')
     .replace(/_+/g, '_')
     .replace(/^_|_$/g, '');
-}
-
-function validatePropertyKey(key: string, vitamins: Vitamin[], excludeId?: string): string | null {
-  if (!key) return 'Property key cannot be empty.';
-  if (/\s/.test(key)) return 'Property key must not contain spaces.';
-  if (!/^[a-zA-Z0-9_]+$/.test(key)) return 'Property key may only contain letters, numbers, and underscores.';
-  const collision = vitamins.find((v) => v.propertyKey === key && v.id !== excludeId);
-  if (collision) return `Property key "${key}" is already used by "${collision.displayName}".`;
-  return null;
 }
 
 export class ManageModal extends Modal {
@@ -191,9 +183,19 @@ export class ManageModal extends Modal {
     const keyError = form.createDiv({ cls: 'vital-log-error' });
     keyError.style.display = 'none';
 
+    const owners = allKeyOwners(this.settings);
+    const showKeyError = (): boolean => {
+      const err = validatePropertyKey(keyInput.value.trim(), owners, isEdit ? vit!.id : undefined);
+      keyError.textContent = err ?? '';
+      keyError.style.display = err ? 'block' : 'none';
+      return err === null;
+    };
+    keyInput.addEventListener('input', showKeyError);
+
     if (!isEdit) {
       nameInput.addEventListener('input', () => {
         keyInput.value = slugify(nameInput.value);
+        showKeyError();
       });
     }
 
@@ -213,17 +215,7 @@ export class ManageModal extends Modal {
     cancelBtn.addEventListener('click', () => { form.remove(); this.render(); });
 
     saveBtn.addEventListener('click', async () => {
-      const keyErr = validatePropertyKey(
-        keyInput.value,
-        this.settings.vitamins,
-        isEdit ? vit!.id : undefined
-      );
-      if (keyErr) {
-        keyError.textContent = keyErr;
-        keyError.style.display = 'block';
-        return;
-      }
-      keyError.style.display = 'none';
+      if (!showKeyError()) return;
 
       const amount = parseFloat(amtInput.value);
       if (isNaN(amount) || amount <= 0) { new Notice('Vital Log: Default amount must be a positive number.'); return; }

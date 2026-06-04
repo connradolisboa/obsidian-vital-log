@@ -12,6 +12,9 @@ import { KeyDiagnosticModal } from './keyDiagnosticModal';
 import { buildSnapshot } from './keySnapshotManager';
 import { confirm } from './confirmModal';
 import { findStaleReferences, removeStaleReferences } from './referenceCheck';
+import { validatePropertyKey, allKeyOwners } from './validation';
+import { findUnknownPathTokens } from './dailyNoteResolver';
+import { createIconField } from './iconPicker';
 
 function slugify(name: string): string {
   return name
@@ -90,6 +93,20 @@ export class VitalLogSettingTab extends PluginSettingTab {
     // Daily note path
     el.createEl('h3', { text: 'Daily Note Path' });
 
+    const pathError = createDiv({ cls: 'vital-log-error' });
+    pathError.style.display = 'none';
+    const showPathTokenError = (value: string): void => {
+      const unknown = findUnknownPathTokens(value);
+      if (unknown.length === 0) {
+        pathError.style.display = 'none';
+        return;
+      }
+      pathError.textContent =
+        `Unknown token(s): ${unknown.map((t) => `{{${t}}}`).join(', ')}. ` +
+        `They will appear literally in the path. See "Supported tokens" below.`;
+      pathError.style.display = 'block';
+    };
+
     new Setting(el)
       .setName('Path template')
       .setDesc('Template path for your daily note.')
@@ -99,9 +116,12 @@ export class VitalLogSettingTab extends PluginSettingTab {
           .setValue(this.plugin.settings.dailyNotePath)
           .onChange(async (value) => {
             this.plugin.settings.dailyNotePath = value;
+            showPathTokenError(value);
             await this.plugin.saveSettings();
           })
       );
+    el.appendChild(pathError);
+    showPathTokenError(this.plugin.settings.dailyNotePath);
 
     const tokenDetails = el.createEl('details', { cls: 'vital-log-token-details' });
     tokenDetails.createEl('summary', { text: 'Supported tokens' });
@@ -968,6 +988,31 @@ export class VitalLogSettingTab extends PluginSettingTab {
       );
   }
 
+  /**
+   * Attach live property-key validation to a key input. Inserts an inline
+   * error element right after the key's form row and validates on every
+   * keystroke. Returns a validate() that callers run on save (returns true if valid).
+   */
+  private attachKeyValidation(
+    keyInput: HTMLInputElement,
+    keyRow: HTMLElement,
+    excludeId?: string
+  ): () => boolean {
+    const keyError = createDiv({ cls: 'vital-log-error' });
+    keyError.style.display = 'none';
+    keyRow.insertAdjacentElement('afterend', keyError);
+    const validate = (): boolean => {
+      const owners = allKeyOwners(this.plugin.settings);
+      const err = validatePropertyKey(keyInput.value.trim(), owners, excludeId);
+      keyError.textContent = err ?? '';
+      keyError.style.display = err ? 'block' : 'none';
+      keyInput.style.outline = err ? '2px solid var(--text-error)' : '';
+      return err === null;
+    };
+    keyInput.addEventListener('input', validate);
+    return validate;
+  }
+
   private renderTallyAddForm(containerEl: HTMLElement, insertBefore: HTMLElement): void {
     const form = containerEl.createDiv('vital-log-inline-form');
     insertBefore.parentElement?.insertBefore(form, insertBefore.nextSibling);
@@ -980,9 +1025,11 @@ export class VitalLogSettingTab extends PluginSettingTab {
     const keyRow = form.createDiv('vital-log-form-row');
     keyRow.createEl('label', { text: 'Property Key' });
     const keyInput = keyRow.createEl('input', { type: 'text', placeholder: 'e.g. outreachTally' });
+    const validateKey = this.attachKeyValidation(keyInput, keyRow);
 
     nameInput.addEventListener('input', () => {
       keyInput.value = slugify(nameInput.value) + 'Tally';
+      validateKey();
     });
 
     const descRow = form.createDiv('vital-log-form-row');
@@ -991,7 +1038,7 @@ export class VitalLogSettingTab extends PluginSettingTab {
 
     const iconRow = form.createDiv('vital-log-form-row');
     iconRow.createEl('label', { text: 'Icon' });
-    const iconInput = iconRow.createEl('input', { type: 'text', placeholder: 'e.g. check-circle, target, hash' });
+    const iconInput = createIconField(iconRow, { placeholder: 'e.g. check-circle, target, hash' });
 
     const targetRow = form.createDiv('vital-log-form-row');
     targetRow.createEl('label', { text: 'Target' });
@@ -1018,12 +1065,7 @@ export class VitalLogSettingTab extends PluginSettingTab {
       const name = nameInput.value.trim();
       const key = keyInput.value.trim();
       if (!name || !key) return;
-
-      const existing = (this.plugin.settings.tallyCounters ?? []);
-      if (existing.some((t) => t.propertyKey === key)) {
-        keyInput.style.outline = '2px solid var(--text-error)';
-        return;
-      }
+      if (!validateKey()) return;
 
       if (!this.plugin.settings.tallyCounters) this.plugin.settings.tallyCounters = [];
       this.plugin.settings.tallyCounters.push({
@@ -1058,6 +1100,7 @@ export class VitalLogSettingTab extends PluginSettingTab {
     const keyRow = form.createDiv('vital-log-form-row');
     keyRow.createEl('label', { text: 'Property Key' });
     const keyInput = keyRow.createEl('input', { type: 'text', value: t.propertyKey });
+    const validateKey = this.attachKeyValidation(keyInput, keyRow, t.id);
 
     const descRow = form.createDiv('vital-log-form-row');
     descRow.createEl('label', { text: 'Description' });
@@ -1065,7 +1108,7 @@ export class VitalLogSettingTab extends PluginSettingTab {
 
     const iconRow = form.createDiv('vital-log-form-row');
     iconRow.createEl('label', { text: 'Icon' });
-    const iconInput = iconRow.createEl('input', { type: 'text', value: t.icon ?? '', placeholder: 'e.g. check-circle, target, hash' });
+    const iconInput = createIconField(iconRow, { value: t.icon ?? '', placeholder: 'e.g. check-circle, target, hash' });
 
     const targetRow = form.createDiv('vital-log-form-row');
     targetRow.createEl('label', { text: 'Target' });
@@ -1093,6 +1136,7 @@ export class VitalLogSettingTab extends PluginSettingTab {
       const name = nameInput.value.trim();
       const key = keyInput.value.trim();
       if (!name || !key) return;
+      if (!validateKey()) return;
 
       t.displayName = name;
       t.propertyKey = key;
@@ -1127,6 +1171,7 @@ export class VitalLogSettingTab extends PluginSettingTab {
     const keyRow = form.createDiv('vital-log-form-row');
     keyRow.createEl('label', { text: 'Property Key' });
     const keyInput = keyRow.createEl('input', { type: 'text', placeholder: 'e.g. moodLog' });
+    const validateKey = this.attachKeyValidation(keyInput, keyRow);
 
     const valRow = form.createDiv('vital-log-form-row');
     valRow.createEl('label', { text: 'Value Name' });
@@ -1134,7 +1179,7 @@ export class VitalLogSettingTab extends PluginSettingTab {
 
     const iconRow = form.createDiv('vital-log-form-row');
     iconRow.createEl('label', { text: 'Icon' });
-    const iconInput = iconRow.createEl('input', { type: 'text', placeholder: 'e.g. smile, zap, activity' });
+    const iconInput = createIconField(iconRow, { placeholder: 'e.g. smile, zap, activity' });
 
     const minRow = form.createDiv('vital-log-form-row');
     minRow.createEl('label', { text: 'Min' });
@@ -1155,6 +1200,7 @@ export class VitalLogSettingTab extends PluginSettingTab {
 
     nameInput.addEventListener('input', () => {
       keyInput.value = slugify(nameInput.value) + 'Log';
+      validateKey();
       if (typeSelect.value === 'rating' && !valInput.value) {
         valInput.value = slugify(nameInput.value);
       }
@@ -1170,6 +1216,7 @@ export class VitalLogSettingTab extends PluginSettingTab {
       const key = keyInput.value.trim();
       const val = valInput.value.trim();
       if (!name || !key || !val) return;
+      if (!validateKey()) return;
 
       const trackerType = typeSelect.value as 'rating' | 'minutes';
       this.plugin.settings.trackers.push({
@@ -1210,6 +1257,7 @@ export class VitalLogSettingTab extends PluginSettingTab {
     const keyRow = form.createDiv('vital-log-form-row');
     keyRow.createEl('label', { text: 'Property Key' });
     const keyInput = keyRow.createEl('input', { type: 'text', value: tracker.propertyKey });
+    const validateKey = this.attachKeyValidation(keyInput, keyRow, tracker.id);
 
     const valRow = form.createDiv('vital-log-form-row');
     valRow.createEl('label', { text: 'Value Name' });
@@ -1217,7 +1265,7 @@ export class VitalLogSettingTab extends PluginSettingTab {
 
     const iconRow = form.createDiv('vital-log-form-row');
     iconRow.createEl('label', { text: 'Icon' });
-    const iconInput = iconRow.createEl('input', { type: 'text', value: tracker.icon ?? '', placeholder: 'e.g. smile, zap, activity' });
+    const iconInput = createIconField(iconRow, { value: tracker.icon ?? '', placeholder: 'e.g. smile, zap, activity' });
 
     const minRow = form.createDiv('vital-log-form-row');
     minRow.createEl('label', { text: 'Min' });
@@ -1265,6 +1313,7 @@ export class VitalLogSettingTab extends PluginSettingTab {
       const key = keyInput.value.trim();
       const val = valInput.value.trim();
       if (!name || !key || !val) return;
+      if (!validateKey()) return;
 
       tracker.displayName = name;
       tracker.propertyKey = key;
@@ -1329,8 +1378,7 @@ class CustomModalEditorModal extends Modal {
 
     const iconRow = metaSection.createDiv('vital-log-form-row');
     iconRow.createEl('label', { text: 'Icon' });
-    const iconInput = iconRow.createEl('input', {
-      type: 'text',
+    const iconInput = createIconField(iconRow, {
       placeholder: 'e.g. file-text, heart, star',
       value: this.modal.icon,
     });
@@ -1911,8 +1959,7 @@ class CustomModalEditorModal extends Modal {
 
     const iconRow = form.createDiv('vital-log-form-row');
     iconRow.createEl('label', { text: 'Icon (optional)' });
-    const iconInput = iconRow.createEl('input', {
-      type: 'text',
+    const iconInput = createIconField(iconRow, {
       placeholder: 'e.g. book-open, terminal',
       value: button.icon ?? '',
     });

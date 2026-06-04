@@ -125,6 +125,33 @@
   }
 }
 
+/* ── Icon picker field ── */
+.vital-log-icon-field {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+}
+.vital-log-icon-field input {
+  flex: 1;
+  min-width: 0;
+}
+.vital-log-icon-preview {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 5px;
+  color: var(--text-normal);
+}
+.vital-log-icon-preview .svg-icon {
+  width: 18px;
+  height: 18px;
+}
+
 /* ── Stale reference notice (Library tab) ── */
 .vital-log-stale-refs {
   border: 1px solid var(--background-modifier-border);
