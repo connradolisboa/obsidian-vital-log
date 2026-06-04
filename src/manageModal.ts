@@ -14,6 +14,7 @@ import type {
   StackItemType,
 } from './types';
 import { SCHEDULING_HINTS } from './types';
+import { confirm } from './confirmModal';
 
 export type ManageTab = 'vitamins' | 'packs' | 'stacks';
 
@@ -147,7 +148,7 @@ export class ManageModal extends Modal {
       row.replaceWith(form);
     });
 
-    delBtn.addEventListener('click', () => {
+    delBtn.addEventListener('click', async () => {
       const usedInPacks = this.settings.packs.filter((p) =>
         p.items.some((i) => i.vitaminId === vit.id)
       );
@@ -164,6 +165,12 @@ export class ManageModal extends Modal {
         );
         return;
       }
+      const ok = await confirm(this.app, {
+        title: 'Delete vitamin',
+        message: `Delete "${vit.displayName}"? This removes it from your library — previously logged entries are not affected.`,
+        confirmText: 'Delete',
+      });
+      if (!ok) return;
       this.settings.vitamins = this.settings.vitamins.filter((v) => v.id !== vit.id);
       this.saveSettings().then(() => this.render());
     });
@@ -319,7 +326,7 @@ export class ManageModal extends Modal {
       this.renderPackForm(container, pack);
     });
 
-    delBtn.addEventListener('click', () => {
+    delBtn.addEventListener('click', async () => {
       const usedInStacks = this.settings.stacks.filter((s) =>
         s.items.some((i) => i.type === 'pack' && i.packId === pack.id)
       );
@@ -331,6 +338,12 @@ export class ManageModal extends Modal {
         );
         return;
       }
+      const ok = await confirm(this.app, {
+        title: 'Delete pack',
+        message: `Delete pack "${pack.displayName}"? Its ${pack.items.length} item(s) stay in your vitamin library.`,
+        confirmText: 'Delete',
+      });
+      if (!ok) return;
       this.settings.packs = this.settings.packs.filter((p) => p.id !== pack.id);
       this.saveSettings().then(() => this.render());
     });
@@ -480,7 +493,13 @@ export class ManageModal extends Modal {
       row.remove();
       this.renderStackForm(container, stack);
     });
-    delBtn.addEventListener('click', () => {
+    delBtn.addEventListener('click', async () => {
+      const ok = await confirm(this.app, {
+        title: 'Delete stack',
+        message: `Delete stack "${stack.displayName}"? Its packs and vitamins stay in your library.`,
+        confirmText: 'Delete',
+      });
+      if (!ok) return;
       this.settings.stacks = this.settings.stacks.filter((s) => s.id !== stack.id);
       this.saveSettings().then(() => this.render());
     });

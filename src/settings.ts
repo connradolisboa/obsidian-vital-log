@@ -2,7 +2,7 @@
 // Vital Log — Settings Tab
 // ============================================================
 
-import { App, Modal, PluginSettingTab, Setting, setIcon } from 'obsidian';
+import { App, Modal, Notice, PluginSettingTab, Setting, setIcon } from 'obsidian';
 import type VitalLogPlugin from '../main';
 import type { CustomModalConfig, CustomField, CustomFieldType, TallyCounterConfig, TrackerConfig, CustomModalItem, CustomButtonConfig, MirrorConditionalPin, StatType, ScheduleItem, ScheduleKind, Frequency } from './types';
 import { CUSTOM_FIELD_TYPES, STAT_TYPES, STAT_LABELS, defaultPrimaryStat, defaultDisplayStats } from './types';
@@ -10,6 +10,8 @@ import { setGoalFromToday, getGoalPlan, todayISO, resolveGoal, describeFrequency
 import { ManageModal } from './manageModal';
 import { KeyDiagnosticModal } from './keyDiagnosticModal';
 import { buildSnapshot } from './keySnapshotManager';
+import { confirm } from './confirmModal';
+import { findStaleReferences, removeStaleReferences } from './referenceCheck';
 
 function slugify(name: string): string {
   return name
@@ -138,7 +140,25 @@ export class VitalLogSettingTab extends PluginSettingTab {
           .addOption('substances', 'Flat substances list')
           .setValue(this.plugin.settings.logMode ?? 'perVitamin')
           .onChange(async (value) => {
-            this.plugin.settings.logMode = value as 'perVitamin' | 'substances';
+            const prev = this.plugin.settings.logMode ?? 'perVitamin';
+            const next = value as 'perVitamin' | 'substances';
+            if (next === prev) return;
+            const ok = await confirm(this.app, {
+              title: 'Change log mode',
+              message: [
+                next === 'substances'
+                  ? 'New supplement logs will be written to a single flat "substances" list instead of per-vitamin keys.'
+                  : 'New supplement logs will be written to per-vitamin frontmatter keys instead of a flat list.',
+                'Entries already logged in the old format are not converted and stay as they are.',
+              ],
+              confirmText: 'Change mode',
+              destructive: false,
+            });
+            if (!ok) {
+              dd.setValue(prev);
+              return;
+            }
+            this.plugin.settings.logMode = next;
             await this.plugin.saveSettings();
           })
       );
@@ -323,6 +343,8 @@ export class VitalLogSettingTab extends PluginSettingTab {
       cls: 'vital-log-settings-helper',
     });
 
+    this.renderStaleReferenceNotice(el);
+
     new Setting(el)
       .setName('Vitamins')
       .setDesc('Manage your vitamin library.')
@@ -373,6 +395,35 @@ export class VitalLogSettingTab extends PluginSettingTab {
             ).open();
           })
       );
+  }
+
+  private renderStaleReferenceNotice(el: HTMLElement): void {
+    const stale = findStaleReferences(this.plugin.settings);
+    if (stale.length === 0) return;
+
+    const panel = el.createDiv('vital-log-stale-refs');
+    panel.createEl('strong', { text: `${stale.length} broken reference(s) found` });
+    const list = panel.createEl('ul');
+    for (const ref of stale) {
+      list.createEl('li', { text: ref.description });
+    }
+    panel.createEl('p', {
+      text: 'These point at items that have been deleted. Cleaning them up is safe — already-logged entries in your notes are not affected.',
+      cls: 'vital-log-settings-helper',
+    });
+    const cleanBtn = panel.createEl('button', { text: 'Remove broken references', cls: 'vital-log-btn mod-warning' });
+    cleanBtn.addEventListener('click', async () => {
+      const ok = await confirm(this.app, {
+        title: 'Remove broken references',
+        message: 'Remove all dangling pack/stack items and schedule entries that point at deleted items?',
+        confirmText: 'Remove',
+      });
+      if (!ok) return;
+      const removed = removeStaleReferences(this.plugin.settings);
+      await this.plugin.saveSettings();
+      new Notice(`Vital Log: removed ${removed} broken reference(s).`);
+      this.display();
+    });
   }
 
   // ── Plan tab (dashboard goals + schedule) ────────────────────
@@ -631,6 +682,12 @@ export class VitalLogSettingTab extends PluginSettingTab {
 
       const delBtn = actions.createEl('button', { text: 'Delete', cls: 'vital-log-btn mod-warning' });
       delBtn.addEventListener('click', async () => {
+        const ok = await confirm(this.app, {
+          title: 'Delete tracker',
+          message: `Delete tracker "${tracker.displayName}"? Goals and dashboard stats for it are removed. Already-logged entries in your notes are not affected.`,
+          confirmText: 'Delete',
+        });
+        if (!ok) return;
         this.plugin.settings.trackers = this.plugin.settings.trackers.filter((t) => t.id !== tracker.id);
         await this.plugin.saveSettings();
         this.display();
@@ -735,6 +792,16 @@ export class VitalLogSettingTab extends PluginSettingTab {
       const archiveBtn = actions.createEl('button', { text: 'Archive', cls: 'vital-log-btn' });
       archiveBtn.title = 'Hide from commands but keep working in embeds';
       archiveBtn.addEventListener('click', async () => {
+        const ok = await confirm(this.app, {
+          title: 'Archive modal',
+          message: [
+            `Archive "${modal.displayName}"? Its command and ribbon icon will be removed.`,
+            'Any embedded “vital-log” blocks that reference it keep working. You can unarchive it any time.',
+          ],
+          confirmText: 'Archive',
+          destructive: false,
+        });
+        if (!ok) return;
         modal.archived = true;
         await this.plugin.saveSettings();
         this.plugin.registerCustomModalCommands();
@@ -791,6 +858,15 @@ export class VitalLogSettingTab extends PluginSettingTab {
 
         const delBtn = actions.createEl('button', { text: 'Delete', cls: 'vital-log-btn mod-warning' });
         delBtn.addEventListener('click', async () => {
+          const ok = await confirm(this.app, {
+            title: 'Delete modal',
+            message: [
+              `Permanently delete "${modal.displayName}"?`,
+              'Any embedded “vital-log” blocks that reference it will stop working. This cannot be undone.',
+            ],
+            confirmText: 'Delete',
+          });
+          if (!ok) return;
           this.plugin.settings.customModals = this.plugin.settings.customModals.filter((m) => m.id !== modal.id);
           await this.plugin.saveSettings();
           this.plugin.registerCustomModalCommands();
@@ -865,6 +941,12 @@ export class VitalLogSettingTab extends PluginSettingTab {
 
       const delBtn = actions.createEl('button', { text: 'Delete', cls: 'vital-log-btn mod-warning' });
       delBtn.addEventListener('click', async () => {
+        const ok = await confirm(this.app, {
+          title: 'Delete tally counter',
+          message: `Delete tally counter "${t.displayName}"? It is removed from the status bar and any modals that include it. Already-logged values in your notes are not affected.`,
+          confirmText: 'Delete',
+        });
+        if (!ok) return;
         this.plugin.settings.tallyCounters = tallies.filter((tc) => tc.id !== t.id);
         await this.plugin.saveSettings();
         this.display();

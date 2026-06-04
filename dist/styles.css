@@ -125,6 +125,23 @@
   }
 }
 
+/* ── Stale reference notice (Library tab) ── */
+.vital-log-stale-refs {
+  border: 1px solid var(--background-modifier-border);
+  border-left: 3px solid var(--text-error);
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  background: rgba(var(--color-red-rgb, 220, 50, 47), 0.06);
+}
+.vital-log-stale-refs ul {
+  margin: 0.4rem 0;
+  padding-left: 1.2rem;
+}
+.vital-log-stale-refs li {
+  font-size: 0.85rem;
+}
+
 /* ── Item list (Manage modal) ── */
 .vital-log-item-list {
   display: flex;
