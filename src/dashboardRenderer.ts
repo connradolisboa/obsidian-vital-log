@@ -7,9 +7,9 @@
 // Range view shows per-tracker SVG sparklines + a range summary.
 // ============================================================
 
-import { setIcon, Modal } from 'obsidian';
+import { setIcon } from 'obsidian';
 import type VitalLogPlugin from '../main';
-import type { TrackerConfig, ScheduleItem, StatType } from './types';
+import type { TrackerConfig, TallyCounterConfig, ScheduleItem, StatType } from './types';
 import { STAT_LABELS, defaultDisplayStats } from './types';
 import {
   fromISODate,
@@ -30,8 +30,15 @@ import {
   isScheduleItemDone,
   computeGoalStreak,
 } from './statsEngine';
-import { LogModal } from './logModal';
-import { TrackerModal } from './trackerModal';
+import { resolveDailyNote } from './dailyNoteResolver';
+import { logVitamin, logPack, logStack } from './vitaminManager';
+import { logTracker } from './trackerManager';
+import { updateTallyValue } from './tallyManager';
+
+function nowHHmm(): string {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
 
 type Fm = Record<string, unknown>;
 
@@ -210,13 +217,62 @@ function buildGoalsSection(
     }
 
     if (isToday) {
-      row.addClass('is-clickable');
-      label.addEventListener('click', () => {
-        openWithRefresh(
-          new TrackerModal(plugin.app, plugin.settings, () => plugin.saveSettings(), tracker.id),
-          repaint
-        );
+      buildTrackerInlineLog(plugin, row, tracker, repaint);
+    }
+  }
+}
+
+/** Inline rating buttons / minutes stepper + optional note, writing straight to today's note. */
+function buildTrackerInlineLog(
+  plugin: VitalLogPlugin,
+  row: HTMLElement,
+  tracker: TrackerConfig,
+  repaint: () => Promise<void>
+): void {
+  const wrap = row.createDiv('vital-log-goal-log');
+
+  const noteInput = wrap.createEl('input', {
+    type: 'text',
+    cls: 'vital-log-inline-note-input',
+    attr: { placeholder: 'Note (optional)' },
+  });
+
+  const doLog = async (value: number): Promise<void> => {
+    const file = await resolveDailyNote(plugin.app, plugin.settings);
+    if (!file) return;
+    await logTracker(plugin.app, file, tracker, {
+      time: nowHHmm(),
+      value,
+      note: noteInput.value.trim() || undefined,
+    }, plugin.settings);
+    await repaint();
+  };
+
+  if (tracker.trackerType === 'minutes') {
+    const controls = wrap.createDiv('vital-log-embed-tally-controls');
+    const input = controls.createEl('input', {
+      type: 'number',
+      cls: 'vital-log-embed-tracker-minutes-input',
+      attr: { min: '0', step: '1', placeholder: '0' },
+    });
+    const logBtn = controls.createEl('button', {
+      text: '✓',
+      cls: 'vital-log-embed-tally-btn vital-log-embed-tally-btn--inc',
+      attr: { 'aria-label': `Log ${tracker.displayName}` },
+    });
+    logBtn.addEventListener('click', () => {
+      const v = parseFloat(input.value);
+      if (!isNaN(v)) void doLog(v);
+    });
+  } else {
+    const controls = wrap.createDiv('vital-log-embed-tracker-rating-controls vital-log-embed-tally-controls');
+    for (let v = tracker.min; v <= tracker.max; v++) {
+      const btn = controls.createEl('button', {
+        text: String(v),
+        cls: 'vital-log-tracker-value-btn vital-log-tracker-value-btn--embed',
+        attr: { 'aria-label': `${tracker.displayName}: ${v}` },
       });
+      btn.addEventListener('click', () => void doLog(v));
     }
   }
 }
@@ -276,28 +332,109 @@ function buildScheduleSection(
     }
     row.createSpan({ text: disp.name, cls: 'vital-log-schedule-name' });
 
-    // Tally shows value/target
     if (item.kind === 'tally') {
       const t = plugin.settings.tallyCounters.find((x) => x.id === item.refId);
-      if (t) {
-        row.createSpan({
-          cls: 'vital-log-schedule-meta',
-          text: `${readTallyValue(fm, t.propertyKey)}/${t.target}`,
-        });
-      }
+      if (t) buildTallyScheduleControls(plugin, row, check, t, fm, isToday, repaint);
+    } else if (isToday && !done) {
+      buildSupplementInlineLog(plugin, section, row, item, repaint);
     }
+  }
+}
 
-    // Vitamins/packs/stacks can be logged from the existing LogModal (targets today's note)
-    if (isToday && item.kind !== 'tally' && !done) {
-      row.addClass('is-clickable');
-      const type = item.kind as 'vitamin' | 'pack' | 'stack';
-      row.addEventListener('click', () => {
-        openWithRefresh(
-          new LogModal(plugin.app, plugin.settings, () => plugin.saveSettings(), type),
-          repaint
-        );
-      });
+/**
+ * Tally schedule controls. A tally with target <= 1 behaves as a checkbox
+ * habit — clicking the row toggles it done/not-done. Larger targets get an
+ * inline +/- stepper instead.
+ */
+function buildTallyScheduleControls(
+  plugin: VitalLogPlugin,
+  row: HTMLElement,
+  check: HTMLElement,
+  t: TallyCounterConfig,
+  fm: Fm | null,
+  isToday: boolean,
+  repaint: () => Promise<void>
+): void {
+  const value = readTallyValue(fm, t.propertyKey);
+  const isCheckboxHabit = t.target <= 1;
+
+  const write = async (next: number): Promise<void> => {
+    const file = await resolveDailyNote(plugin.app, plugin.settings);
+    if (!file) return;
+    await updateTallyValue(plugin.app, file, t, Math.max(0, next));
+    await repaint();
+  };
+
+  if (isCheckboxHabit) {
+    if (!isToday) return;
+    row.addClass('is-clickable');
+    row.addEventListener('click', () => void write(value >= t.target ? 0 : t.target));
+    return;
+  }
+
+  row.createSpan({ cls: 'vital-log-schedule-meta', text: `${value}/${t.target}` });
+  if (!isToday) return;
+
+  const controls = row.createDiv('vital-log-embed-tally-controls');
+  const dec = controls.createEl('button', {
+    text: '−',
+    cls: 'vital-log-embed-tally-btn vital-log-embed-tally-btn--dec',
+    attr: { 'aria-label': `Decrease ${t.displayName}` },
+  });
+  const inc = controls.createEl('button', {
+    text: '+',
+    cls: 'vital-log-embed-tally-btn vital-log-embed-tally-btn--inc',
+    attr: { 'aria-label': `Increase ${t.displayName}` },
+  });
+  dec.addEventListener('click', () => void write(value - t.step));
+  inc.addEventListener('click', () => void write(value + t.step));
+}
+
+/** Inline quick-log for vitamins/packs/stacks: a checkmark button (+ note field for vitamins). */
+function buildSupplementInlineLog(
+  plugin: VitalLogPlugin,
+  section: HTMLElement,
+  row: HTMLElement,
+  item: ScheduleItem,
+  repaint: () => Promise<void>
+): void {
+  let noteInput: HTMLInputElement | null = null;
+
+  const controls = row.createDiv('vital-log-embed-tally-controls');
+  const logBtn = controls.createEl('button', {
+    text: '✓',
+    cls: 'vital-log-embed-tally-btn vital-log-embed-tally-btn--inc',
+    attr: { 'aria-label': 'Log now' },
+  });
+
+  logBtn.addEventListener('click', async () => {
+    const file = await resolveDailyNote(plugin.app, plugin.settings);
+    if (!file) return;
+    const time = nowHHmm();
+    const note = noteInput?.value.trim() || undefined;
+
+    if (item.kind === 'vitamin') {
+      const v = plugin.settings.vitamins.find((x) => x.id === item.refId);
+      if (!v) return;
+      await logVitamin(plugin.app, file, v, { time, amount: v.defaultAmount, note, source: 'manual' }, plugin.settings);
+    } else if (item.kind === 'pack') {
+      const p = plugin.settings.packs.find((x) => x.id === item.refId);
+      if (!p) return;
+      await logPack(plugin.app, file, p, plugin.settings, { time });
+    } else if (item.kind === 'stack') {
+      const s = plugin.settings.stacks.find((x) => x.id === item.refId);
+      if (!s) return;
+      await logStack(plugin.app, file, s, plugin.settings, { time });
     }
+    await repaint();
+  });
+
+  if (item.kind === 'vitamin') {
+    noteInput = section.createEl('input', {
+      type: 'text',
+      cls: 'vital-log-inline-note-input vital-log-schedule-note',
+      attr: { placeholder: 'Note (optional)' },
+    });
   }
 }
 
@@ -592,14 +729,3 @@ function renderSparkline(container: HTMLElement, values: (number | null)[]): voi
   container.createDiv('vital-log-range-chart').appendChild(svg);
 }
 
-// ── Helpers ─────────────────────────────────────────────────
-
-/** Open a modal and refresh the dashboard once it closes. */
-function openWithRefresh(modal: Modal, repaint: () => Promise<void>): void {
-  const origClose = modal.onClose.bind(modal);
-  modal.onClose = () => {
-    origClose();
-    void repaint();
-  };
-  modal.open();
-}

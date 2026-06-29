@@ -1388,21 +1388,18 @@
     padding: 0.65rem;
   }
 
-  /* Make the modal content scrollable and add empty space at the bottom
-     so a field near the end can be scrolled up above the soft keyboard.
-     Covers both class placements: most modals put `vital-log-modal` on the
-     content element (.vital-log-modal.modal-content); a few (dashboard,
+  /* Make the modal content scrollable so tall forms fit. The bottom space
+     needed to lift a field above the soft keyboard is added dynamically as
+     padding by mobileKeyboard.ts (sized to the actual keyboard height) and
+     removed when the keyboard hides — a fixed spacer here would keep the
+     content permanently overflowing and let the header/tabs scroll out of
+     view. Covers both class placements: most modals put `vital-log-modal` on
+     the content element (.vital-log-modal.modal-content); a few (dashboard,
      custom-modal editor) put it on the wrapper (.vital-log-modal > .modal-content). */
   .vital-log-modal.modal-content,
   .vital-log-modal > .modal-content {
-    max-height: 80vh;
+    max-height: 85vh;
     overflow-y: auto;
-  }
-  .vital-log-modal.modal-content::after,
-  .vital-log-modal > .modal-content::after {
-    content: "";
-    display: block;
-    height: 55vh;
   }
 
   /* Compact item rows */
@@ -2723,6 +2720,23 @@
   font-variant-numeric: tabular-nums;
 }
 
+.vital-log-goal-log {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+}
+
+.vital-log-inline-note-input {
+  width: 100%;
+  font-size: 0.8rem;
+  padding: 0.25rem 0.4rem;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+}
+
 /* ── Schedule ── */
 .vital-log-schedule-row {
   display: flex;
@@ -2756,6 +2770,10 @@
   color: var(--text-muted);
   font-size: 0.8rem;
   font-variant-numeric: tabular-nums;
+}
+
+.vital-log-schedule-note {
+  margin: -0.25rem 0 0.4rem 1.7rem;
 }
 
 /* ── Logged today: summary chips ── */
