@@ -15,7 +15,7 @@ import type {
   StatType,
   ScheduleItem,
 } from './types';
-import { isTrackerEntry, defaultPrimaryStat } from './types';
+import { isTrackerEntry, defaultPrimaryStat, scalarMetrics } from './types';
 import { getNoteIfExists } from './dailyNoteResolver';
 import { readAllFrontmatter } from './yamlManager';
 import { fromISODate, resolveGoal, shiftDaysISO, todayISO } from './planManager';
@@ -123,7 +123,7 @@ export function isScheduleItemDone(
       return s ? listHasNamedEntry(fm, 'stacks', s.displayName) : false;
     }
     case 'tally': {
-      const t = settings.tallyCounters.find((x) => x.id === item.refId);
+      const t = scalarMetrics(settings).find((x) => x.id === item.refId);
       if (!t) return false;
       const value = readTallyValue(fm, t.propertyKey);
       return t.target > 0 ? value >= t.target : value > 0;

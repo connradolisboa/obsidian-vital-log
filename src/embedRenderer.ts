@@ -23,6 +23,7 @@
 import { App, setIcon, TFile } from 'obsidian';
 import type VitalLogPlugin from '../main';
 import type { TallyCounterConfig, TrackerConfig, CustomField, CustomButtonConfig, CustomModalConfig, CustomModalItem, VitalLogSettings } from './types';
+import { seriesMetrics, scalarMetrics } from './types';
 import { getDailyNoteIfExists, getNoteIfExists, pathMatchesTemplate, extractDateFromPath } from './dailyNoteResolver';
 import * as yaml from './yamlManager';
 import * as tally from './tallyManager';
@@ -53,7 +54,7 @@ async function syncSnapshots(plugin: VitalLogPlugin, modalConfig: import('./type
   let dirty = false;
   for (const item of modalConfig.items) {
     if (item.type === 'tally') {
-      const live = plugin.settings.tallyCounters.find((t) => t.id === item.tallyCounterId);
+      const live = scalarMetrics(plugin.settings).find((t) => t.id === item.tallyCounterId);
       if (live) {
         const s = item.tallySnapshot;
         if (!s || s.displayName !== live.displayName || s.propertyKey !== live.propertyKey ||
@@ -63,7 +64,7 @@ async function syncSnapshots(plugin: VitalLogPlugin, modalConfig: import('./type
         }
       }
     } else if (item.type === 'tracker') {
-      const live = (plugin.settings.trackers ?? []).find((t) => t.id === item.trackerId);
+      const live = seriesMetrics(plugin.settings).find((t) => t.id === item.trackerId);
       if (live) {
         const s = item.trackerSnapshot;
         if (!s || s.displayName !== live.displayName || s.propertyKey !== live.propertyKey ||
@@ -199,8 +200,8 @@ async function renderEmbed(
     if (!hasStructure) {
       // Pure-tally/button mode: preserve the 2-column grid layout
       const validItemCount = visibleItems.filter((item) => {
-        if (item.type === 'tally') return !!(settings.tallyCounters.some((t) => t.id === item.tallyCounterId) || item.tallySnapshot);
-        if (item.type === 'tracker') return !!((settings.trackers ?? []).some((t) => t.id === item.trackerId) || item.trackerSnapshot);
+        if (item.type === 'tally') return !!(scalarMetrics(settings).some((t) => t.id === item.tallyCounterId) || item.tallySnapshot);
+        if (item.type === 'tracker') return !!(seriesMetrics(settings).some((t) => t.id === item.trackerId) || item.trackerSnapshot);
         if (item.type === 'button') return true;
         return false;
       }).length;
@@ -213,7 +214,7 @@ async function renderEmbed(
 
       for (const item of visibleItems) {
         if (item.type === 'tally') {
-          const config = settings.tallyCounters.find((t) => t.id === item.tallyCounterId) ?? item.tallySnapshot;
+          const config = scalarMetrics(settings).find((t) => t.id === item.tallyCounterId) ?? item.tallySnapshot;
           if (!config) continue;
           const raw = fm[config.propertyKey];
           const currentValue =
@@ -222,7 +223,7 @@ async function renderEmbed(
               : 0;
           renderTallyRow(app, talliesEl, config, currentValue, targetNote);
         } else if (item.type === 'tracker') {
-          const config = (settings.trackers ?? []).find((t) => t.id === item.trackerId) ?? item.trackerSnapshot;
+          const config = seriesMetrics(settings).find((t) => t.id === item.trackerId) ?? item.trackerSnapshot;
           if (!config) continue;
           renderTrackerColumnItem(app, talliesEl, config, fm, targetNote);
         } else if (item.type === 'button') {
@@ -259,13 +260,13 @@ function getMirrorFilteredItems(
       return (val !== undefined && val !== null) || pinnedIds.includes(item.field.id);
     }
     if (item.type === 'tally') {
-      const tallyConfig = settings.tallyCounters.find((t) => t.id === item.tallyCounterId) ?? item.tallySnapshot;
+      const tallyConfig = scalarMetrics(settings).find((t) => t.id === item.tallyCounterId) ?? item.tallySnapshot;
       if (!tallyConfig) return false;
       const val = fm[tallyConfig.propertyKey];
       return (val !== undefined && val !== null) || pinnedIds.includes(item.tallyCounterId);
     }
     if (item.type === 'tracker') {
-      const trackerConfig = (settings.trackers ?? []).find((t) => t.id === item.trackerId) ?? item.trackerSnapshot;
+      const trackerConfig = seriesMetrics(settings).find((t) => t.id === item.trackerId) ?? item.trackerSnapshot;
       if (!trackerConfig) return false;
       const val = fm[trackerConfig.propertyKey];
       return (val !== undefined && val !== null) || pinnedIds.includes(item.trackerId);
@@ -290,10 +291,10 @@ function getOtherProps(
     if (item.type === 'field') {
       coveredKeys.add(item.field.parentKey ?? item.field.propertyKey);
     } else if (item.type === 'tally') {
-      const tc = settings.tallyCounters.find((t) => t.id === item.tallyCounterId);
+      const tc = scalarMetrics(settings).find((t) => t.id === item.tallyCounterId);
       if (tc) coveredKeys.add(tc.propertyKey);
     } else if (item.type === 'tracker') {
-      const tc = (settings.trackers ?? []).find((t) => t.id === item.trackerId);
+      const tc = seriesMetrics(settings).find((t) => t.id === item.trackerId);
       if (tc) coveredKeys.add(tc.propertyKey);
     }
   }
@@ -382,13 +383,11 @@ function renderEmbedOtherPropsSection(
 
 // ── Mixed-mode item renderer (supports sections, headers, dividers) ──
 
-type EmbedSettings = { tallyCounters: TallyCounterConfig[]; trackers: TrackerConfig[] };
-
 function renderMixedItems(
   app: App,
   container: HTMLElement,
   items: CustomModalItem[],
-  settings: EmbedSettings,
+  settings: VitalLogSettings,
   fm: Record<string, unknown>,
   targetNote: TFile | null
 ): void {
@@ -451,8 +450,8 @@ function renderMixedItems(
       }
 
       const validCount = run.filter((it) => {
-        if (it.type === 'tally') return !!(settings.tallyCounters.some((c) => c.id === it.tallyCounterId) || it.tallySnapshot);
-        if (it.type === 'tracker') return !!((settings.trackers ?? []).some((c) => c.id === it.trackerId) || it.trackerSnapshot);
+        if (it.type === 'tally') return !!(scalarMetrics(settings).some((c) => c.id === it.tallyCounterId) || it.tallySnapshot);
+        if (it.type === 'tracker') return !!(seriesMetrics(settings).some((c) => c.id === it.trackerId) || it.trackerSnapshot);
         return true;
       }).length;
 
@@ -464,7 +463,7 @@ function renderMixedItems(
 
       for (const runItem of run) {
         if (runItem.type === 'tally') {
-          const config = settings.tallyCounters.find((c) => c.id === runItem.tallyCounterId) ?? runItem.tallySnapshot;
+          const config = scalarMetrics(settings).find((c) => c.id === runItem.tallyCounterId) ?? runItem.tallySnapshot;
           if (!config) continue;
           const raw = fm[config.propertyKey];
           const currentValue =
@@ -473,7 +472,7 @@ function renderMixedItems(
               : 0;
           renderTallyRow(app, groupEl, config, currentValue, targetNote);
         } else if (runItem.type === 'tracker') {
-          const config = (settings.trackers ?? []).find((c) => c.id === runItem.trackerId) ?? runItem.trackerSnapshot;
+          const config = seriesMetrics(settings).find((c) => c.id === runItem.trackerId) ?? runItem.trackerSnapshot;
           if (!config) continue;
           renderTrackerColumnItem(app, groupEl, config, fm, targetNote);
         } else if (runItem.type === 'button') {

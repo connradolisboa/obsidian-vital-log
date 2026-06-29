@@ -562,6 +562,19 @@
   flex-shrink: 0;
 }
 
+.vital-log-item-badge {
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  padding: 0.05rem 0.4rem;
+  margin-left: 0.5rem;
+  border-radius: 999px;
+  background: var(--background-modifier-border);
+  color: var(--text-muted);
+  vertical-align: middle;
+}
+
 .vital-log-pin-btn {
   padding: 0.2rem 0.4rem;
   opacity: 0.4;

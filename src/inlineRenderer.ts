@@ -26,6 +26,7 @@ import { getDailyNoteIfExists, pathMatchesTemplate } from './dailyNoteResolver';
 import * as yaml from './yamlManager';
 import * as tally from './tallyManager';
 import { buildInlineWidget } from './widgets';
+import { scalarMetrics } from './types';
 
 const INLINE_RE = /`(tally|counter):\s+([^`\n]+?)`/g;
 const INLINE_TEXT_RE = /^(tally|counter):\s+(.+)$/;
@@ -69,7 +70,7 @@ function buildTallyWidget(
   getFile: () => TFile | null,
 ): HTMLElement {
   const { app, settings } = plugin;
-  const config = settings.tallyCounters.find(
+  const config = scalarMetrics(settings).find(
     (t) => t.displayName.toLowerCase() === name.toLowerCase(),
   );
   if (!config) {

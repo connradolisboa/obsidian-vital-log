@@ -22,7 +22,7 @@ function stackExists(settings: VitalLogSettings, id: string): boolean {
   return settings.stacks.some((s) => s.id === id);
 }
 function tallyExists(settings: VitalLogSettings, id: string): boolean {
-  return settings.tallyCounters.some((t) => t.id === id);
+  return settings.metrics.some((m) => m.trackerType === 'tally' && m.id === id);
 }
 
 /** Scan the library and schedule for dangling references. Read-only. */

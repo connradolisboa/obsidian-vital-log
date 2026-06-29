@@ -6,6 +6,7 @@
 
 import { App, Modal, Notice, setIcon } from 'obsidian';
 import type { VitalLogSettings, TrackerConfig } from './types';
+import { seriesMetrics } from './types';
 import { resolveDailyNote } from './dailyNoteResolver';
 import * as tm from './trackerManager';
 
@@ -39,8 +40,8 @@ export class TrackerModal extends Modal {
     this.onSwitchToSupplements = onSwitchToSupplements;
     if (initialTrackerId) {
       this.selectedTrackerId = initialTrackerId;
-    } else if (settings.trackers.length > 0) {
-      this.selectedTrackerId = settings.trackers[0].id;
+    } else if (seriesMetrics(settings).length > 0) {
+      this.selectedTrackerId = seriesMetrics(settings)[0].id;
     }
   }
 
@@ -55,7 +56,7 @@ export class TrackerModal extends Modal {
   }
 
   private get tracker(): TrackerConfig | undefined {
-    return this.settings.trackers.find((t) => t.id === this.selectedTrackerId);
+    return seriesMetrics(this.settings).find((t) => t.id === this.selectedTrackerId);
   }
 
   private render(): void {
@@ -76,7 +77,7 @@ export class TrackerModal extends Modal {
       });
     }
 
-    if (this.settings.trackers.length === 0) {
+    if (seriesMetrics(this.settings).length === 0) {
       contentEl.createDiv({
         cls: 'vital-log-no-data',
         text: 'No trackers configured. Add some in Settings → Vital Log.',
@@ -86,7 +87,7 @@ export class TrackerModal extends Modal {
 
     // ── Tracker selector (type buttons) ─────────────────────
     const typeSel = contentEl.createDiv('vital-log-type-selector');
-    for (const t of this.settings.trackers) {
+    for (const t of seriesMetrics(this.settings)) {
       const btn = typeSel.createEl('button', {
         cls: 'vital-log-type-btn' + (this.selectedTrackerId === t.id ? ' is-active' : ''),
       });

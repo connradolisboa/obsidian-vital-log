@@ -4,8 +4,8 @@
 
 import { App, Modal, Notice, PluginSettingTab, Setting, setIcon } from 'obsidian';
 import type VitalLogPlugin from '../main';
-import type { CustomModalConfig, CustomField, CustomFieldType, TallyCounterConfig, TrackerConfig, CustomModalItem, CustomButtonConfig, MirrorConditionalPin, StatType, ScheduleItem, ScheduleKind, Frequency } from './types';
-import { CUSTOM_FIELD_TYPES, STAT_TYPES, STAT_LABELS, defaultPrimaryStat, defaultDisplayStats } from './types';
+import type { CustomModalConfig, CustomField, CustomFieldType, TallyCounterConfig, TrackerConfig, Metric, CustomModalItem, CustomButtonConfig, MirrorConditionalPin, StatType, ScheduleItem, ScheduleKind, Frequency } from './types';
+import { CUSTOM_FIELD_TYPES, STAT_TYPES, STAT_LABELS, defaultPrimaryStat, defaultDisplayStats, seriesMetrics, scalarMetrics } from './types';
 import { setGoalFromToday, getGoalPlan, todayISO, resolveGoal, describeFrequency } from './planManager';
 import { ManageModal } from './manageModal';
 import { KeyDiagnosticModal } from './keyDiagnosticModal';
@@ -25,7 +25,16 @@ function slugify(name: string): string {
     .replace(/^(.)/, (_, c) => c.toLowerCase());
 }
 
-type SettingsTab = 'general' | 'library' | 'trackers' | 'tallyCounters' | 'plan' | 'customModals';
+/** Human label for a metric's type (used for the settings list badge). */
+function metricTypeLabel(type: import('./types').TrackerType | undefined): string {
+  switch (type) {
+    case 'tally': return 'Tally';
+    case 'minutes': return 'Minutes';
+    default: return 'Rating';
+  }
+}
+
+type SettingsTab = 'general' | 'library' | 'metrics' | 'plan' | 'customModals';
 
 export class VitalLogSettingTab extends PluginSettingTab {
   private plugin: VitalLogPlugin;
@@ -46,8 +55,7 @@ export class VitalLogSettingTab extends PluginSettingTab {
     const tabs: { id: SettingsTab; label: string }[] = [
       { id: 'general', label: 'General' },
       { id: 'library', label: 'Library' },
-      { id: 'trackers', label: 'Trackers' },
-      { id: 'tallyCounters', label: 'Tally Counters' },
+      { id: 'metrics', label: 'Metrics' },
       { id: 'plan', label: 'Plan' },
       { id: 'customModals', label: 'Custom Modals' },
     ];
@@ -73,11 +81,8 @@ export class VitalLogSettingTab extends PluginSettingTab {
       case 'library':
         this.renderLibraryTab(content);
         break;
-      case 'trackers':
-        this.renderTrackersTab(content);
-        break;
-      case 'tallyCounters':
-        this.renderTallyCountersTab(content);
+      case 'metrics':
+        this.renderMetricsTab(content);
         break;
       case 'plan':
         this.renderPlanTab(content);
@@ -455,7 +460,7 @@ export class VitalLogSettingTab extends PluginSettingTab {
       case 'vitamin': return s.vitamins.find((v) => v.id === refId)?.displayName ?? null;
       case 'pack': return s.packs.find((p) => p.id === refId)?.displayName ?? null;
       case 'stack': return s.stacks.find((st) => st.id === refId)?.displayName ?? null;
-      case 'tally': return s.tallyCounters.find((t) => t.id === refId)?.displayName ?? null;
+      case 'tally': return scalarMetrics(s).find((t) => t.id === refId)?.displayName ?? null;
     }
   }
 
@@ -465,7 +470,7 @@ export class VitalLogSettingTab extends PluginSettingTab {
       case 'vitamin': return s.vitamins.map((v) => ({ id: v.id, name: v.displayName }));
       case 'pack': return s.packs.map((p) => ({ id: p.id, name: p.displayName }));
       case 'stack': return s.stacks.map((st) => ({ id: st.id, name: st.displayName }));
-      case 'tally': return s.tallyCounters.map((t) => ({ id: t.id, name: t.displayName }));
+      case 'tally': return scalarMetrics(s).map((t) => ({ id: t.id, name: t.displayName }));
     }
   }
 
@@ -483,9 +488,9 @@ export class VitalLogSettingTab extends PluginSettingTab {
       cls: 'vital-log-settings-helper',
     });
 
-    const trackers = this.plugin.settings.trackers ?? [];
+    const trackers = seriesMetrics(this.plugin.settings);
     if (trackers.length === 0) {
-      el.createEl('p', { text: 'No trackers yet. Add some in the Trackers tab.', cls: 'vital-log-settings-helper' });
+      el.createEl('p', { text: 'No trackers yet. Add some in the Metrics tab.', cls: 'vital-log-settings-helper' });
     }
     for (const tracker of trackers) {
       const plan = getGoalPlan(this.plugin.settings, tracker.id);
@@ -636,74 +641,82 @@ export class VitalLogSettingTab extends PluginSettingTab {
     });
   }
 
-  // ── Trackers tab ─────────────────────────────────────────────
+  // ── Metrics tab (unified trackers + tally counters) ──────────
 
-  private renderTrackersTab(el: HTMLElement): void {
+  private renderMetricsTab(el: HTMLElement): void {
     el.createEl('p', {
-      text: 'Configure trackers like Mood and Energy. Each tracker gets its own frontmatter key and value range.',
+      text: 'Metrics are the numeric things you log each day. A Tracker (series) keeps a timestamped list of values ' +
+        '(e.g. Mood, Energy) and is aggregated on the dashboard. A Tally Counter (scalar) is a single running count ' +
+        'per day (e.g. Outreach) with a target and +/- step.',
       cls: 'vital-log-settings-helper',
     });
 
-    const trackerList = el.createDiv('vital-log-item-list');
-    const registerTrackerRow = makeReorderable(trackerList, async (from, to) => {
-      const arr = this.plugin.settings.trackers;
-      const [moved] = arr.splice(from, 1);
-      arr.splice(to, 0, moved);
+    const metrics = this.plugin.settings.metrics;
+    const metricList = el.createDiv('vital-log-item-list');
+    const registerRow = makeReorderable(metricList, async (from, to) => {
+      const [moved] = metrics.splice(from, 1);
+      metrics.splice(to, 0, moved);
       await this.plugin.saveSettings();
       this.display();
     });
-    for (let i = 0; i < this.plugin.settings.trackers.length; i++) {
-      const tracker = this.plugin.settings.trackers[i];
-      const row = trackerList.createDiv('vital-log-item-row');
-      registerTrackerRow(row, i);
+
+    for (let i = 0; i < metrics.length; i++) {
+      const metric = metrics[i];
+      const row = metricList.createDiv('vital-log-item-row');
+      registerRow(row, i);
       const handle = row.createDiv({ cls: 'vital-log-drag-handle' });
       setIcon(handle, 'grip-vertical');
       const info = row.createDiv('vital-log-item-info');
-      const trackerNameEl = info.createDiv({ cls: 'vital-log-item-name' });
-      if (tracker.icon) {
-        const iconSpan = trackerNameEl.createSpan({ cls: 'vital-log-item-icon' });
-        setIcon(iconSpan, tracker.icon);
+      const nameEl = info.createDiv({ cls: 'vital-log-item-name' });
+      if (metric.icon) {
+        const iconSpan = nameEl.createSpan({ cls: 'vital-log-item-icon' });
+        setIcon(iconSpan, metric.icon);
       }
-      trackerNameEl.createSpan({ text: tracker.displayName });
-      const isMinuteTracker = tracker.trackerType === 'minutes';
+      nameEl.createSpan({ text: metric.displayName });
+      nameEl.createSpan({
+        cls: 'vital-log-item-badge',
+        text: metricTypeLabel(metric.trackerType),
+      });
       info.createDiv({
         cls: 'vital-log-item-meta',
-        text: isMinuteTracker
-          ? `${tracker.propertyKey} · ${tracker.valueName} · minutes`
-          : `${tracker.propertyKey} · ${tracker.valueName} · ${tracker.min}–${tracker.max}`,
+        text: metric.trackerType === 'tally'
+          ? `${metric.propertyKey} · target ${metric.target} · step ${metric.step}`
+          : metric.trackerType === 'minutes'
+            ? `${metric.propertyKey} · ${metric.valueName} · minutes`
+            : `${metric.propertyKey} · ${metric.valueName} · ${metric.min}–${metric.max}`,
       });
       const actions = row.createDiv('vital-log-item-actions');
 
       const editBtn = actions.createEl('button', { text: 'Edit', cls: 'vital-log-btn' });
       editBtn.addEventListener('click', () => {
-        this.renderTrackerEditForm(el, tracker, trackerList);
+        this.renderMetricForm(el, metricList, metric);
       });
 
       const delBtn = actions.createEl('button', { text: 'Delete', cls: 'vital-log-btn mod-warning' });
       delBtn.addEventListener('click', async () => {
         const ok = await confirm(this.app, {
-          title: 'Delete tracker',
-          message: `Delete tracker "${tracker.displayName}"? Goals and dashboard stats for it are removed. Already-logged entries in your notes are not affected.`,
+          title: 'Delete metric',
+          message: `Delete "${metric.displayName}"? Goals, schedule entries, and dashboard stats for it are removed. Already-logged values in your notes are not affected.`,
           confirmText: 'Delete',
         });
         if (!ok) return;
-        this.plugin.settings.trackers = this.plugin.settings.trackers.filter((t) => t.id !== tracker.id);
+        this.plugin.settings.metrics = metrics.filter((m) => m.id !== metric.id);
         await this.plugin.saveSettings();
         this.display();
       });
     }
 
-    if (this.plugin.settings.trackers.length === 0) {
-      trackerList.createDiv({ cls: 'vital-log-empty-state', text: 'No trackers configured yet.' });
+    if (metrics.length === 0) {
+      metricList.createDiv({ cls: 'vital-log-empty-state', text: 'No metrics configured yet.' });
     }
 
     new Setting(el)
       .addButton((btn) =>
         btn
-          .setButtonText('Add Tracker')
+          .setButtonText('Add Metric')
           .setCta()
           .onClick(() => {
-            this.renderTrackerAddForm(el, trackerList);
+            this.renderMetricForm(el, metricList);
           })
       );
   }
@@ -851,76 +864,6 @@ export class VitalLogSettingTab extends PluginSettingTab {
     }
   }
 
-  // ── Tally Counters tab ───────────────────────────────────────
-
-  private renderTallyCountersTab(el: HTMLElement): void {
-    el.createEl('p', {
-      text: 'Define tally counters for daily counts (e.g. outreach calls). Each counter tracks a single value + note per day.',
-      cls: 'vital-log-settings-helper',
-    });
-
-    const tallyList = el.createDiv('vital-log-item-list');
-    const tallies = this.plugin.settings.tallyCounters ?? [];
-    const registerTallyRow = makeReorderable(tallyList, async (from, to) => {
-      const [moved] = tallies.splice(from, 1);
-      tallies.splice(to, 0, moved);
-      await this.plugin.saveSettings();
-      this.display();
-    });
-
-    for (let i = 0; i < tallies.length; i++) {
-      const t = tallies[i];
-      const row = tallyList.createDiv('vital-log-item-row');
-      registerTallyRow(row, i);
-      const handle = row.createDiv({ cls: 'vital-log-drag-handle' });
-      setIcon(handle, 'grip-vertical');
-      const info = row.createDiv('vital-log-item-info');
-      const nameEl = info.createDiv({ cls: 'vital-log-item-name' });
-      if (t.icon) {
-        const iconSpan = nameEl.createSpan({ cls: 'vital-log-item-icon' });
-        setIcon(iconSpan, t.icon);
-      }
-      nameEl.createSpan({ text: t.displayName });
-      info.createDiv({
-        cls: 'vital-log-item-meta',
-        text: `${t.propertyKey} · target ${t.target} · step ${t.step}`,
-      });
-      const actions = row.createDiv('vital-log-item-actions');
-
-      const editBtn = actions.createEl('button', { text: 'Edit', cls: 'vital-log-btn' });
-      editBtn.addEventListener('click', () => {
-        this.renderTallyEditForm(el, t, tallyList);
-      });
-
-      const delBtn = actions.createEl('button', { text: 'Delete', cls: 'vital-log-btn mod-warning' });
-      delBtn.addEventListener('click', async () => {
-        const ok = await confirm(this.app, {
-          title: 'Delete tally counter',
-          message: `Delete tally counter "${t.displayName}"? It is removed from the status bar and any modals that include it. Already-logged values in your notes are not affected.`,
-          confirmText: 'Delete',
-        });
-        if (!ok) return;
-        this.plugin.settings.tallyCounters = tallies.filter((tc) => tc.id !== t.id);
-        await this.plugin.saveSettings();
-        this.display();
-      });
-    }
-
-    if (tallies.length === 0) {
-      tallyList.createDiv({ cls: 'vital-log-empty-state', text: 'No tally counters configured yet.' });
-    }
-
-    new Setting(el)
-      .addButton((btn) =>
-        btn
-          .setButtonText('Add Tally Counter')
-          .setCta()
-          .onClick(() => {
-            this.renderTallyAddForm(el, tallyList);
-          })
-      );
-  }
-
   /**
    * Attach live property-key validation to a key input. Inserts an inline
    * error element right after the key's form row and validates on every
@@ -946,279 +889,80 @@ export class VitalLogSettingTab extends PluginSettingTab {
     return validate;
   }
 
-  private renderTallyAddForm(containerEl: HTMLElement, insertBefore: HTMLElement): void {
-    const form = containerEl.createDiv('vital-log-inline-form');
-    insertBefore.parentElement?.insertBefore(form, insertBefore.nextSibling);
-    form.createEl('h4', { text: 'New Tally Counter' });
+  // ── Metric add/edit form (rating / minutes / tally) ──────────
 
-    const nameRow = form.createDiv('vital-log-form-row');
-    nameRow.createEl('label', { text: 'Display Name' });
-    const nameInput = nameRow.createEl('input', { type: 'text', placeholder: 'e.g. Outreach' });
-
-    const keyRow = form.createDiv('vital-log-form-row');
-    keyRow.createEl('label', { text: 'Property Key' });
-    const keyInput = keyRow.createEl('input', { type: 'text', placeholder: 'e.g. outreachTally' });
-    const validateKey = this.attachKeyValidation(keyInput, keyRow);
-
-    nameInput.addEventListener('input', () => {
-      keyInput.value = slugify(nameInput.value) + 'Tally';
-      validateKey();
-    });
-
-    const descRow = form.createDiv('vital-log-form-row');
-    descRow.createEl('label', { text: 'Description' });
-    const descInput = descRow.createEl('input', { type: 'text', placeholder: 'Helper text shown in modal' });
-
-    const iconRow = form.createDiv('vital-log-form-row');
-    iconRow.createEl('label', { text: 'Icon' });
-    const iconInput = createIconField(iconRow, { placeholder: 'e.g. check-circle, target, hash' });
-
-    const targetRow = form.createDiv('vital-log-form-row');
-    targetRow.createEl('label', { text: 'Target' });
-    const targetInput = targetRow.createEl('input', { type: 'number', value: '10' });
-
-    const stepRow = form.createDiv('vital-log-form-row');
-    stepRow.createEl('label', { text: 'Step' });
-    const stepInput = stepRow.createEl('input', { type: 'number', value: '1' });
-
-    const statusBarRow = form.createDiv('vital-log-form-row');
-    statusBarRow.createEl('label', { text: 'Show in status bar' });
-    const statusBarCheckbox = statusBarRow.createEl('input', { type: 'checkbox' });
-
-    const appendNoteRow = form.createDiv('vital-log-form-row');
-    appendNoteRow.createEl('label', { text: 'Append to note (path)' });
-    const appendNoteInput = appendNoteRow.createEl('input', { type: 'text', placeholder: 'e.g. Business Outreaches' });
-
-    const actions = form.createDiv('vital-log-inline-form-actions');
-    const cancelBtn = actions.createEl('button', { text: 'Cancel', cls: 'vital-log-btn' });
-    cancelBtn.addEventListener('click', () => { form.remove(); });
-
-    const saveBtn = actions.createEl('button', { text: 'Save', cls: 'vital-log-btn mod-cta' });
-    saveBtn.addEventListener('click', async () => {
-      const name = nameInput.value.trim();
-      const key = keyInput.value.trim();
-      if (!name || !key) return;
-      if (!validateKey()) return;
-
-      if (!this.plugin.settings.tallyCounters) this.plugin.settings.tallyCounters = [];
-      this.plugin.settings.tallyCounters.push({
-        id: crypto.randomUUID(),
-        displayName: name,
-        description: descInput.value.trim() || undefined,
-        propertyKey: key,
-        target: parseInt(targetInput.value) || 10,
-        step: Math.max(1, parseInt(stepInput.value) || 1),
-        icon: iconInput.value.trim() || undefined,
-        showInStatusBar: statusBarCheckbox.checked || undefined,
-        appendToNoteName: appendNoteInput.value.trim() || undefined,
-      });
-      await this.plugin.saveSettings();
-      this.display();
-    });
-  }
-
-  private renderTallyEditForm(
+  private renderMetricForm(
     containerEl: HTMLElement,
-    t: TallyCounterConfig,
-    insertBefore: HTMLElement
+    insertBefore: HTMLElement,
+    existing?: Metric,
   ): void {
+    const isEdit = !!existing;
     const form = containerEl.createDiv('vital-log-inline-form');
     insertBefore.parentElement?.insertBefore(form, insertBefore.nextSibling);
-    form.createEl('h4', { text: `Edit: ${t.displayName}` });
-
-    const nameRow = form.createDiv('vital-log-form-row');
-    nameRow.createEl('label', { text: 'Display Name' });
-    const nameInput = nameRow.createEl('input', { type: 'text', value: t.displayName });
-
-    const keyRow = form.createDiv('vital-log-form-row');
-    keyRow.createEl('label', { text: 'Property Key' });
-    const keyInput = keyRow.createEl('input', { type: 'text', value: t.propertyKey });
-    const validateKey = this.attachKeyValidation(keyInput, keyRow, t.id);
-
-    const descRow = form.createDiv('vital-log-form-row');
-    descRow.createEl('label', { text: 'Description' });
-    const descInput = descRow.createEl('input', { type: 'text', value: t.description ?? '', placeholder: 'Helper text shown in modal' });
-
-    const iconRow = form.createDiv('vital-log-form-row');
-    iconRow.createEl('label', { text: 'Icon' });
-    const iconInput = createIconField(iconRow, { value: t.icon ?? '', placeholder: 'e.g. check-circle, target, hash' });
-
-    const targetRow = form.createDiv('vital-log-form-row');
-    targetRow.createEl('label', { text: 'Target' });
-    const targetInput = targetRow.createEl('input', { type: 'number', value: String(t.target) });
-
-    const stepRow = form.createDiv('vital-log-form-row');
-    stepRow.createEl('label', { text: 'Step' });
-    const stepInput = stepRow.createEl('input', { type: 'number', value: String(t.step) });
-
-    const statusBarRow = form.createDiv('vital-log-form-row');
-    statusBarRow.createEl('label', { text: 'Show in status bar' });
-    const statusBarCheckbox = statusBarRow.createEl('input', { type: 'checkbox' });
-    statusBarCheckbox.checked = t.showInStatusBar === true;
-
-    const appendNoteRow = form.createDiv('vital-log-form-row');
-    appendNoteRow.createEl('label', { text: 'Append to note (path)' });
-    const appendNoteInput = appendNoteRow.createEl('input', { type: 'text', value: t.appendToNoteName ?? '', placeholder: 'e.g. Business Outreaches' });
-
-    const actions = form.createDiv('vital-log-inline-form-actions');
-    const cancelBtn = actions.createEl('button', { text: 'Cancel', cls: 'vital-log-btn' });
-    cancelBtn.addEventListener('click', () => { form.remove(); });
-
-    const saveBtn = actions.createEl('button', { text: 'Save', cls: 'vital-log-btn mod-cta' });
-    saveBtn.addEventListener('click', async () => {
-      const name = nameInput.value.trim();
-      const key = keyInput.value.trim();
-      if (!name || !key) return;
-      if (!validateKey()) return;
-
-      t.displayName = name;
-      t.propertyKey = key;
-      t.description = descInput.value.trim() || undefined;
-      t.icon = iconInput.value.trim() || undefined;
-      t.target = parseInt(targetInput.value) || 10;
-      t.step = Math.max(1, parseInt(stepInput.value) || 1);
-      t.showInStatusBar = statusBarCheckbox.checked || undefined;
-      t.appendToNoteName = appendNoteInput.value.trim() || undefined;
-      await this.plugin.saveSettings();
-      this.display();
-    });
-  }
-
-  // ── Tracker forms ─────────────────────────────────────────
-
-  private renderTrackerAddForm(containerEl: HTMLElement, insertBefore: HTMLElement): void {
-    const form = containerEl.createDiv('vital-log-inline-form');
-    insertBefore.parentElement?.insertBefore(form, insertBefore.nextSibling);
-    form.createEl('h4', { text: 'New Tracker' });
+    form.createEl('h4', { text: isEdit ? `Edit: ${existing!.displayName}` : 'New Metric' });
 
     const typeRow = form.createDiv('vital-log-form-row');
     typeRow.createEl('label', { text: 'Type' });
     const typeSelect = typeRow.createEl('select');
     typeSelect.createEl('option', { value: 'rating', text: 'Rating (1–N scale)' });
     typeSelect.createEl('option', { value: 'minutes', text: 'Minutes (duration)' });
+    typeSelect.createEl('option', { value: 'tally', text: 'Tally (running count)' });
+    typeSelect.value = existing?.trackerType ?? 'rating';
 
     const nameRow = form.createDiv('vital-log-form-row');
     nameRow.createEl('label', { text: 'Display Name' });
-    const nameInput = nameRow.createEl('input', { type: 'text', placeholder: 'e.g. Mood' });
+    const nameInput = nameRow.createEl('input', { type: 'text', placeholder: 'e.g. Mood', value: existing?.displayName ?? '' });
 
     const keyRow = form.createDiv('vital-log-form-row');
     keyRow.createEl('label', { text: 'Property Key' });
-    const keyInput = keyRow.createEl('input', { type: 'text', placeholder: 'e.g. moodLog' });
-    const validateKey = this.attachKeyValidation(keyInput, keyRow);
+    const keyInput = keyRow.createEl('input', { type: 'text', placeholder: 'e.g. moodLog', value: existing?.propertyKey ?? '' });
+    const validateKey = this.attachKeyValidation(keyInput, keyRow, existing?.id);
 
     const valRow = form.createDiv('vital-log-form-row');
     valRow.createEl('label', { text: 'Value Name' });
-    const valInput = valRow.createEl('input', { type: 'text', placeholder: 'e.g. mood' });
+    const valInput = valRow.createEl('input', { type: 'text', placeholder: 'e.g. mood', value: existing?.valueName ?? '' });
+
+    const descRow = form.createDiv('vital-log-form-row');
+    descRow.createEl('label', { text: 'Description' });
+    const descInput = descRow.createEl('input', { type: 'text', placeholder: 'Helper text shown in modal', value: existing?.description ?? '' });
 
     const iconRow = form.createDiv('vital-log-form-row');
     iconRow.createEl('label', { text: 'Icon' });
-    const iconInput = createIconField(iconRow, { placeholder: 'e.g. smile, zap, activity' });
+    const iconInput = createIconField(iconRow, { value: existing?.icon ?? '', placeholder: 'e.g. smile, zap, hash' });
 
     const minRow = form.createDiv('vital-log-form-row');
     minRow.createEl('label', { text: 'Min' });
-    const minInput = minRow.createEl('input', { type: 'number', value: '1' });
-
+    const minInput = minRow.createEl('input', { type: 'number', value: existing ? String(existing.min) : '1' });
     const maxRow = form.createDiv('vital-log-form-row');
     maxRow.createEl('label', { text: 'Max' });
-    const maxInput = maxRow.createEl('input', { type: 'number', value: '5' });
+    const maxInput = maxRow.createEl('input', { type: 'number', value: existing ? String(existing.max) : '5' });
 
-    const syncTypeUI = () => {
-      const isMinutes = typeSelect.value === 'minutes';
-      minRow.style.display = isMinutes ? 'none' : '';
-      maxRow.style.display = isMinutes ? 'none' : '';
-      if (isMinutes && !valInput.value) valInput.value = 'minutes';
-      if (!isMinutes && valInput.value === 'minutes') valInput.value = '';
-    };
-    typeSelect.addEventListener('change', syncTypeUI);
+    const targetRow = form.createDiv('vital-log-form-row');
+    targetRow.createEl('label', { text: 'Target' });
+    const targetInput = targetRow.createEl('input', { type: 'number', value: existing && existing.trackerType === 'tally' ? String(existing.target) : '10' });
+    const stepRow = form.createDiv('vital-log-form-row');
+    stepRow.createEl('label', { text: 'Step' });
+    const stepInput = stepRow.createEl('input', { type: 'number', value: existing && existing.trackerType === 'tally' ? String(existing.step) : '1' });
 
-    nameInput.addEventListener('input', () => {
-      keyInput.value = slugify(nameInput.value) + 'Log';
-      validateKey();
-      if (typeSelect.value === 'rating' && !valInput.value) {
-        valInput.value = slugify(nameInput.value);
-      }
-    });
+    const statusBarRow = form.createDiv('vital-log-form-row');
+    statusBarRow.createEl('label', { text: 'Show in status bar' });
+    const statusBarCheckbox = statusBarRow.createEl('input', { type: 'checkbox' });
+    statusBarCheckbox.checked = existing?.showInStatusBar === true;
 
-    const actions = form.createDiv('vital-log-inline-form-actions');
-    const cancelBtn = actions.createEl('button', { text: 'Cancel', cls: 'vital-log-btn' });
-    cancelBtn.addEventListener('click', () => { form.remove(); });
+    const appendNoteRow = form.createDiv('vital-log-form-row');
+    appendNoteRow.createEl('label', { text: 'Append to note (path)' });
+    const appendNoteInput = appendNoteRow.createEl('input', { type: 'text', placeholder: 'e.g. Business Outreaches', value: existing?.appendToNoteName ?? '' });
 
-    const saveBtn = actions.createEl('button', { text: 'Save', cls: 'vital-log-btn mod-cta' });
-    saveBtn.addEventListener('click', async () => {
-      const name = nameInput.value.trim();
-      const key = keyInput.value.trim();
-      const val = valInput.value.trim();
-      if (!name || !key || !val) return;
-      if (!validateKey()) return;
-
-      const trackerType = typeSelect.value as 'rating' | 'minutes';
-      this.plugin.settings.trackers.push({
-        id: crypto.randomUUID(),
-        displayName: name,
-        propertyKey: key,
-        valueName: val,
-        trackerType,
-        min: parseInt(minInput.value) || 1,
-        max: parseInt(maxInput.value) || 5,
-        icon: iconInput.value.trim() || 'activity',
-      });
-      await this.plugin.saveSettings();
-      this.display();
-    });
-  }
-
-  private renderTrackerEditForm(
-    containerEl: HTMLElement,
-    tracker: import('./types').TrackerConfig,
-    insertBefore: HTMLElement
-  ): void {
-    const form = containerEl.createDiv('vital-log-inline-form');
-    insertBefore.parentElement?.insertBefore(form, insertBefore.nextSibling);
-    form.createEl('h4', { text: `Edit: ${tracker.displayName}` });
-
-    const typeRow = form.createDiv('vital-log-form-row');
-    typeRow.createEl('label', { text: 'Type' });
-    const typeSelect = typeRow.createEl('select');
-    typeSelect.createEl('option', { value: 'rating', text: 'Rating (1–N scale)' });
-    typeSelect.createEl('option', { value: 'minutes', text: 'Minutes (duration)' });
-    typeSelect.value = tracker.trackerType ?? 'rating';
-
-    const nameRow = form.createDiv('vital-log-form-row');
-    nameRow.createEl('label', { text: 'Display Name' });
-    const nameInput = nameRow.createEl('input', { type: 'text', value: tracker.displayName });
-
-    const keyRow = form.createDiv('vital-log-form-row');
-    keyRow.createEl('label', { text: 'Property Key' });
-    const keyInput = keyRow.createEl('input', { type: 'text', value: tracker.propertyKey });
-    const validateKey = this.attachKeyValidation(keyInput, keyRow, tracker.id);
-
-    const valRow = form.createDiv('vital-log-form-row');
-    valRow.createEl('label', { text: 'Value Name' });
-    const valInput = valRow.createEl('input', { type: 'text', value: tracker.valueName });
-
-    const iconRow = form.createDiv('vital-log-form-row');
-    iconRow.createEl('label', { text: 'Icon' });
-    const iconInput = createIconField(iconRow, { value: tracker.icon ?? '', placeholder: 'e.g. smile, zap, activity' });
-
-    const minRow = form.createDiv('vital-log-form-row');
-    minRow.createEl('label', { text: 'Min' });
-    const minInput = minRow.createEl('input', { type: 'number', value: String(tracker.min) });
-
-    const maxRow = form.createDiv('vital-log-form-row');
-    maxRow.createEl('label', { text: 'Max' });
-    const maxInput = maxRow.createEl('input', { type: 'number', value: String(tracker.max) });
-
-    // ── Dashboard stats ──
     const primaryRow = form.createDiv('vital-log-form-row');
     primaryRow.createEl('label', { text: 'Goal stat' });
     const primarySelect = primaryRow.createEl('select');
     for (const s of STAT_TYPES) primarySelect.createEl('option', { value: s, text: STAT_LABELS[s] });
-    primarySelect.value = tracker.primaryStat ?? defaultPrimaryStat(tracker.trackerType);
+    primarySelect.value = existing?.primaryStat ?? defaultPrimaryStat(existing?.trackerType);
 
     const statsRow = form.createDiv('vital-log-form-row');
     statsRow.createEl('label', { text: 'Show stats' });
     const statsWrap = statsRow.createDiv('vital-log-stat-checkboxes');
-    const currentStats = new Set(tracker.displayStats ?? defaultDisplayStats(tracker.trackerType));
+    const currentStats = new Set(existing?.displayStats ?? defaultDisplayStats(existing?.trackerType));
     const statBoxes = new Map<StatType, HTMLInputElement>();
     for (const s of STAT_TYPES) {
       const lbl = statsWrap.createEl('label', { cls: 'vital-log-stat-checkbox' });
@@ -1228,13 +972,41 @@ export class VitalLogSettingTab extends PluginSettingTab {
       statBoxes.set(s, cb);
     }
 
+    // Show only the rows relevant to the selected type.
     const syncTypeUI = () => {
-      const isMinutes = typeSelect.value === 'minutes';
-      minRow.style.display = isMinutes ? 'none' : '';
-      maxRow.style.display = isMinutes ? 'none' : '';
+      const t = typeSelect.value;
+      const isTally = t === 'tally';
+      const isRating = t === 'rating';
+      valRow.style.display = isTally ? 'none' : '';
+      minRow.style.display = isRating ? '' : 'none';
+      maxRow.style.display = isRating ? '' : 'none';
+      descRow.style.display = isTally ? '' : 'none';
+      targetRow.style.display = isTally ? '' : 'none';
+      stepRow.style.display = isTally ? '' : 'none';
+      statusBarRow.style.display = isTally ? '' : 'none';
+      appendNoteRow.style.display = isTally ? '' : 'none';
+      primaryRow.style.display = isTally ? 'none' : '';
+      statsRow.style.display = isTally ? 'none' : '';
     };
     syncTypeUI();
     typeSelect.addEventListener('change', syncTypeUI);
+
+    // Auto-fill key / value suffixes from the name (add mode only).
+    if (!isEdit) {
+      const refreshKey = () => {
+        if (!nameInput.value) return;
+        keyInput.value = slugify(nameInput.value) + (typeSelect.value === 'tally' ? 'Tally' : 'Log');
+        validateKey();
+      };
+      nameInput.addEventListener('input', () => {
+        refreshKey();
+        if (typeSelect.value === 'rating' && !valInput.value) valInput.value = slugify(nameInput.value);
+      });
+      typeSelect.addEventListener('change', () => {
+        refreshKey();
+        if (typeSelect.value === 'minutes' && !valInput.value) valInput.value = 'minutes';
+      });
+    }
 
     const actions = form.createDiv('vital-log-inline-form-actions');
     const cancelBtn = actions.createEl('button', { text: 'Cancel', cls: 'vital-log-btn' });
@@ -1242,21 +1014,47 @@ export class VitalLogSettingTab extends PluginSettingTab {
 
     const saveBtn = actions.createEl('button', { text: 'Save', cls: 'vital-log-btn mod-cta' });
     saveBtn.addEventListener('click', async () => {
+      const type = typeSelect.value as import('./types').TrackerType;
+      const isTally = type === 'tally';
       const name = nameInput.value.trim();
       const key = keyInput.value.trim();
       const val = valInput.value.trim();
-      if (!name || !key || !val) return;
+      if (!name || !key) return;
+      if (!isTally && !val) return;
       if (!validateKey()) return;
 
-      tracker.displayName = name;
-      tracker.propertyKey = key;
-      tracker.valueName = val;
-      tracker.trackerType = typeSelect.value as 'rating' | 'minutes';
-      tracker.icon = iconInput.value.trim() || 'activity';
-      tracker.min = parseInt(minInput.value) || 1;
-      tracker.max = parseInt(maxInput.value) || 5;
-      tracker.primaryStat = primarySelect.value as StatType;
-      tracker.displayStats = STAT_TYPES.filter((s) => statBoxes.get(s)?.checked);
+      const m: Metric = isEdit ? existing! : ({} as Metric);
+      m.id = existing?.id ?? crypto.randomUUID();
+      m.displayName = name;
+      m.propertyKey = key;
+      m.trackerType = type;
+      m.icon = iconInput.value.trim() || (isTally ? 'hash' : 'activity');
+
+      if (isTally) {
+        m.valueName = '';
+        m.min = 0;
+        m.max = 0;
+        m.description = descInput.value.trim() || undefined;
+        m.target = parseInt(targetInput.value) || 10;
+        m.step = Math.max(1, parseInt(stepInput.value) || 1);
+        m.showInStatusBar = statusBarCheckbox.checked || undefined;
+        m.appendToNoteName = appendNoteInput.value.trim() || undefined;
+        m.primaryStat = undefined;
+        m.displayStats = undefined;
+      } else {
+        m.valueName = val;
+        m.min = parseInt(minInput.value) || 1;
+        m.max = parseInt(maxInput.value) || 5;
+        m.primaryStat = primarySelect.value as StatType;
+        m.displayStats = STAT_TYPES.filter((s) => statBoxes.get(s)?.checked);
+        m.target = 0;
+        m.step = 1;
+        m.description = undefined;
+        m.showInStatusBar = undefined;
+        m.appendToNoteName = undefined;
+      }
+
+      if (!isEdit) this.plugin.settings.metrics.push(m);
       await this.plugin.saveSettings();
       this.display();
     });
@@ -1465,14 +1263,14 @@ class CustomModalEditorModal extends Modal {
           text: `${keyDisplay} · ${field.fieldType}${this.getFieldMeta(field)}`,
         });
       } else if (item.type === 'tally') {
-        const tc = this.plugin.settings.tallyCounters?.find((t) => t.id === item.tallyCounterId);
+        const tc = scalarMetrics(this.plugin.settings).find((t) => t.id === item.tallyCounterId);
         info.createDiv({ cls: 'vital-log-item-name', text: tc?.displayName ?? '(deleted tally)' });
         info.createDiv({
           cls: 'vital-log-item-meta',
           text: tc ? `${tc.propertyKey} · tally · target ${tc.target}` : item.tallyCounterId,
         });
       } else if (item.type === 'tracker') {
-        const tr = this.plugin.settings.trackers?.find((t) => t.id === item.trackerId);
+        const tr = seriesMetrics(this.plugin.settings).find((t) => t.id === item.trackerId);
         info.createDiv({ cls: 'vital-log-item-name', text: tr?.displayName ?? '(deleted tracker)' });
         info.createDiv({
           cls: 'vital-log-item-meta',
@@ -1574,7 +1372,8 @@ class CustomModalEditorModal extends Modal {
       this.renderFieldForm(fieldListEl, newField, false);
     });
 
-    const availableTallies = (this.plugin.settings.tallyCounters ?? []).filter(
+    const allTallies = scalarMetrics(this.plugin.settings);
+    const availableTallies = allTallies.filter(
       (tc) => !this.modal.items.some((it) => it.type === 'tally' && it.tallyCounterId === tc.id)
     );
     if (availableTallies.length > 0) {
@@ -1582,14 +1381,15 @@ class CustomModalEditorModal extends Modal {
       addTallyBtn.addEventListener('click', () => {
         this.renderTallyPickerForm(fieldListEl, availableTallies);
       });
-    } else if ((this.plugin.settings.tallyCounters ?? []).length === 0) {
+    } else if (allTallies.length === 0) {
       addRow.createEl('span', {
         cls: 'vital-log-item-meta',
-        text: ' \u00b7 No tally counters defined yet. Add them in the Tally Counters tab.',
+        text: ' \u00b7 No tally counters defined yet. Add them in the Metrics tab.',
       });
     }
 
-    const availableTrackers = (this.plugin.settings.trackers ?? []).filter(
+    const allTrackers = seriesMetrics(this.plugin.settings);
+    const availableTrackers = allTrackers.filter(
       (tr) => !this.modal.items.some((it) => it.type === 'tracker' && it.trackerId === tr.id)
     );
     if (availableTrackers.length > 0) {
@@ -1597,10 +1397,10 @@ class CustomModalEditorModal extends Modal {
       addTrackerBtn.addEventListener('click', () => {
         this.renderTrackerPickerForm(fieldListEl, availableTrackers);
       });
-    } else if ((this.plugin.settings.trackers ?? []).length === 0) {
+    } else if (allTrackers.length === 0) {
       addRow.createEl('span', {
         cls: 'vital-log-item-meta',
-        text: ' \u00b7 No trackers defined yet. Add them in the Trackers tab.',
+        text: ' \u00b7 No trackers defined yet. Add them in the Metrics tab.',
       });
     }
 
@@ -1661,7 +1461,7 @@ class CustomModalEditorModal extends Modal {
       const pinnedLabels = pin.pinnedIds.map((id) => {
         const fieldItem = this.modal.items.find((it) => it.type === 'field' && it.field.id === id);
         if (fieldItem && fieldItem.type === 'field') return fieldItem.field.displayName;
-        const tallyConfig = this.plugin.settings.tallyCounters?.find((t) => t.id === id);
+        const tallyConfig = scalarMetrics(this.plugin.settings).find((t) => t.id === id);
         if (tallyConfig) return tallyConfig.displayName;
         return id;
       });
@@ -1744,7 +1544,7 @@ class CustomModalEditorModal extends Modal {
       const itemId = item.type === 'field' ? item.field.id : item.tallyCounterId;
       const label = item.type === 'field'
         ? item.field.displayName
-        : (this.plugin.settings.tallyCounters?.find((t) => t.id === item.tallyCounterId)?.displayName ?? item.tallyCounterId);
+        : (scalarMetrics(this.plugin.settings).find((t) => t.id === item.tallyCounterId)?.displayName ?? item.tallyCounterId);
 
       const row = checkboxList.createDiv('vital-log-form-row vital-log-form-row--compact');
       const cb = row.createEl('input', { type: 'checkbox' });

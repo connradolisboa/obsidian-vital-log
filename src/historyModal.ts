@@ -16,6 +16,7 @@ import type {
   TallyEntry,
 } from './types';
 import { isVitaminEntry, isSubstanceEntry, isPackEntry, isStackEntry, isTrackerEntry, isArray } from './types';
+import { seriesMetrics, scalarMetrics } from './types';
 import { getDailyNoteIfExists } from './dailyNoteResolver';
 import * as yaml from './yamlManager';
 
@@ -87,15 +88,15 @@ export class HistoryModal extends Modal {
 
     // Build system keys set (base + tracker + tally propertyKeys)
     const systemKeys = new Set(BASE_SYSTEM_KEYS);
-    for (const t of this.settings.trackers) {
+    for (const t of seriesMetrics(this.settings)) {
       systemKeys.add(t.propertyKey);
     }
-    for (const t of this.settings.tallyCounters ?? []) {
+    for (const t of scalarMetrics(this.settings)) {
       systemKeys.add(t.propertyKey);
     }
 
     // ── Tracker sections (mood, energy, etc.) ───────────────
-    for (const tracker of this.settings.trackers) {
+    for (const tracker of seriesMetrics(this.settings)) {
       const trackerEntries = fm[tracker.propertyKey];
       if (!isArray(trackerEntries) || trackerEntries.length === 0) continue;
 
@@ -110,7 +111,7 @@ export class HistoryModal extends Modal {
     }
 
     // ── Tally counters section ──────────────────────────────
-    const tallies = this.settings.tallyCounters ?? [];
+    const tallies = scalarMetrics(this.settings);
     if (tallies.length > 0) {
       const tallySection = contentEl.createDiv('vital-log-history-section');
       tallySection.createDiv({ cls: 'vital-log-history-section-title', text: 'Tally Counters' });

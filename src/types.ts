@@ -37,8 +37,9 @@ export interface VitalLogSettings {
   vitamins: Vitamin[];
   packs: Pack[];
   stacks: Stack[];
-  trackers: TrackerConfig[];  // mood, energy, etc.
-  tallyCounters: TallyCounterConfig[];  // running daily counts
+  metrics: Metric[];          // unified trackers + tally counters
+  trackers?: TrackerConfig[];        // legacy — migrated into `metrics` on load
+  tallyCounters?: TallyCounterConfig[]; // legacy — migrated into `metrics` on load
   customModals: CustomModalConfig[];  // user-defined log modals
   plannedLogs: PlannedLogs;  // dashboard goals + supplement/tally schedule
   sameFolderPrefix: string;  // reserved for future use
@@ -130,7 +131,7 @@ export function isArray(v: unknown): v is unknown[] {
 
 // ── Tracker types (mood, energy, etc.) ──────────────────────
 
-export type TrackerType = 'rating' | 'minutes';
+export type TrackerType = 'rating' | 'minutes' | 'tally';
 
 // Aggregation applied to a day's tracker values for the dashboard.
 export type StatType = 'sum' | 'average' | 'min' | 'max' | 'count' | 'latest';
@@ -157,17 +158,102 @@ export function defaultDisplayStats(type: TrackerType | undefined): StatType[] {
     : ['average', 'min', 'max', 'count'];
 }
 
-export interface TrackerConfig {
+// ── Unified Metric model (trackers + tally counters) ────────
+//
+// A Metric is a single user-defined numeric thing logged per day. Its
+// `trackerType` is the one axis that decides storage shape, input UX, and
+// stats:
+//
+//   'rating'  — pick a value on a min–max scale; logged as a LIST of
+//               timestamped entries (e.g. moodLog: [{time, mood}, …]).
+//   'minutes' — log a duration; also a LIST of timestamped entries, summed.
+//   'tally'   — a SINGLE running value per day (e.g. outreachTally:
+//               {value, note}), incremented/decremented by `step`.
+//
+// 'rating' and 'minutes' are "series" (list) metrics; 'tally' is a "scalar"
+// (single-value) metric. Helpers below derive that distinction. Fields that
+// only apply to one type are populated with harmless defaults for the others
+// so the rest of the code can treat them as definite.
+export interface Metric {
   id: string;
-  displayName: string;   // e.g. "Mood", "Energy"
-  propertyKey: string;   // frontmatter key, e.g. "moodLog"
-  valueName: string;     // field name inside entries, e.g. "mood", "energy", "minutes"
-  trackerType?: TrackerType; // 'rating' (default) | 'minutes'
-  min: number;           // minimum value (e.g. 1) — used only for 'rating' type
-  max: number;           // maximum value (e.g. 5) — used only for 'rating' type
-  icon: string;          // Obsidian icon name, e.g. "smile", "zap"
-  primaryStat?: StatType;    // aggregation used for the dashboard goal bar (default by type)
-  displayStats?: StatType[]; // which stats to show on the dashboard (default by type)
+  displayName: string;   // e.g. "Mood", "Energy", "Outreach"
+  propertyKey: string;   // frontmatter key, e.g. "moodLog" / "outreachTally"
+  icon: string;          // Obsidian icon name, e.g. "smile", "zap", "hash"
+  trackerType?: TrackerType; // 'rating' (default) | 'minutes' | 'tally'
+  description?: string;   // helper text shown in modals (mainly tally)
+
+  // ── series ('rating' / 'minutes') fields ──
+  valueName: string;     // field name inside entries, e.g. "mood"; '' for tally
+  min: number;           // rating range min; 0 for minutes/tally
+  max: number;           // rating range max; 0 for minutes/tally
+  primaryStat?: StatType;    // aggregation used for the dashboard goal bar
+  displayStats?: StatType[]; // which stats to show on the dashboard
+
+  // ── scalar ('tally') fields ──
+  target: number;        // visual goal (tally); 0 for series
+  step: number;          // increment/decrement amount per click (tally); 1 for series
+  showInStatusBar?: boolean; // show current/target in the status bar
+  appendToNoteName?: string; // vault path (no .md) of note to append tally lines to
+}
+
+// Legacy aliases — both former config types are now structural views of Metric.
+export type TrackerConfig = Metric;
+
+/** A tally is a scalar (single value per day) metric; everything else is a series. */
+export function isTallyMetric(m: Metric): boolean {
+  return m.trackerType === 'tally';
+}
+
+/** Filter a settings object's metrics to the series ('rating' / 'minutes') metrics. */
+export function seriesMetrics(settings: { metrics: Metric[] }): Metric[] {
+  return settings.metrics.filter((m) => m.trackerType !== 'tally');
+}
+
+/** Filter a settings object's metrics to the scalar ('tally') metrics. */
+export function scalarMetrics(settings: { metrics: Metric[] }): Metric[] {
+  return settings.metrics.filter((m) => m.trackerType === 'tally');
+}
+
+/** Find a metric by id regardless of type. */
+export function findMetric(settings: { metrics: Metric[] }, id: string): Metric | undefined {
+  return settings.metrics.find((m) => m.id === id);
+}
+
+/** Coerce a legacy tracker config into a unified series Metric (fills tally defaults). */
+export function metricFromLegacyTracker(t: Record<string, unknown>): Metric {
+  return {
+    id: String(t['id'] ?? crypto.randomUUID()),
+    displayName: String(t['displayName'] ?? ''),
+    propertyKey: String(t['propertyKey'] ?? ''),
+    icon: typeof t['icon'] === 'string' && t['icon'] ? (t['icon'] as string) : 'activity',
+    valueName: String(t['valueName'] ?? ''),
+    trackerType: t['trackerType'] === 'minutes' ? 'minutes' : (t['trackerType'] === 'rating' ? 'rating' : undefined),
+    min: typeof t['min'] === 'number' ? (t['min'] as number) : 1,
+    max: typeof t['max'] === 'number' ? (t['max'] as number) : 5,
+    primaryStat: t['primaryStat'] as StatType | undefined,
+    displayStats: Array.isArray(t['displayStats']) ? (t['displayStats'] as StatType[]) : undefined,
+    target: 0,
+    step: 1,
+  };
+}
+
+/** Coerce a legacy tally-counter config into a unified 'tally' Metric (fills series defaults). */
+export function metricFromLegacyTally(t: Record<string, unknown>): Metric {
+  return {
+    id: String(t['id'] ?? crypto.randomUUID()),
+    displayName: String(t['displayName'] ?? ''),
+    propertyKey: String(t['propertyKey'] ?? ''),
+    icon: typeof t['icon'] === 'string' && t['icon'] ? (t['icon'] as string) : 'hash',
+    trackerType: 'tally',
+    description: typeof t['description'] === 'string' ? (t['description'] as string) : undefined,
+    valueName: '',
+    min: 0,
+    max: 0,
+    target: typeof t['target'] === 'number' ? (t['target'] as number) : 0,
+    step: typeof t['step'] === 'number' ? Math.max(1, t['step'] as number) : 1,
+    showInStatusBar: t['showInStatusBar'] === true ? true : undefined,
+    appendToNoteName: typeof t['appendToNoteName'] === 'string' ? (t['appendToNoteName'] as string) : undefined,
+  };
 }
 
 export interface TrackerEntry {
@@ -184,17 +270,7 @@ export function isTrackerEntry(v: unknown, valueName: string): v is TrackerEntry
 
 // ── Tally Counter types ─────────────────────────────────────
 
-export interface TallyCounterConfig {
-  id: string;
-  displayName: string;
-  description?: string;      // shown in modal below the label
-  propertyKey: string;       // frontmatter key, e.g. "outreachTally"
-  target: number;            // visual goal
-  step: number;              // increment/decrement amount per click
-  icon?: string;             // Obsidian icon name
-  showInStatusBar?: boolean; // show current/target in the status bar
-  appendToNoteName?: string; // vault path (no .md) of note to append tally lines to
-}
+export type TallyCounterConfig = Metric;
 
 export interface TallyEntry {
   value: number;
@@ -341,11 +417,10 @@ export const DEFAULT_SETTINGS: VitalLogSettings = {
   vitamins: [],
   packs: [],
   stacks: [],
-  trackers: [
-    { id: 'mood-default', displayName: 'Mood', propertyKey: 'moodLog', valueName: 'mood', min: 1, max: 5, icon: 'smile' },
-    { id: 'energy-default', displayName: 'Energy', propertyKey: 'energyLog', valueName: 'energy', min: 1, max: 5, icon: 'zap' },
+  metrics: [
+    { id: 'mood-default', displayName: 'Mood', propertyKey: 'moodLog', valueName: 'mood', trackerType: 'rating', min: 1, max: 5, icon: 'smile', target: 0, step: 1 },
+    { id: 'energy-default', displayName: 'Energy', propertyKey: 'energyLog', valueName: 'energy', trackerType: 'rating', min: 1, max: 5, icon: 'zap', target: 0, step: 1 },
   ],
-  tallyCounters: [],
   customModals: [],
   plannedLogs: { trackerGoals: [], schedule: [] },
   sameFolderPrefix: '',

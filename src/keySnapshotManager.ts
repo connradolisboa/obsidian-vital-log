@@ -32,22 +32,14 @@ export interface KeyChange {
 export function buildSnapshot(settings: VitalLogSettings): PropertyKeySnapshot {
   const records: SnapshotRecord[] = [];
 
-  for (const t of settings.trackers) {
+  for (const m of settings.metrics) {
     records.push({
-      id: t.id,
-      entityType: 'tracker',
-      entityName: t.displayName,
-      propertyKey: t.propertyKey,
-      valueName: t.valueName,
-    });
-  }
-
-  for (const t of settings.tallyCounters) {
-    records.push({
-      id: t.id,
-      entityType: 'tally',
-      entityName: t.displayName,
-      propertyKey: t.propertyKey,
+      id: m.id,
+      entityType: m.trackerType === 'tally' ? 'tally' : 'tracker',
+      entityName: m.displayName,
+      propertyKey: m.propertyKey,
+      // valueName (the sub-key inside each entry) only applies to series metrics.
+      valueName: m.trackerType === 'tally' ? undefined : m.valueName,
     });
   }
 

@@ -52,7 +52,6 @@ export function validatePropertyKey(
 export function allKeyOwners(settings: VitalLogSettings): KeyOwner[] {
   const owners: KeyOwner[] = [];
   for (const v of settings.vitamins) owners.push({ id: v.id, key: v.propertyKey, label: v.displayName });
-  for (const t of settings.trackers) owners.push({ id: t.id, key: t.propertyKey, label: t.displayName });
-  for (const t of settings.tallyCounters) owners.push({ id: t.id, key: t.propertyKey, label: t.displayName });
+  for (const m of settings.metrics) owners.push({ id: m.id, key: m.propertyKey, label: m.displayName });
   return owners;
 }

@@ -5,7 +5,7 @@
 
 import { Plugin, Notice, setIcon, TFile } from 'obsidian';
 import type { VitalLogSettings, CustomField, TallyCounterConfig } from './src/types';
-import { DEFAULT_SETTINGS } from './src/types';
+import { DEFAULT_SETTINGS, metricFromLegacyTracker, metricFromLegacyTally, scalarMetrics } from './src/types';
 import { buildSnapshot } from './src/keySnapshotManager';
 import { getDailyNoteIfExists } from './src/dailyNoteResolver';
 import { VitalLogSettingTab } from './src/settings';
@@ -213,7 +213,7 @@ export default class VitalLogPlugin extends Plugin {
   }
 
   private initStatusBar(): void {
-    const tallies = (this.settings.tallyCounters ?? []).filter((t) => t.showInStatusBar);
+    const tallies = scalarMetrics(this.settings).filter((t) => t.showInStatusBar);
     for (const config of tallies) {
       const el = this.addStatusBarItem();
       el.addClass('vital-log-status-item');
@@ -247,6 +247,28 @@ export default class VitalLogPlugin extends Plugin {
     try {
       const stored = await this.loadData() as Partial<VitalLogSettings> | null;
       this.settings = Object.assign({}, DEFAULT_SETTINGS, stored ?? {});
+
+      // ── Migrate legacy trackers + tallyCounters → unified metrics ──
+      // One-time, config-only. Daily-note frontmatter is untouched: a series
+      // metric still reads/writes its list, a scalar metric its {value} object.
+      const legacy = stored as (Record<string, unknown> | null);
+      const hasLegacy = !!legacy && ('trackers' in legacy || 'tallyCounters' in legacy);
+      const hasMetrics = !!legacy && Array.isArray((legacy as Record<string, unknown>)['metrics']);
+      if (hasLegacy && !hasMetrics) {
+        const legacyTrackers = Array.isArray(legacy!['trackers']) ? (legacy!['trackers'] as Record<string, unknown>[]) : [];
+        const legacyTallies = Array.isArray(legacy!['tallyCounters']) ? (legacy!['tallyCounters'] as Record<string, unknown>[]) : [];
+        this.settings.metrics = [
+          ...legacyTrackers.map(metricFromLegacyTracker),
+          ...legacyTallies.map(metricFromLegacyTally),
+        ];
+        // Drop legacy arrays so they don't re-serialize or shadow `metrics`.
+        delete this.settings.trackers;
+        delete this.settings.tallyCounters;
+        await this.saveSettings();
+      }
+      delete this.settings.trackers;
+      delete this.settings.tallyCounters;
+      if (!Array.isArray(this.settings.metrics)) this.settings.metrics = [];
 
       // Ensure planned-logs structure exists with its own object/arrays
       // (don't share the DEFAULT_SETTINGS reference).

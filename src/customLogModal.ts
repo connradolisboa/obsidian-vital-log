@@ -15,6 +15,7 @@ import type {
   CustomButtonConfig,
   MirrorConditionalPin,
 } from './types';
+import { seriesMetrics, scalarMetrics } from './types';
 import { resolveNote, getNoteIfExists, resolvePathTemplate, pathMatchesTemplate } from './dailyNoteResolver';
 import * as yaml from './yamlManager';
 import * as tally from './tallyManager';
@@ -171,7 +172,7 @@ export class CustomLogModal extends Modal {
       // Load tally values and notes
       for (const item of this.config.items) {
         if (item.type !== 'tally') continue;
-        const config = this.settings.tallyCounters.find((t) => t.id === item.tallyCounterId);
+        const config = scalarMetrics(this.settings).find((t) => t.id === item.tallyCounterId);
         if (!config) continue;
         const entry = await yaml.readTallyEntry(this.app, file, config.propertyKey);
         this.tallyValues.set(item.tallyCounterId, entry.value);
@@ -181,7 +182,7 @@ export class CustomLogModal extends Modal {
       // Load tracker values (last logged entry)
       for (const item of this.config.items) {
         if (item.type !== 'tracker') continue;
-        const config = this.settings.trackers?.find((t) => t.id === item.trackerId);
+        const config = seriesMetrics(this.settings).find((t) => t.id === item.trackerId);
         if (!config) continue;
         const entries = fm[config.propertyKey];
         if (Array.isArray(entries) && entries.length > 0) {
@@ -234,13 +235,13 @@ export class CustomLogModal extends Modal {
         return (val !== undefined && val !== null) || pinnedIds.has(item.field.id);
       }
       if (item.type === 'tally') {
-        const tallyConfig = this.settings.tallyCounters.find((t) => t.id === item.tallyCounterId);
+        const tallyConfig = scalarMetrics(this.settings).find((t) => t.id === item.tallyCounterId);
         if (!tallyConfig) return false;
         const val = fm[tallyConfig.propertyKey];
         return (val !== undefined && val !== null) || pinnedIds.has(item.tallyCounterId);
       }
       if (item.type === 'tracker') {
-        const trackerConfig = this.settings.trackers?.find((t) => t.id === item.trackerId);
+        const trackerConfig = seriesMetrics(this.settings).find((t) => t.id === item.trackerId);
         if (!trackerConfig) return false;
         const val = fm[trackerConfig.propertyKey];
         return (val !== undefined && val !== null) || pinnedIds.has(item.trackerId);
@@ -288,10 +289,10 @@ export class CustomLogModal extends Modal {
       if (item.type === 'field') {
         coveredKeys.add(item.field.parentKey ?? item.field.propertyKey);
       } else if (item.type === 'tally') {
-        const tc = this.settings.tallyCounters.find((t) => t.id === item.tallyCounterId);
+        const tc = scalarMetrics(this.settings).find((t) => t.id === item.tallyCounterId);
         if (tc) coveredKeys.add(tc.propertyKey);
       } else if (item.type === 'tracker') {
-        const tc = this.settings.trackers?.find((t) => t.id === item.trackerId);
+        const tc = seriesMetrics(this.settings).find((t) => t.id === item.trackerId);
         if (tc) coveredKeys.add(tc.propertyKey);
       }
     }
@@ -375,7 +376,7 @@ export class CustomLogModal extends Modal {
 
     // Items (fields, tally counters, buttons, headers, dividers, sections)
     const hasTallies = this.visibleItems.some(
-      (item) => item.type === 'tally' && this.settings.tallyCounters.some((t) => t.id === item.tallyCounterId)
+      (item) => item.type === 'tally' && scalarMetrics(this.settings).some((t) => t.id === item.tallyCounterId)
     );
 
     const fieldsContainer = contentEl.createDiv('vital-log-custom-fields');
@@ -410,12 +411,12 @@ export class CustomLogModal extends Modal {
       } else if (item.type === 'field') {
         this.renderField(currentContainer, item.field);
       } else if (item.type === 'tally') {
-        const config = this.settings.tallyCounters.find((t) => t.id === item.tallyCounterId);
+        const config = scalarMetrics(this.settings).find((t) => t.id === item.tallyCounterId);
         if (config) {
           this.renderTallyCounter(currentContainer, config);
         }
       } else if (item.type === 'tracker') {
-        const config = this.settings.trackers?.find((t) => t.id === item.trackerId);
+        const config = seriesMetrics(this.settings).find((t) => t.id === item.trackerId);
         if (config) {
           this.renderTrackerItem(currentContainer, config);
         }
@@ -989,7 +990,7 @@ export class CustomLogModal extends Modal {
       // Log tracker values
       for (const item of this.visibleItems) {
         if (item.type !== 'tracker') continue;
-        const config = this.settings.trackers?.find((t) => t.id === item.trackerId);
+        const config = seriesMetrics(this.settings).find((t) => t.id === item.trackerId);
         if (!config) continue;
         const val = this.trackerValues.get(item.trackerId);
         if (val === null || val === undefined) continue;
@@ -1009,7 +1010,7 @@ export class CustomLogModal extends Modal {
 
         for (const item of this.visibleItems) {
           if (item.type !== 'tally') continue;
-          const config = this.settings.tallyCounters.find((t) => t.id === item.tallyCounterId);
+          const config = scalarMetrics(this.settings).find((t) => t.id === item.tallyCounterId);
           if (!config) continue;
           const entry = await yaml.readTallyEntry(this.app, file, config.propertyKey);
 
@@ -1055,7 +1056,7 @@ export class CustomLogModal extends Modal {
   private async persistTallyNotes(file: TFile): Promise<void> {
     for (const item of this.visibleItems) {
       if (item.type !== 'tally') continue;
-      const config = this.settings.tallyCounters.find((t) => t.id === item.tallyCounterId);
+      const config = scalarMetrics(this.settings).find((t) => t.id === item.tallyCounterId);
       if (!config) continue;
       const note = this.tallyNotes.get(item.tallyCounterId);
       if (note !== undefined) {

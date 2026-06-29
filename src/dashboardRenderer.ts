@@ -11,6 +11,7 @@ import { setIcon } from 'obsidian';
 import type VitalLogPlugin from '../main';
 import type { TrackerConfig, TallyCounterConfig, ScheduleItem, StatType } from './types';
 import { STAT_LABELS, defaultDisplayStats } from './types';
+import { seriesMetrics, scalarMetrics } from './types';
 import {
   fromISODate,
   toISODate,
@@ -68,7 +69,7 @@ export async function renderDashboard(
 // ── Tracker selection ───────────────────────────────────────
 
 function resolveTrackers(plugin: VitalLogPlugin, filter?: string[]): TrackerConfig[] {
-  const all = plugin.settings.trackers ?? [];
+  const all = seriesMetrics(plugin.settings);
   if (!filter || filter.length === 0) return all;
   const wanted = filter.map((s) => s.toLowerCase());
   return all.filter(
@@ -172,7 +173,7 @@ function buildGoalsSection(
   section.createEl('h3', { text: 'Goals', cls: 'vital-log-dashboard-section-title' });
 
   for (const plan of plans) {
-    const tracker = (plugin.settings.trackers ?? []).find((t) => t.id === plan.trackerId);
+    const tracker = (seriesMetrics(plugin.settings)).find((t) => t.id === plan.trackerId);
     if (!tracker) continue;
 
     const values = extractTrackerValues(fm, tracker);
@@ -309,7 +310,7 @@ function scheduleItemDisplay(
       return s ? { name: s.displayName, icon: 'layers' } : null;
     }
     case 'tally': {
-      const t = plugin.settings.tallyCounters.find((x) => x.id === item.refId);
+      const t = scalarMetrics(plugin.settings).find((x) => x.id === item.refId);
       return t ? { name: t.displayName, icon: t.icon } : null;
     }
   }
@@ -347,7 +348,7 @@ function buildScheduleSection(
     row.createSpan({ text: disp.name, cls: 'vital-log-schedule-name' });
 
     if (item.kind === 'tally') {
-      const t = plugin.settings.tallyCounters.find((x) => x.id === item.refId);
+      const t = scalarMetrics(plugin.settings).find((x) => x.id === item.refId);
       if (t) buildTallyScheduleControls(plugin, row, check, t, fm, isToday, repaint);
     } else if (isToday && !done) {
       buildSupplementInlineLog(plugin, section, row, item, repaint);
@@ -529,7 +530,7 @@ function collectLoggedItems(plugin: VitalLogPlugin, fm: Fm): LoggedItem[] {
   }
 
   // Trackers — one entry per logged value
-  for (const tracker of plugin.settings.trackers ?? []) {
+  for (const tracker of seriesMetrics(plugin.settings)) {
     const arr = fm[tracker.propertyKey];
     if (!Array.isArray(arr)) continue;
     for (const e of arr) {
@@ -545,7 +546,7 @@ function collectLoggedItems(plugin: VitalLogPlugin, fm: Fm): LoggedItem[] {
   }
 
   // Tallies — untimed running totals
-  for (const t of plugin.settings.tallyCounters ?? []) {
+  for (const t of scalarMetrics(plugin.settings)) {
     const v = readTallyValue(fm, t.propertyKey);
     if (v <= 0) continue;
     items.push({ time: null, icon: t.icon, text: `${t.displayName}: ${v}/${t.target}` });
@@ -565,7 +566,7 @@ async function buildSummary(
   let any = false;
 
   // Per-tracker primary stat for the day
-  for (const tracker of plugin.settings.trackers ?? []) {
+  for (const tracker of seriesMetrics(plugin.settings)) {
     const values = extractTrackerValues(fm, tracker);
     if (values.length === 0) continue;
     const primary = trackerPrimaryStat(tracker);
@@ -582,7 +583,7 @@ async function buildSummary(
   // Goal streaks
   for (const plan of plugin.settings.plannedLogs.trackerGoals ?? []) {
     if (!plan.enabled) continue;
-    const tracker = (plugin.settings.trackers ?? []).find((t) => t.id === plan.trackerId);
+    const tracker = (seriesMetrics(plugin.settings)).find((t) => t.id === plan.trackerId);
     if (!tracker) continue;
     const streak = await computeGoalStreak(plugin.app, plugin.settings, tracker, plan, dateISO);
     if (streak <= 0) continue;
