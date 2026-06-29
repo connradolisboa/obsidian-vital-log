@@ -34,6 +34,7 @@ import { resolveDailyNote } from './dailyNoteResolver';
 import { logVitamin, logPack, logStack } from './vitaminManager';
 import { logTracker } from './trackerManager';
 import { updateTallyValue } from './tallyManager';
+import { HistoryModal } from './historyModal';
 
 function nowHHmm(): string {
   const d = new Date();
@@ -129,6 +130,19 @@ async function renderDayDashboard(
         currentISO = shiftISO(currentISO, 1);
         void paint();
       });
+      const editLog = header.createEl('button', { cls: 'vital-log-dashboard-nav' });
+      setIcon(editLog, 'pencil');
+      editLog.setAttribute('aria-label', 'Edit log entries for this day');
+      editLog.addEventListener('click', () => {
+        const modal = new HistoryModal(plugin.app, plugin.settings, () => plugin.saveSettings(), date);
+        const origClose = modal.onClose.bind(modal);
+        modal.onClose = () => {
+          origClose();
+          void paint();
+        };
+        modal.open();
+      });
+
       const refresh = header.createEl('button', { cls: 'vital-log-dashboard-nav' });
       setIcon(refresh, 'refresh-cw');
       refresh.setAttribute('aria-label', 'Refresh');

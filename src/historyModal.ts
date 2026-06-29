@@ -12,6 +12,8 @@ import type {
   PackEntry,
   StackEntry,
   TrackerEntry,
+  TallyCounterConfig,
+  TallyEntry,
 } from './types';
 import { isVitaminEntry, isSubstanceEntry, isPackEntry, isStackEntry, isTrackerEntry, isArray } from './types';
 import { getDailyNoteIfExists } from './dailyNoteResolver';
@@ -32,12 +34,13 @@ export class HistoryModal extends Modal {
   constructor(
     app: App,
     settings: VitalLogSettings,
-    saveSettings: () => Promise<void>
+    saveSettings: () => Promise<void>,
+    initialDate?: Date
   ) {
     super(app);
     this.settings = settings;
     this.saveSettings = saveSettings;
-    this.selectedDate = new Date();
+    this.selectedDate = initialDate ?? new Date();
   }
 
   onOpen(): void {
@@ -82,9 +85,12 @@ export class HistoryModal extends Modal {
       return;
     }
 
-    // Build system keys set (base + tracker propertyKeys)
+    // Build system keys set (base + tracker + tally propertyKeys)
     const systemKeys = new Set(BASE_SYSTEM_KEYS);
     for (const t of this.settings.trackers) {
+      systemKeys.add(t.propertyKey);
+    }
+    for (const t of this.settings.tallyCounters ?? []) {
       systemKeys.add(t.propertyKey);
     }
 
@@ -101,6 +107,29 @@ export class HistoryModal extends Modal {
           this.renderTrackerEntryRow(trackerSection, raw as TrackerEntry, idx, tracker);
         }
       });
+    }
+
+    // ── Tally counters section ──────────────────────────────
+    const tallies = this.settings.tallyCounters ?? [];
+    if (tallies.length > 0) {
+      const tallySection = contentEl.createDiv('vital-log-history-section');
+      tallySection.createDiv({ cls: 'vital-log-history-section-title', text: 'Tally Counters' });
+      let anyTally = false;
+
+      for (const t of tallies) {
+        const raw = fm[t.propertyKey];
+        if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) continue;
+        const obj = raw as Record<string, unknown>;
+        const value = typeof obj['value'] === 'number' ? obj['value'] : 0;
+        const note = typeof obj['note'] === 'string' ? obj['note'] : undefined;
+        if (value <= 0 && !note) continue;
+        anyTally = true;
+        this.renderTallyEntryRow(tallySection, t, { value, note });
+      }
+
+      if (!anyTally) {
+        tallySection.createDiv({ cls: 'vital-log-no-data', text: 'No tally entries.' });
+      }
     }
 
     // ── Substances section (flat log mode) ─────────────────
@@ -328,7 +357,16 @@ export class HistoryModal extends Modal {
     info.createSpan({ text: infoText });
 
     const actions = row.createDiv('vital-log-history-entry-actions');
+    const editBtn = actions.createEl('button', { text: 'Edit', cls: 'vital-log-btn mod-compact' });
     const delBtn = actions.createEl('button', { text: '✕', cls: 'vital-log-btn mod-compact mod-warning', attr: { 'aria-label': 'Delete' } });
+
+    editBtn.addEventListener('click', () => {
+      row.remove();
+      this.renderTimeOnlyEditForm(container, entry.time, async (newTime) => {
+        await this.editEntry('packs', idx, { ...entry, time: newTime });
+      });
+    });
+
     delBtn.addEventListener('click', () => {
       this.renderDeleteConfirm(row, async () => { await this.deleteEntry('packs', idx); });
     });
@@ -340,9 +378,104 @@ export class HistoryModal extends Modal {
     info.createSpan({ text: `${entry.time}  —  ${entry.name}` });
 
     const actions = row.createDiv('vital-log-history-entry-actions');
+    const editBtn = actions.createEl('button', { text: 'Edit', cls: 'vital-log-btn mod-compact' });
     const delBtn = actions.createEl('button', { text: '✕', cls: 'vital-log-btn mod-compact mod-warning', attr: { 'aria-label': 'Delete' } });
+
+    editBtn.addEventListener('click', () => {
+      row.remove();
+      this.renderTimeOnlyEditForm(container, entry.time, async (newTime) => {
+        await this.editEntry('stacks', idx, { ...entry, time: newTime });
+      });
+    });
+
     delBtn.addEventListener('click', () => {
       this.renderDeleteConfirm(row, async () => { await this.deleteEntry('stacks', idx); });
+    });
+  }
+
+  /** Shared edit form for entry types that only carry a `time` field worth editing (packs, stacks). */
+  private renderTimeOnlyEditForm(
+    container: HTMLElement,
+    currentTime: string,
+    onSave: (newTime: string) => Promise<void>
+  ): void {
+    const form = container.createDiv('vital-log-inline-edit');
+
+    const timeRow = form.createDiv('vital-log-inline-edit-row');
+    timeRow.createEl('label', { text: 'Time' });
+    const timeInput = timeRow.createEl('input', { type: 'text', value: currentTime });
+
+    const actions = form.createDiv('vital-log-inline-edit-actions');
+    const cancelBtn = actions.createEl('button', { text: 'Cancel', cls: 'vital-log-btn' });
+    const saveBtn = actions.createEl('button', { text: 'Save', cls: 'vital-log-btn mod-cta' });
+
+    cancelBtn.addEventListener('click', () => { form.remove(); this.render(); });
+    saveBtn.addEventListener('click', async () => {
+      await onSave(timeInput.value);
+      form.remove();
+      await this.render();
+    });
+  }
+
+  private renderTallyEntryRow(
+    container: HTMLElement,
+    config: TallyCounterConfig,
+    entry: TallyEntry
+  ): void {
+    const row = container.createDiv('vital-log-history-entry');
+    const info = row.createDiv('vital-log-history-entry-info');
+    let infoText = `${config.displayName}: ${entry.value}/${config.target}`;
+    if (entry.note) infoText += `  — `;
+    info.createSpan({ text: infoText });
+    if (entry.note) {
+      info.createEl('em', { cls: 'vital-log-history-entry-note', text: `"${entry.note}"` });
+    }
+
+    const actions = row.createDiv('vital-log-history-entry-actions');
+    const editBtn = actions.createEl('button', { text: 'Edit', cls: 'vital-log-btn mod-compact' });
+    const resetBtn = actions.createEl('button', { text: '✕', cls: 'vital-log-btn mod-compact mod-warning', attr: { 'aria-label': 'Reset to 0' } });
+
+    editBtn.addEventListener('click', () => {
+      row.remove();
+      this.renderTallyEditForm(container, config, entry);
+    });
+
+    resetBtn.addEventListener('click', () => {
+      this.renderDeleteConfirm(row, async () => {
+        await this.setTallyEntry(config.propertyKey, { value: 0 });
+      });
+    });
+  }
+
+  private renderTallyEditForm(
+    container: HTMLElement,
+    config: TallyCounterConfig,
+    entry: TallyEntry
+  ): void {
+    const form = container.createDiv('vital-log-inline-edit');
+
+    const valRow = form.createDiv('vital-log-inline-edit-row');
+    valRow.createEl('label', { text: 'Value' });
+    const valInput = valRow.createEl('input', { type: 'number', value: String(entry.value) });
+
+    const noteRow = form.createDiv('vital-log-inline-edit-row');
+    noteRow.createEl('label', { text: 'Note' });
+    const noteInput = noteRow.createEl('input', { type: 'text', value: entry.note ?? '' });
+
+    const actions = form.createDiv('vital-log-inline-edit-actions');
+    const cancelBtn = actions.createEl('button', { text: 'Cancel', cls: 'vital-log-btn' });
+    const saveBtn = actions.createEl('button', { text: 'Save', cls: 'vital-log-btn mod-cta' });
+
+    cancelBtn.addEventListener('click', () => { form.remove(); this.render(); });
+
+    saveBtn.addEventListener('click', async () => {
+      const v = parseFloat(valInput.value);
+      await this.setTallyEntry(config.propertyKey, {
+        value: isNaN(v) ? entry.value : Math.max(0, v),
+        ...(noteInput.value ? { note: noteInput.value } : {}),
+      });
+      form.remove();
+      await this.render();
     });
   }
 
@@ -450,9 +583,15 @@ export class HistoryModal extends Modal {
     await yaml.removeEntry(this.app, file, propertyKey, idx);
   }
 
-  private async editEntry(propertyKey: string, idx: number, updated: VitaminEntry | SubstanceEntry | Record<string, unknown>): Promise<void> {
+  private async editEntry(propertyKey: string, idx: number, updated: VitaminEntry | SubstanceEntry | PackEntry | StackEntry | Record<string, unknown>): Promise<void> {
     const file = getDailyNoteIfExists(this.app, this.settings, this.selectedDate);
     if (!file) return;
     await yaml.editEntry(this.app, file, propertyKey, idx, updated);
+  }
+
+  private async setTallyEntry(propertyKey: string, entry: TallyEntry): Promise<void> {
+    const file = getDailyNoteIfExists(this.app, this.settings, this.selectedDate);
+    if (!file) return;
+    await yaml.setTallyEntry(this.app, file, propertyKey, entry);
   }
 }
