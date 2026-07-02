@@ -69,7 +69,7 @@ export async function renderDashboard(
 // ── Tracker selection ───────────────────────────────────────
 
 function resolveTrackers(plugin: VitalLogPlugin, filter?: string[]): TrackerConfig[] {
-  const all = seriesMetrics(plugin.settings);
+  const all = seriesMetrics(plugin.settings).filter((t) => !t.archived);
   if (!filter || filter.length === 0) return all;
   const wanted = filter.map((s) => s.toLowerCase());
   return all.filter(
@@ -173,7 +173,7 @@ function buildGoalsSection(
   section.createEl('h3', { text: 'Goals', cls: 'vital-log-dashboard-section-title' });
 
   for (const plan of plans) {
-    const tracker = (seriesMetrics(plugin.settings)).find((t) => t.id === plan.trackerId);
+    const tracker = seriesMetrics(plugin.settings).find((t) => t.id === plan.trackerId && !t.archived);
     if (!tracker) continue;
 
     const values = extractTrackerValues(fm, tracker);
@@ -530,7 +530,7 @@ function collectLoggedItems(plugin: VitalLogPlugin, fm: Fm): LoggedItem[] {
   }
 
   // Trackers — one entry per logged value
-  for (const tracker of seriesMetrics(plugin.settings)) {
+  for (const tracker of seriesMetrics(plugin.settings).filter((t) => !t.archived)) {
     const arr = fm[tracker.propertyKey];
     if (!Array.isArray(arr)) continue;
     for (const e of arr) {
@@ -546,7 +546,7 @@ function collectLoggedItems(plugin: VitalLogPlugin, fm: Fm): LoggedItem[] {
   }
 
   // Tallies — untimed running totals
-  for (const t of scalarMetrics(plugin.settings)) {
+  for (const t of scalarMetrics(plugin.settings).filter((t) => !t.archived)) {
     const v = readTallyValue(fm, t.propertyKey);
     if (v <= 0) continue;
     items.push({ time: null, icon: t.icon, text: `${t.displayName}: ${v}/${t.target}` });
@@ -566,7 +566,7 @@ async function buildSummary(
   let any = false;
 
   // Per-tracker primary stat for the day
-  for (const tracker of seriesMetrics(plugin.settings)) {
+  for (const tracker of seriesMetrics(plugin.settings).filter((t) => !t.archived)) {
     const values = extractTrackerValues(fm, tracker);
     if (values.length === 0) continue;
     const primary = trackerPrimaryStat(tracker);
@@ -583,7 +583,7 @@ async function buildSummary(
   // Goal streaks
   for (const plan of plugin.settings.plannedLogs.trackerGoals ?? []) {
     if (!plan.enabled) continue;
-    const tracker = (seriesMetrics(plugin.settings)).find((t) => t.id === plan.trackerId);
+    const tracker = seriesMetrics(plugin.settings).find((t) => t.id === plan.trackerId && !t.archived);
     if (!tracker) continue;
     const streak = await computeGoalStreak(plugin.app, plugin.settings, tracker, plan, dateISO);
     if (streak <= 0) continue;

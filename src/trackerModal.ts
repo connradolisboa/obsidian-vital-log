@@ -40,8 +40,9 @@ export class TrackerModal extends Modal {
     this.onSwitchToSupplements = onSwitchToSupplements;
     if (initialTrackerId) {
       this.selectedTrackerId = initialTrackerId;
-    } else if (seriesMetrics(settings).length > 0) {
-      this.selectedTrackerId = seriesMetrics(settings)[0].id;
+    } else {
+      const first = seriesMetrics(settings).find((t) => !t.archived);
+      if (first) this.selectedTrackerId = first.id;
     }
   }
 
@@ -77,7 +78,8 @@ export class TrackerModal extends Modal {
       });
     }
 
-    if (seriesMetrics(this.settings).length === 0) {
+    const activeTrackers = seriesMetrics(this.settings).filter((t) => !t.archived);
+    if (activeTrackers.length === 0) {
       contentEl.createDiv({
         cls: 'vital-log-no-data',
         text: 'No trackers configured. Add some in Settings → Vital Log.',
@@ -87,7 +89,7 @@ export class TrackerModal extends Modal {
 
     // ── Tracker selector (type buttons) ─────────────────────
     const typeSel = contentEl.createDiv('vital-log-type-selector');
-    for (const t of seriesMetrics(this.settings)) {
+    for (const t of activeTrackers) {
       const btn = typeSel.createEl('button', {
         cls: 'vital-log-type-btn' + (this.selectedTrackerId === t.id ? ' is-active' : ''),
       });

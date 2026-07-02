@@ -470,7 +470,7 @@ export class VitalLogSettingTab extends PluginSettingTab {
       case 'vitamin': return s.vitamins.map((v) => ({ id: v.id, name: v.displayName }));
       case 'pack': return s.packs.map((p) => ({ id: p.id, name: p.displayName }));
       case 'stack': return s.stacks.map((st) => ({ id: st.id, name: st.displayName }));
-      case 'tally': return scalarMetrics(s).map((t) => ({ id: t.id, name: t.displayName }));
+      case 'tally': return scalarMetrics(s).filter((t) => !t.archived).map((t) => ({ id: t.id, name: t.displayName }));
     }
   }
 
@@ -488,7 +488,7 @@ export class VitalLogSettingTab extends PluginSettingTab {
       cls: 'vital-log-settings-helper',
     });
 
-    const trackers = seriesMetrics(this.plugin.settings);
+    const trackers = seriesMetrics(this.plugin.settings).filter((t) => !t.archived);
     if (trackers.length === 0) {
       el.createEl('p', { text: 'No trackers yet. Add some in the Metrics tab.', cls: 'vital-log-settings-helper' });
     }
@@ -652,16 +652,24 @@ export class VitalLogSettingTab extends PluginSettingTab {
     });
 
     const metrics = this.plugin.settings.metrics;
+    const activeMetrics = metrics.filter((m) => !m.archived);
+    const archivedMetrics = metrics.filter((m) => m.archived);
+
     const metricList = el.createDiv('vital-log-item-list');
     const registerRow = makeReorderable(metricList, async (from, to) => {
-      const [moved] = metrics.splice(from, 1);
-      metrics.splice(to, 0, moved);
+      const arr = this.plugin.settings.metrics;
+      const fromIdx = arr.indexOf(activeMetrics[from]);
+      const toIdx = arr.indexOf(activeMetrics[to]);
+      if (fromIdx !== -1 && toIdx !== -1) {
+        const [moved] = arr.splice(fromIdx, 1);
+        arr.splice(toIdx, 0, moved);
+      }
       await this.plugin.saveSettings();
       this.display();
     });
 
-    for (let i = 0; i < metrics.length; i++) {
-      const metric = metrics[i];
+    for (let i = 0; i < activeMetrics.length; i++) {
+      const metric = activeMetrics[i];
       const row = metricList.createDiv('vital-log-item-row');
       registerRow(row, i);
       const handle = row.createDiv({ cls: 'vital-log-drag-handle' });
@@ -692,21 +700,23 @@ export class VitalLogSettingTab extends PluginSettingTab {
         this.renderMetricForm(el, metricList, metric);
       });
 
-      const delBtn = actions.createEl('button', { text: 'Delete', cls: 'vital-log-btn mod-warning' });
-      delBtn.addEventListener('click', async () => {
+      const archiveBtn = actions.createEl('button', { text: 'Archive', cls: 'vital-log-btn' });
+      archiveBtn.title = 'Hide from logging and dashboard; keep historical data';
+      archiveBtn.addEventListener('click', async () => {
         const ok = await confirm(this.app, {
-          title: 'Delete metric',
-          message: `Delete "${metric.displayName}"? Goals, schedule entries, and dashboard stats for it are removed. Already-logged values in your notes are not affected.`,
-          confirmText: 'Delete',
+          title: 'Archive metric',
+          message: `Archive "${metric.displayName}"? It will be hidden from logging and the dashboard but historical data stays in your notes. You can restore it any time.`,
+          confirmText: 'Archive',
+          destructive: false,
         });
         if (!ok) return;
-        this.plugin.settings.metrics = metrics.filter((m) => m.id !== metric.id);
+        metric.archived = true;
         await this.plugin.saveSettings();
         this.display();
       });
     }
 
-    if (metrics.length === 0) {
+    if (activeMetrics.length === 0) {
       metricList.createDiv({ cls: 'vital-log-empty-state', text: 'No metrics configured yet.' });
     }
 
@@ -719,6 +729,54 @@ export class VitalLogSettingTab extends PluginSettingTab {
             this.renderMetricForm(el, metricList);
           })
       );
+
+    // ── Archived metrics ─────────────────────────────────────
+    if (archivedMetrics.length > 0) {
+      const details = el.createEl('details', { cls: 'vital-log-archived-modals' });
+      details.createEl('summary', { text: `Archived metrics (${archivedMetrics.length})` });
+      const archivedList = details.createDiv('vital-log-item-list');
+
+      for (const metric of archivedMetrics) {
+        const row = archivedList.createDiv('vital-log-item-row vital-log-item-row--archived');
+        const info = row.createDiv('vital-log-item-info');
+        const nameEl = info.createDiv({ cls: 'vital-log-item-name' });
+        if (metric.icon) {
+          const iconSpan = nameEl.createSpan({ cls: 'vital-log-item-icon' });
+          setIcon(iconSpan, metric.icon);
+        }
+        nameEl.createSpan({ text: metric.displayName });
+        nameEl.createSpan({ cls: 'vital-log-item-badge', text: metricTypeLabel(metric.trackerType) });
+        info.createDiv({
+          cls: 'vital-log-item-meta',
+          text: metric.trackerType === 'tally'
+            ? `${metric.propertyKey} · target ${metric.target} · step ${metric.step}`
+            : metric.trackerType === 'minutes'
+              ? `${metric.propertyKey} · ${metric.valueName} · minutes`
+              : `${metric.propertyKey} · ${metric.valueName} · ${metric.min}–${metric.max}`,
+        });
+        const actions = row.createDiv('vital-log-item-actions');
+
+        const restoreBtn = actions.createEl('button', { text: 'Restore', cls: 'vital-log-btn' });
+        restoreBtn.addEventListener('click', async () => {
+          delete metric.archived;
+          await this.plugin.saveSettings();
+          this.display();
+        });
+
+        const delBtn = actions.createEl('button', { text: 'Delete', cls: 'vital-log-btn mod-warning' });
+        delBtn.addEventListener('click', async () => {
+          const ok = await confirm(this.app, {
+            title: 'Delete metric',
+            message: `Delete "${metric.displayName}"? Goals, schedule entries, and dashboard stats for it are removed. Already-logged values in your notes are not affected.`,
+            confirmText: 'Delete',
+          });
+          if (!ok) return;
+          this.plugin.settings.metrics = this.plugin.settings.metrics.filter((m) => m.id !== metric.id);
+          await this.plugin.saveSettings();
+          this.display();
+        });
+      }
+    }
   }
 
   // ── Custom Modals tab ────────────────────────────────────────

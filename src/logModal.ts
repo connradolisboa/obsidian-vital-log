@@ -192,7 +192,8 @@ export class LogModal extends Modal {
 
   private renderVitaminPicker(container: HTMLElement): void {
     container.createEl('label', { text: 'Select Vitamin' });
-    if (this.settings.vitamins.length === 0) {
+    const activeVitamins = this.settings.vitamins.filter((v) => !v.archived);
+    if (activeVitamins.length === 0) {
       container.createEl('p', {
         text: 'No vitamins configured. Add some in Settings → Vital Log.',
         cls: 'vital-log-no-data',
@@ -202,7 +203,7 @@ export class LogModal extends Modal {
     const sel = container.createEl('select');
     sel.style.width = '100%';
     sel.createEl('option', { value: '', text: '— choose vitamin —' });
-    for (const v of this.settings.vitamins) {
+    for (const v of activeVitamins) {
       const opt = sel.createEl('option', { value: v.id, text: v.displayName });
       if (this.selectedVitaminId === v.id) opt.selected = true;
     }
@@ -215,14 +216,15 @@ export class LogModal extends Modal {
 
   private renderPackPicker(container: HTMLElement): void {
     container.createEl('label', { text: 'Select Pack' });
-    if (this.settings.packs.length === 0) {
+    const activePacks = this.settings.packs.filter((p) => !p.archived);
+    if (activePacks.length === 0) {
       container.createEl('p', { text: 'No packs configured.', cls: 'vital-log-no-data' });
       return;
     }
     const sel = container.createEl('select');
     sel.style.width = '100%';
     sel.createEl('option', { value: '', text: '— choose pack —' });
-    for (const p of this.settings.packs) {
+    for (const p of activePacks) {
       const opt = sel.createEl('option', { value: p.id, text: p.displayName });
       if (this.selectedPackId === p.id) opt.selected = true;
     }
@@ -236,14 +238,15 @@ export class LogModal extends Modal {
 
   private renderStackPicker(container: HTMLElement): void {
     container.createEl('label', { text: 'Select Stack' });
-    if (this.settings.stacks.length === 0) {
+    const activeStacks = this.settings.stacks.filter((s) => !s.archived);
+    if (activeStacks.length === 0) {
       container.createEl('p', { text: 'No stacks configured.', cls: 'vital-log-no-data' });
       return;
     }
     const sel = container.createEl('select');
     sel.style.width = '100%';
     sel.createEl('option', { value: '', text: '— choose stack —' });
-    for (const s of this.settings.stacks) {
+    for (const s of activeStacks) {
       const opt = sel.createEl('option', {
         value: s.id,
         text: `${s.displayName} (${s.schedulingHint})`,

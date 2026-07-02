@@ -490,7 +490,9 @@ export class HistoryModal extends Modal {
     const value = entry[tracker.valueName] as number;
 
     const info = row.createDiv('vital-log-history-entry-info');
-    let infoText = `${entry.time}  —  ${tracker.valueName}: ${value}/${tracker.max}`;
+    let infoText = tracker.trackerType === 'minutes'
+      ? `${entry.time}  —  ${tracker.valueName}: ${value}`
+      : `${entry.time}  —  ${tracker.valueName}: ${value}/${tracker.max}`;
     if (entry.note) infoText += `  — `;
     info.createSpan({ text: infoText });
     if (entry.note) {
@@ -525,14 +527,21 @@ export class HistoryModal extends Modal {
     timeRow.createEl('label', { text: 'Time' });
     const timeInput = timeRow.createEl('input', { type: 'text', value: entry.time });
 
+    const isMinutes = tracker.trackerType === 'minutes';
+
     const valRow = form.createDiv('vital-log-inline-edit-row');
     valRow.createEl('label', { text: tracker.valueName.charAt(0).toUpperCase() + tracker.valueName.slice(1) });
     const valInput = valRow.createEl('input', {
       type: 'number',
       value: String(entry[tracker.valueName] as number),
     });
-    valInput.min = String(tracker.min);
-    valInput.max = String(tracker.max);
+    // Minutes trackers log an unbounded duration; only rating trackers have a min–max scale.
+    if (isMinutes) {
+      valInput.min = '0';
+    } else {
+      valInput.min = String(tracker.min);
+      valInput.max = String(tracker.max);
+    }
 
     const noteRow = form.createDiv('vital-log-inline-edit-row');
     noteRow.createEl('label', { text: 'Note' });
@@ -546,10 +555,15 @@ export class HistoryModal extends Modal {
 
     saveBtn.addEventListener('click', async () => {
       const val = parseFloat(valInput.value);
-      const clamped = Math.max(tracker.min, Math.min(tracker.max, isNaN(val) ? (entry[tracker.valueName] as number) : val));
+      const fallback = entry[tracker.valueName] as number;
+      const next = isNaN(val)
+        ? fallback
+        : isMinutes
+          ? Math.max(0, val)
+          : Math.max(tracker.min, Math.min(tracker.max, val));
       const updated: Record<string, unknown> = {
         time: timeInput.value,
-        [tracker.valueName]: clamped,
+        [tracker.valueName]: next,
       };
       if (noteInput.value) updated['note'] = noteInput.value;
       await this.editEntry(tracker.propertyKey, idx, updated);

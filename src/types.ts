@@ -8,6 +8,7 @@ export interface Vitamin {
   propertyKey: string;   // e.g. "vitaminC" — unique across all vitamins
   defaultAmount: number;
   unit: string;          // free-form: "mg", "IU", "mcg", etc.
+  archived?: boolean;
 }
 
 export interface PackItem {
@@ -19,6 +20,7 @@ export interface Pack {
   id: string;
   displayName: string;   // e.g. "Multivitamin"
   items: PackItem[];
+  archived?: boolean;
 }
 
 export type StackItemType =
@@ -30,6 +32,7 @@ export interface Stack {
   displayName: string;       // e.g. "Morning Stack"
   schedulingHint: string;    // "Morning" | "Evening" | "Pre-workout" | "Post-workout" | "Custom"
   items: StackItemType[];
+  archived?: boolean;
 }
 
 export interface VitalLogSettings {
@@ -194,6 +197,7 @@ export interface Metric {
   step: number;          // increment/decrement amount per click (tally); 1 for series
   showInStatusBar?: boolean; // show current/target in the status bar
   appendToNoteName?: string; // vault path (no .md) of note to append tally lines to
+  archived?: boolean;
 }
 
 // Legacy aliases — both former config types are now structural views of Metric.
