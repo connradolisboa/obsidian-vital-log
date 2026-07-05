@@ -4,8 +4,8 @@
 
 import { App, Modal, Notice, PluginSettingTab, Setting, setIcon } from 'obsidian';
 import type VitalLogPlugin from '../main';
-import type { CustomModalConfig, CustomField, CustomFieldType, TallyCounterConfig, TrackerConfig, Metric, CustomModalItem, CustomButtonConfig, MirrorConditionalPin, StatType, ScheduleItem, ScheduleKind, Frequency } from './types';
-import { CUSTOM_FIELD_TYPES, STAT_TYPES, STAT_LABELS, defaultPrimaryStat, defaultDisplayStats, seriesMetrics, scalarMetrics } from './types';
+import type { CustomModalConfig, CustomField, CustomFieldType, TallyCounterConfig, TrackerConfig, Metric, CustomModalItem, CustomButtonConfig, MirrorConditionalPin, StatType, ScheduleItem, ScheduleKind, Frequency, EventType } from './types';
+import { CUSTOM_FIELD_TYPES, STAT_TYPES, STAT_LABELS, defaultPrimaryStat, defaultDisplayStats, seriesMetrics, scalarMetrics, SEVERITY_LABELS } from './types';
 import { setGoalFromToday, getGoalPlan, todayISO, resolveGoal, describeFrequency } from './planManager';
 import { ManageModal } from './manageModal';
 import { KeyDiagnosticModal } from './keyDiagnosticModal';
@@ -34,7 +34,7 @@ function metricTypeLabel(type: import('./types').TrackerType | undefined): strin
   }
 }
 
-type SettingsTab = 'general' | 'library' | 'metrics' | 'plan' | 'customModals';
+type SettingsTab = 'general' | 'library' | 'metrics' | 'plan' | 'customModals' | 'events';
 
 export class VitalLogSettingTab extends PluginSettingTab {
   private plugin: VitalLogPlugin;
@@ -58,6 +58,7 @@ export class VitalLogSettingTab extends PluginSettingTab {
       { id: 'metrics', label: 'Metrics' },
       { id: 'plan', label: 'Plan' },
       { id: 'customModals', label: 'Custom Modals' },
+      { id: 'events', label: 'Events' },
     ];
 
     for (const tab of tabs) {
@@ -89,6 +90,9 @@ export class VitalLogSettingTab extends PluginSettingTab {
         break;
       case 'customModals':
         this.renderCustomModalsTab(content);
+        break;
+      case 'events':
+        this.renderEventsTab(content);
         break;
     }
   }
@@ -1116,6 +1120,197 @@ export class VitalLogSettingTab extends PluginSettingTab {
       await this.plugin.saveSettings();
       this.display();
     });
+  }
+
+  // ── Events tab ────────────────────────────────────────────────
+
+  private renderEventsTab(el: HTMLElement): void {
+    el.createEl('p', {
+      text: 'Events are one-off life occurrences (sick, traveling, rest day, etc.) you can log to your daily note. ' +
+        'Each event has a severity (1–5) and an optional note. Saved event names appear as quick-select buttons in the log modal.',
+      cls: 'vital-log-settings-helper',
+    });
+
+    // ── Event types list ───────────────────────────────────────
+    el.createEl('h3', { text: 'Event Types' });
+
+    const activeTypes = this.plugin.settings.eventTypes.filter((t) => !t.archived);
+    const archivedTypes = this.plugin.settings.eventTypes.filter((t) => t.archived);
+
+    const typeList = el.createDiv('vital-log-item-list');
+
+    for (const et of activeTypes) {
+      const row = typeList.createDiv('vital-log-item-row');
+      const info = row.createDiv('vital-log-item-info');
+      const nameEl = info.createDiv({ cls: 'vital-log-item-name' });
+      if (et.icon) {
+        const iconSpan = nameEl.createSpan({ cls: 'vital-log-item-icon' });
+        setIcon(iconSpan, et.icon);
+      }
+      nameEl.createSpan({ text: et.displayName });
+      const actions = row.createDiv('vital-log-item-actions');
+
+      const archiveBtn = actions.createEl('button', { text: 'Archive', cls: 'vital-log-btn' });
+      archiveBtn.title = 'Hide from log modal; keeps historical data intact';
+      archiveBtn.addEventListener('click', async () => {
+        et.archived = true;
+        await this.plugin.saveSettings();
+        this.display();
+      });
+
+      const deleteBtn = actions.createEl('button', { text: 'Delete', cls: 'vital-log-btn mod-warning' });
+      deleteBtn.addEventListener('click', async () => {
+        const ok = await confirm(this.app, {
+          title: 'Delete event type',
+          message: `Delete "${et.displayName}"? Already-logged events in your notes are not affected.`,
+          confirmText: 'Delete',
+        });
+        if (!ok) return;
+        this.plugin.settings.eventTypes = this.plugin.settings.eventTypes.filter((t) => t.id !== et.id);
+        await this.plugin.saveSettings();
+        this.display();
+      });
+    }
+
+    if (activeTypes.length === 0) {
+      typeList.createDiv({
+        cls: 'vital-log-empty-state',
+        text: 'No event types saved yet. They are created automatically when you log a new event name.',
+      });
+    }
+
+    // Add event type form
+    const addSection = el.createDiv('vital-log-modal-section');
+    addSection.style.marginTop = '8px';
+    const addInput = addSection.createEl('input', {
+      type: 'text',
+      placeholder: 'New event type name…',
+    });
+    addInput.style.width = 'calc(100% - 80px)';
+    addInput.style.marginRight = '8px';
+    const addBtn = addSection.createEl('button', { text: 'Add', cls: 'vital-log-btn mod-cta' });
+    addBtn.addEventListener('click', async () => {
+      const name = addInput.value.trim();
+      if (!name) return;
+      const exists = this.plugin.settings.eventTypes.some(
+        (t) => t.displayName.toLowerCase() === name.toLowerCase()
+      );
+      if (exists) {
+        new Notice(`Event type "${name}" already exists.`);
+        return;
+      }
+      const newType: EventType = { id: crypto.randomUUID(), displayName: name };
+      this.plugin.settings.eventTypes.push(newType);
+      await this.plugin.saveSettings();
+      this.display();
+    });
+
+    // Archived types
+    if (archivedTypes.length > 0) {
+      const details = el.createEl('details', { cls: 'vital-log-archived-modals' });
+      details.createEl('summary', { text: `Archived event types (${archivedTypes.length})` });
+      const archivedList = details.createDiv('vital-log-item-list');
+      for (const et of archivedTypes) {
+        const row = archivedList.createDiv('vital-log-item-row vital-log-item-row--archived');
+        const info = row.createDiv('vital-log-item-info');
+        info.createDiv({ cls: 'vital-log-item-name', text: et.displayName });
+        const actions = row.createDiv('vital-log-item-actions');
+        const restoreBtn = actions.createEl('button', { text: 'Restore', cls: 'vital-log-btn' });
+        restoreBtn.addEventListener('click', async () => {
+          delete et.archived;
+          await this.plugin.saveSettings();
+          this.display();
+        });
+        const deleteBtn = actions.createEl('button', { text: 'Delete', cls: 'vital-log-btn mod-warning' });
+        deleteBtn.addEventListener('click', async () => {
+          const ok = await confirm(this.app, {
+            title: 'Delete event type',
+            message: `Delete "${et.displayName}"?`,
+            confirmText: 'Delete',
+          });
+          if (!ok) return;
+          this.plugin.settings.eventTypes = this.plugin.settings.eventTypes.filter((t) => t.id !== et.id);
+          await this.plugin.saveSettings();
+          this.display();
+        });
+      }
+    }
+
+    // ── Storage settings ──────────────────────────────────────
+    el.createEl('h3', { text: 'Storage' });
+
+    new Setting(el)
+      .setName('Frontmatter key')
+      .setDesc('Property key used to store events in your daily note.')
+      .addText((text) => {
+        text
+          .setPlaceholder('events')
+          .setValue(this.plugin.settings.eventsPropertyKey)
+          .onChange(async (val) => {
+            const trimmed = val.trim();
+            if (trimmed) {
+              this.plugin.settings.eventsPropertyKey = trimmed;
+              await this.plugin.saveSettings();
+            }
+          });
+      });
+
+    new Setting(el)
+      .setName('Default "append to note"')
+      .setDesc('Pre-check the "Also add to note content" checkbox in the event log modal.')
+      .addToggle((toggle) => {
+        toggle
+          .setValue(this.plugin.settings.appendToNoteDefault_events)
+          .onChange(async (val) => {
+            this.plugin.settings.appendToNoteDefault_events = val;
+            await this.plugin.saveSettings();
+          });
+      });
+
+    new Setting(el)
+      .setName('Note content template')
+      .setDesc('Template for event lines appended to note body. Tokens: {time} {name} {severity} {note}')
+      .addText((text) => {
+        text
+          .setPlaceholder('- {time} {name} (severity: {severity})')
+          .setValue(this.plugin.settings.noteContentTemplate_events)
+          .onChange(async (val) => {
+            this.plugin.settings.noteContentTemplate_events = val;
+            await this.plugin.saveSettings();
+          });
+      });
+
+    // ── Graph settings ────────────────────────────────────────
+    el.createEl('h3', { text: 'Dashboard Graph' });
+
+    new Setting(el)
+      .setName('Show events in sparklines')
+      .setDesc('Overlay event markers on tracker sparklines in the range dashboard view.')
+      .addToggle((toggle) => {
+        toggle
+          .setValue(this.plugin.settings.showEventsInGraph)
+          .onChange(async (val) => {
+            this.plugin.settings.showEventsInGraph = val;
+            await this.plugin.saveSettings();
+            this.display();
+          });
+      });
+
+    if (this.plugin.settings.showEventsInGraph) {
+      new Setting(el)
+        .setName('Minimum severity to show')
+        .setDesc(`Only show events with severity ≥ this value. 1 = show all; 5 = only Severe. Labels: ${Object.entries(SEVERITY_LABELS).map(([k, v]) => `${k}=${v}`).join(', ')}.`)
+        .addSlider((slider) => {
+          slider
+            .setLimits(1, 5, 1)
+            .setValue(this.plugin.settings.graphEventSeverityMin)
+            .setDynamicTooltip()
+            .onChange(async (val) => {
+              this.plugin.settings.graphEventSeverityMin = val;
+              await this.plugin.saveSettings();
+            });
+        });
+    }
   }
 }
 

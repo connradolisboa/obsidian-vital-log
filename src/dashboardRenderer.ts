@@ -10,7 +10,7 @@
 import { setIcon } from 'obsidian';
 import type VitalLogPlugin from '../main';
 import type { TrackerConfig, TallyCounterConfig, ScheduleItem, StatType } from './types';
-import { STAT_LABELS, defaultDisplayStats } from './types';
+import { STAT_LABELS, defaultDisplayStats, isEventEntry } from './types';
 import { seriesMetrics, scalarMetrics } from './types';
 import {
   fromISODate,
@@ -668,6 +668,26 @@ async function renderRangeDashboard(
     fmByDate.set(iso, await getFrontmatterForDate(plugin.app, plugin.settings, fromISODate(iso)));
   }
 
+  // Collect event severity per date for sparkline markers (if enabled).
+  const eventSeverityByDate = new Map<string, number>();
+  if (plugin.settings.showEventsInGraph) {
+    const key = plugin.settings.eventsPropertyKey;
+    const minSev = plugin.settings.graphEventSeverityMin ?? 1;
+    for (const iso of isoDates) {
+      const fm = fmByDate.get(iso);
+      if (!fm) continue;
+      const raw = fm[key];
+      if (!Array.isArray(raw)) continue;
+      let maxSev = 0;
+      for (const entry of raw) {
+        if (isEventEntry(entry) && entry.severity >= minSev) {
+          if (entry.severity > maxSev) maxSev = entry.severity;
+        }
+      }
+      if (maxSev > 0) eventSeverityByDate.set(iso, maxSev);
+    }
+  }
+
   const trackers = resolveTrackers(plugin, opts.trackerFilter);
   const section = container.createDiv('vital-log-dashboard-section');
 
@@ -690,7 +710,13 @@ async function renderRangeDashboard(
     }
     label.createSpan({ text: tracker.displayName });
 
-    renderSparkline(row, points.map((p) => p.value));
+    renderSparkline(
+      row,
+      points.map((p) => p.value),
+      plugin.settings.showEventsInGraph
+        ? isoDates.map((iso) => eventSeverityByDate.get(iso) ?? 0)
+        : undefined
+    );
 
     row.createDiv({
       cls: 'vital-log-range-summary',
@@ -699,10 +725,19 @@ async function renderRangeDashboard(
   }
 }
 
-function renderSparkline(container: HTMLElement, values: (number | null)[]): void {
+// eventSeverities[i] is the max severity for day i (0 = no event).
+function renderSparkline(
+  container: HTMLElement,
+  values: (number | null)[],
+  eventSeverities?: number[]
+): void {
   const W = 120;
   const H = 28;
   const PAD = 2;
+  // Reserve bottom 4px for event markers when events are shown.
+  const hasEvents = eventSeverities && eventSeverities.some((s) => s > 0);
+  const DATA_H = hasEvents ? H - 6 : H;
+
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
   svg.setAttribute('class', 'vital-log-sparkline');
@@ -710,13 +745,14 @@ function renderSparkline(container: HTMLElement, values: (number | null)[]): voi
   svg.setAttribute('height', String(H));
 
   const present = values.filter((v): v is number => v !== null);
+  const n = values.length;
+  const x = (i: number) => PAD + (n <= 1 ? 0 : (i / (n - 1)) * (W - 2 * PAD));
+
   if (present.length > 0) {
     const min = Math.min(...present);
     const max = Math.max(...present);
     const span = max - min || 1;
-    const n = values.length;
-    const x = (i: number) => PAD + (n <= 1 ? 0 : (i / (n - 1)) * (W - 2 * PAD));
-    const y = (v: number) => H - PAD - ((v - min) / span) * (H - 2 * PAD);
+    const y = (v: number) => PAD + (1 - (v - min) / span) * (DATA_H - 2 * PAD);
 
     const coords: string[] = [];
     values.forEach((v, i) => {
@@ -741,6 +777,24 @@ function renderSparkline(container: HTMLElement, values: (number | null)[]): voi
       }
     }
   }
+
+  // Event markers: small vertical ticks at the bottom, opacity scaled by severity.
+  if (eventSeverities) {
+    for (let i = 0; i < eventSeverities.length; i++) {
+      const sev = eventSeverities[i];
+      if (!sev) continue;
+      const opacity = 0.3 + (sev - 1) * 0.175; // sev 1→0.3, sev 5→1.0
+      const tick = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      tick.setAttribute('x1', String(x(i)));
+      tick.setAttribute('y1', String(H - 4));
+      tick.setAttribute('x2', String(x(i)));
+      tick.setAttribute('y2', String(H));
+      tick.setAttribute('class', 'vital-log-sparkline-event');
+      tick.setAttribute('opacity', String(opacity));
+      svg.appendChild(tick);
+    }
+  }
+
   container.createDiv('vital-log-range-chart').appendChild(svg);
 }
 

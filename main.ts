@@ -22,6 +22,7 @@ import { DashboardView, VIEW_TYPE_VITAL_DASHBOARD } from './src/dashboardView';
 import { DashboardModal } from './src/dashboardModal';
 import { registerDashboardEmbed } from './src/dashboardEmbed';
 import { removeCommand } from './src/internal';
+import { EventModal } from './src/eventModal';
 
 export default class VitalLogPlugin extends Plugin {
   settings: VitalLogSettings = DEFAULT_SETTINGS;
@@ -46,6 +47,10 @@ export default class VitalLogPlugin extends Plugin {
       initialTrackerId,
       () => this.openLogModal()
     ).open();
+  }
+
+  private openEventModal(): void {
+    new EventModal(this.app, this.settings, () => this.saveSettings()).open();
   }
 
   async onload(): Promise<void> {
@@ -87,6 +92,17 @@ export default class VitalLogPlugin extends Plugin {
       id: 'log-tracker',
       name: 'Log Tracker',
       callback: () => this.openTrackerModal(),
+    });
+
+    // ── Event commands ─────────────────────────────────────
+    this.addRibbonIcon('calendar-clock', 'Vital Log: Log Event', () => {
+      this.openEventModal();
+    });
+
+    this.addCommand({
+      id: 'log-event',
+      name: 'Log Event',
+      callback: () => this.openEventModal(),
     });
 
     this.addCommand({

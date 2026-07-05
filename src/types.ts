@@ -59,6 +59,12 @@ export interface VitalLogSettings {
   noteContentTemplate_specificNoteTally: string; // template for per-tally specific-note lines. Tokens: {dailyNote} {time} {name} {value} {target}
   mirrorExcludedKeys?: string[]; // property keys never shown in the "Other Properties" section of mirror modals
   propertyKeySnapshot?: PropertyKeySnapshot; // snapshot of all property keys for rename detection
+  eventTypes: EventType[];
+  eventsPropertyKey: string;            // frontmatter key for events list (default: "events")
+  showEventsInGraph: boolean;           // show event markers on dashboard sparklines
+  graphEventSeverityMin: number;        // minimum severity (1–5) to show as a sparkline marker
+  appendToNoteDefault_events: boolean;
+  noteContentTemplate_events: string;   // tokens: {time} {name} {severity} {note}
 }
 
 // Shape written to frontmatter per vitamin property (list element)
@@ -416,6 +422,43 @@ export interface PropertyKeySnapshot {
   capturedAt: string;
 }
 
+// ── Event types ──────────────────────────────────────────────
+
+/** A reusable event template saved in settings (e.g. "Sick", "Traveling"). */
+export interface EventType {
+  id: string;
+  displayName: string;
+  icon?: string;
+  archived?: boolean;
+}
+
+/** A logged event entry written to the daily note frontmatter. */
+export interface EventEntry {
+  time: string;      // "HH:mm"
+  name: string;      // matches EventType.displayName or free-form
+  severity: number;  // 1–5
+  note?: string;
+}
+
+export function isEventEntry(v: unknown): v is EventEntry {
+  if (typeof v !== 'object' || v === null) return false;
+  const o = v as Record<string, unknown>;
+  return (
+    typeof o['time'] === 'string' &&
+    typeof o['name'] === 'string' &&
+    typeof o['severity'] === 'number'
+  );
+}
+
+/** Human labels for the 1–5 severity scale. */
+export const SEVERITY_LABELS: Record<number, string> = {
+  1: 'Minor',
+  2: 'Low',
+  3: 'Moderate',
+  4: 'High',
+  5: 'Severe',
+};
+
 export const DEFAULT_SETTINGS: VitalLogSettings = {
   dailyNotePath: 'Calendar/Daily/{{YYYY}}/Q{{Q}}/{{YYYY-MM-DD dddd}}',
   vitamins: [],
@@ -435,9 +478,15 @@ export const DEFAULT_SETTINGS: VitalLogSettings = {
   appendToNoteDefault_supplements: false,
   appendToNoteDefault_trackers: false,
   appendToNoteDefault_tallies: false,
+  appendToNoteDefault_events: false,
   noteContentTemplate_supplements: '- {time} {name} {amount}{unit}',
   noteContentTemplate_trackers: '- {time} {name}: {value}',
   noteContentTemplate_tallies: '- {name}: {value}/{target}',
   noteContentTemplate_specificNoteTally: '- [[{dailyNote}]] {time} : {value}/{target}',
+  noteContentTemplate_events: '- {time} {name} (severity: {severity})',
   mirrorExcludedKeys: [],
+  eventTypes: [],
+  eventsPropertyKey: 'events',
+  showEventsInGraph: false,
+  graphEventSeverityMin: 1,
 };
