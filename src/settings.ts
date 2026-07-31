@@ -5,7 +5,7 @@
 import { App, Modal, Notice, PluginSettingTab, Setting, setIcon } from 'obsidian';
 import type VitalLogPlugin from '../main';
 import type { CustomModalConfig, CustomField, CustomFieldType, TallyCounterConfig, TrackerConfig, Metric, CustomModalItem, CustomButtonConfig, MirrorConditionalPin, StatType, ScheduleItem, ScheduleKind, Frequency, EventType } from './types';
-import { CUSTOM_FIELD_TYPES, STAT_TYPES, STAT_LABELS, defaultPrimaryStat, defaultDisplayStats, seriesMetrics, scalarMetrics, SEVERITY_LABELS } from './types';
+import { CUSTOM_FIELD_TYPES, STAT_TYPES, STAT_LABELS, defaultPrimaryStat, defaultDisplayStats, seriesMetrics, scalarMetrics, checkboxMetrics, SEVERITY_LABELS } from './types';
 import { setGoalFromToday, getGoalPlan, todayISO, resolveGoal, describeFrequency } from './planManager';
 import { ManageModal } from './manageModal';
 import { KeyDiagnosticModal } from './keyDiagnosticModal';
@@ -29,6 +29,7 @@ function slugify(name: string): string {
 function metricTypeLabel(type: import('./types').TrackerType | undefined): string {
   switch (type) {
     case 'tally': return 'Tally';
+    case 'checkbox': return 'Checkbox';
     case 'minutes': return 'Minutes';
     default: return 'Rating';
   }
@@ -465,6 +466,7 @@ export class VitalLogSettingTab extends PluginSettingTab {
       case 'pack': return s.packs.find((p) => p.id === refId)?.displayName ?? null;
       case 'stack': return s.stacks.find((st) => st.id === refId)?.displayName ?? null;
       case 'tally': return scalarMetrics(s).find((t) => t.id === refId)?.displayName ?? null;
+      case 'checkbox': return checkboxMetrics(s).find((t) => t.id === refId)?.displayName ?? null;
     }
   }
 
@@ -475,6 +477,7 @@ export class VitalLogSettingTab extends PluginSettingTab {
       case 'pack': return s.packs.map((p) => ({ id: p.id, name: p.displayName }));
       case 'stack': return s.stacks.map((st) => ({ id: st.id, name: st.displayName }));
       case 'tally': return scalarMetrics(s).filter((t) => !t.archived).map((t) => ({ id: t.id, name: t.displayName }));
+      case 'checkbox': return checkboxMetrics(s).filter((t) => !t.archived).map((t) => ({ id: t.id, name: t.displayName }));
     }
   }
 
@@ -493,7 +496,8 @@ export class VitalLogSettingTab extends PluginSettingTab {
     });
 
     const trackers = seriesMetrics(this.plugin.settings).filter((t) => !t.archived);
-    if (trackers.length === 0) {
+    const checkboxHabits = checkboxMetrics(this.plugin.settings).filter((t) => !t.archived);
+    if (trackers.length === 0 && checkboxHabits.length === 0) {
       el.createEl('p', { text: 'No trackers yet. Add some in the Metrics tab.', cls: 'vital-log-settings-helper' });
     }
     for (const tracker of trackers) {
@@ -524,6 +528,23 @@ export class VitalLogSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         });
       });
+    }
+
+    for (const habit of checkboxHabits) {
+      const plan = getGoalPlan(this.plugin.settings, habit.id);
+      new Setting(el).setName(habit.displayName).setDesc('Track a day-streak for this habit on the dashboard.').addToggle((tg) =>
+        tg.setValue(plan?.enabled ?? false).onChange(async (on) => {
+          let p = getGoalPlan(this.plugin.settings, habit.id);
+          if (!p) {
+            p = { trackerId: habit.id, enabled: on, goalHistory: [{ value: 1, effectiveFrom: todayISO() }] };
+            this.plugin.settings.plannedLogs.trackerGoals.push(p);
+          } else {
+            p.enabled = on;
+            if (p.goalHistory.length === 0) p.goalHistory.push({ value: 1, effectiveFrom: todayISO() });
+          }
+          await this.plugin.saveSettings();
+        })
+      );
     }
 
     // ── Schedule ──
@@ -565,7 +586,7 @@ export class VitalLogSettingTab extends PluginSettingTab {
     const kindRow = form.createDiv('vital-log-form-row');
     kindRow.createEl('label', { text: 'Type' });
     const kindSelect = kindRow.createEl('select');
-    const kinds: ScheduleKind[] = ['vitamin', 'pack', 'stack', 'tally'];
+    const kinds: ScheduleKind[] = ['vitamin', 'pack', 'stack', 'tally', 'checkbox'];
     for (const k of kinds) kindSelect.createEl('option', { value: k, text: k[0].toUpperCase() + k.slice(1) });
 
     const refRow = form.createDiv('vital-log-form-row');
@@ -693,9 +714,11 @@ export class VitalLogSettingTab extends PluginSettingTab {
         cls: 'vital-log-item-meta',
         text: metric.trackerType === 'tally'
           ? `${metric.propertyKey} · target ${metric.target} · step ${metric.step}`
-          : metric.trackerType === 'minutes'
-            ? `${metric.propertyKey} · ${metric.valueName} · minutes`
-            : `${metric.propertyKey} · ${metric.valueName} · ${metric.min}–${metric.max}`,
+          : metric.trackerType === 'checkbox'
+            ? `${metric.propertyKey} · checkbox`
+            : metric.trackerType === 'minutes'
+              ? `${metric.propertyKey} · ${metric.valueName} · minutes`
+              : `${metric.propertyKey} · ${metric.valueName} · ${metric.min}–${metric.max}`,
       });
       const actions = row.createDiv('vital-log-item-actions');
 
@@ -754,8 +777,10 @@ export class VitalLogSettingTab extends PluginSettingTab {
           cls: 'vital-log-item-meta',
           text: metric.trackerType === 'tally'
             ? `${metric.propertyKey} · target ${metric.target} · step ${metric.step}`
-            : metric.trackerType === 'minutes'
-              ? `${metric.propertyKey} · ${metric.valueName} · minutes`
+            : metric.trackerType === 'checkbox'
+              ? `${metric.propertyKey} · checkbox`
+              : metric.trackerType === 'minutes'
+                ? `${metric.propertyKey} · ${metric.valueName} · minutes`
               : `${metric.propertyKey} · ${metric.valueName} · ${metric.min}–${metric.max}`,
         });
         const actions = row.createDiv('vital-log-item-actions');
@@ -969,6 +994,7 @@ export class VitalLogSettingTab extends PluginSettingTab {
     typeSelect.createEl('option', { value: 'rating', text: 'Rating (1–N scale)' });
     typeSelect.createEl('option', { value: 'minutes', text: 'Minutes (duration)' });
     typeSelect.createEl('option', { value: 'tally', text: 'Tally (running count)' });
+    typeSelect.createEl('option', { value: 'checkbox', text: 'Checkbox (habit toggle)' });
     typeSelect.value = existing?.trackerType ?? 'rating';
 
     const nameRow = form.createDiv('vital-log-form-row');
@@ -1038,8 +1064,9 @@ export class VitalLogSettingTab extends PluginSettingTab {
     const syncTypeUI = () => {
       const t = typeSelect.value;
       const isTally = t === 'tally';
+      const isCheckbox = t === 'checkbox';
       const isRating = t === 'rating';
-      valRow.style.display = isTally ? 'none' : '';
+      valRow.style.display = (isTally || isCheckbox) ? 'none' : '';
       minRow.style.display = isRating ? '' : 'none';
       maxRow.style.display = isRating ? '' : 'none';
       descRow.style.display = isTally ? '' : 'none';
@@ -1047,8 +1074,8 @@ export class VitalLogSettingTab extends PluginSettingTab {
       stepRow.style.display = isTally ? '' : 'none';
       statusBarRow.style.display = isTally ? '' : 'none';
       appendNoteRow.style.display = isTally ? '' : 'none';
-      primaryRow.style.display = isTally ? 'none' : '';
-      statsRow.style.display = isTally ? 'none' : '';
+      primaryRow.style.display = (isTally || isCheckbox) ? 'none' : '';
+      statsRow.style.display = (isTally || isCheckbox) ? 'none' : '';
     };
     syncTypeUI();
     typeSelect.addEventListener('change', syncTypeUI);
@@ -1057,7 +1084,7 @@ export class VitalLogSettingTab extends PluginSettingTab {
     if (!isEdit) {
       const refreshKey = () => {
         if (!nameInput.value) return;
-        keyInput.value = slugify(nameInput.value) + (typeSelect.value === 'tally' ? 'Tally' : 'Log');
+        keyInput.value = slugify(nameInput.value) + (typeSelect.value === 'tally' ? 'Tally' : typeSelect.value === 'checkbox' ? '' : 'Log');
         validateKey();
       };
       nameInput.addEventListener('input', () => {
@@ -1078,11 +1105,12 @@ export class VitalLogSettingTab extends PluginSettingTab {
     saveBtn.addEventListener('click', async () => {
       const type = typeSelect.value as import('./types').TrackerType;
       const isTally = type === 'tally';
+      const isCheckbox = type === 'checkbox';
       const name = nameInput.value.trim();
       const key = keyInput.value.trim();
       const val = valInput.value.trim();
       if (!name || !key) return;
-      if (!isTally && !val) return;
+      if (!isTally && !isCheckbox && !val) return;
       if (!validateKey()) return;
 
       const m: Metric = isEdit ? existing! : ({} as Metric);
@@ -1090,7 +1118,7 @@ export class VitalLogSettingTab extends PluginSettingTab {
       m.displayName = name;
       m.propertyKey = key;
       m.trackerType = type;
-      m.icon = iconInput.value.trim() || (isTally ? 'hash' : 'activity');
+      m.icon = iconInput.value.trim() || (isTally ? 'hash' : isCheckbox ? 'check-square' : 'activity');
 
       if (isTally) {
         m.valueName = '';
@@ -1101,6 +1129,17 @@ export class VitalLogSettingTab extends PluginSettingTab {
         m.step = Math.max(1, parseInt(stepInput.value) || 1);
         m.showInStatusBar = statusBarCheckbox.checked || undefined;
         m.appendToNoteName = appendNoteInput.value.trim() || undefined;
+        m.primaryStat = undefined;
+        m.displayStats = undefined;
+      } else if (isCheckbox) {
+        m.valueName = '';
+        m.min = 0;
+        m.max = 0;
+        m.target = 0;
+        m.step = 1;
+        m.description = undefined;
+        m.showInStatusBar = undefined;
+        m.appendToNoteName = undefined;
         m.primaryStat = undefined;
         m.displayStats = undefined;
       } else {

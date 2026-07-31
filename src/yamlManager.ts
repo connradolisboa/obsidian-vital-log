@@ -166,6 +166,30 @@ export async function setTallyEntry(
 }
 
 /**
+ * Read a checkbox entry from frontmatter. Returns false if absent or not a boolean.
+ */
+export async function readCheckboxEntry(
+  app: App,
+  file: TFile,
+  propertyKey: string
+): Promise<boolean> {
+  const fm = await readAllFrontmatter(app, file);
+  return fm[propertyKey] === true;
+}
+
+/**
+ * Write a checkbox entry to frontmatter, replacing any existing value.
+ */
+export async function setCheckboxEntry(
+  app: App,
+  file: TFile,
+  propertyKey: string,
+  value: boolean
+): Promise<void> {
+  await setProperties(app, file, { [propertyKey]: value });
+}
+
+/**
  * Rename a frontmatter key at an arbitrary dot-path.
  * e.g. "health.bloodPressure" → "health.bp"  or  "moodLog" → "emotionLog"
  * If the old path does not exist in a file, the file is left unchanged.

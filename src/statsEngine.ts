@@ -15,7 +15,7 @@ import type {
   StatType,
   ScheduleItem,
 } from './types';
-import { isTrackerEntry, defaultPrimaryStat, scalarMetrics } from './types';
+import { isTrackerEntry, defaultPrimaryStat, scalarMetrics, checkboxMetrics } from './types';
 import { getNoteIfExists } from './dailyNoteResolver';
 import { readAllFrontmatter } from './yamlManager';
 import { fromISODate, resolveGoal, shiftDaysISO, todayISO } from './planManager';
@@ -89,6 +89,11 @@ export function readTallyValue(fm: Fm | null, propertyKey: string): number {
   return 0;
 }
 
+export function readCheckboxValue(fm: Fm | null, propertyKey: string): boolean {
+  if (!fm) return false;
+  return fm[propertyKey] === true;
+}
+
 function listHasNamedEntry(fm: Fm, key: string, name: string): boolean {
   const arr = fm[key];
   if (!Array.isArray(arr)) return false;
@@ -127,6 +132,11 @@ export function isScheduleItemDone(
       if (!t) return false;
       const value = readTallyValue(fm, t.propertyKey);
       return t.target > 0 ? value >= t.target : value > 0;
+    }
+    case 'checkbox': {
+      const t = checkboxMetrics(settings).find((x) => x.id === item.refId);
+      if (!t) return false;
+      return readCheckboxValue(fm, t.propertyKey);
     }
   }
 }
@@ -175,13 +185,17 @@ export async function computeGoalStreak(
   plan: TrackerGoalPlan,
   endISO: string
 ): Promise<number> {
-  const stat = trackerPrimaryStat(tracker);
+  const isCheckbox = tracker.trackerType === 'checkbox';
+  const stat = isCheckbox ? undefined : trackerPrimaryStat(tracker);
 
   const isMet = async (iso: string): Promise<boolean | null> => {
     const goal = resolveGoal(plan, iso);
     if (goal === null || goal <= 0) return null; // no goal in effect → stop
     const fm = await getFrontmatterForDate(app, settings, fromISODate(iso));
-    const value = computeStat(extractTrackerValues(fm, tracker), stat);
+    if (isCheckbox) {
+      return readCheckboxValue(fm, tracker.propertyKey);
+    }
+    const value = computeStat(extractTrackerValues(fm, tracker), stat!);
     if (value === null) return false;
     return value >= goal;
   };

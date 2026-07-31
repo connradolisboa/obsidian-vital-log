@@ -16,7 +16,7 @@ import type {
   TallyEntry,
 } from './types';
 import { isVitaminEntry, isSubstanceEntry, isPackEntry, isStackEntry, isTrackerEntry, isArray } from './types';
-import { seriesMetrics, scalarMetrics } from './types';
+import { seriesMetrics, scalarMetrics, checkboxMetrics } from './types';
 import { getDailyNoteIfExists } from './dailyNoteResolver';
 import * as yaml from './yamlManager';
 
@@ -86,12 +86,15 @@ export class HistoryModal extends Modal {
       return;
     }
 
-    // Build system keys set (base + tracker + tally propertyKeys)
+    // Build system keys set (base + tracker + tally + checkbox propertyKeys)
     const systemKeys = new Set(BASE_SYSTEM_KEYS);
     for (const t of seriesMetrics(this.settings)) {
       systemKeys.add(t.propertyKey);
     }
     for (const t of scalarMetrics(this.settings)) {
+      systemKeys.add(t.propertyKey);
+    }
+    for (const t of checkboxMetrics(this.settings)) {
       systemKeys.add(t.propertyKey);
     }
 

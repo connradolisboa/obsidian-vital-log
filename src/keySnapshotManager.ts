@@ -15,7 +15,7 @@ export type ChangeType = 'propertyKey' | 'valueName' | 'both';
 
 export interface KeyChange {
   entityId: string;
-  entityType: 'tracker' | 'tally' | 'vitamin' | 'customField';
+  entityType: 'tracker' | 'tally' | 'checkbox' | 'vitamin' | 'customField';
   entityName: string;
   changeType: ChangeType;
   oldKey: string;       // full dot-path for the top-level key (e.g. "health.bp")
@@ -35,11 +35,11 @@ export function buildSnapshot(settings: VitalLogSettings): PropertyKeySnapshot {
   for (const m of settings.metrics) {
     records.push({
       id: m.id,
-      entityType: m.trackerType === 'tally' ? 'tally' : 'tracker',
+      entityType: m.trackerType === 'tally' ? 'tally' : m.trackerType === 'checkbox' ? 'checkbox' : 'tracker',
       entityName: m.displayName,
       propertyKey: m.propertyKey,
       // valueName (the sub-key inside each entry) only applies to series metrics.
-      valueName: m.trackerType === 'tally' ? undefined : m.valueName,
+      valueName: (m.trackerType === 'tally' || m.trackerType === 'checkbox') ? undefined : m.valueName,
     });
   }
 

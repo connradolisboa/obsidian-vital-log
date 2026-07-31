@@ -140,7 +140,7 @@ export function isArray(v: unknown): v is unknown[] {
 
 // ── Tracker types (mood, energy, etc.) ──────────────────────
 
-export type TrackerType = 'rating' | 'minutes' | 'tally';
+export type TrackerType = 'rating' | 'minutes' | 'tally' | 'checkbox';
 
 // Aggregation applied to a day's tracker values for the dashboard.
 export type StatType = 'sum' | 'average' | 'min' | 'max' | 'count' | 'latest';
@@ -216,12 +216,17 @@ export function isTallyMetric(m: Metric): boolean {
 
 /** Filter a settings object's metrics to the series ('rating' / 'minutes') metrics. */
 export function seriesMetrics(settings: { metrics: Metric[] }): Metric[] {
-  return settings.metrics.filter((m) => m.trackerType !== 'tally');
+  return settings.metrics.filter((m) => m.trackerType !== 'tally' && m.trackerType !== 'checkbox');
 }
 
 /** Filter a settings object's metrics to the scalar ('tally') metrics. */
 export function scalarMetrics(settings: { metrics: Metric[] }): Metric[] {
   return settings.metrics.filter((m) => m.trackerType === 'tally');
+}
+
+/** Filter a settings object's metrics to the checkbox metrics. */
+export function checkboxMetrics(settings: { metrics: Metric[] }): Metric[] {
+  return settings.metrics.filter((m) => m.trackerType === 'checkbox');
 }
 
 /** Find a metric by id regardless of type. */
@@ -308,7 +313,7 @@ export type Frequency =
   | { type: 'weekdays'; days: number[] }              // 0=Sun … 6=Sat
   | { type: 'everyNDays'; n: number; anchor: string }; // anchor = "YYYY-MM-DD"
 
-export type ScheduleKind = 'vitamin' | 'pack' | 'stack' | 'tally';
+export type ScheduleKind = 'vitamin' | 'pack' | 'stack' | 'tally' | 'checkbox';
 
 export interface ScheduleItem {
   id: string;
@@ -408,7 +413,7 @@ export type SchedulingHint = (typeof SCHEDULING_HINTS)[number];
 
 export interface SnapshotRecord {
   id: string;
-  entityType: 'tracker' | 'tally' | 'vitamin' | 'customField';
+  entityType: 'tracker' | 'tally' | 'checkbox' | 'vitamin' | 'customField';
   entityName: string;
   propertyKey: string;
   valueName?: string;    // trackers: sub-key within each entry object

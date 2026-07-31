@@ -11,7 +11,7 @@ import { setIcon } from 'obsidian';
 import type VitalLogPlugin from '../main';
 import type { TrackerConfig, TallyCounterConfig, ScheduleItem, StatType } from './types';
 import { STAT_LABELS, defaultDisplayStats, isEventEntry } from './types';
-import { seriesMetrics, scalarMetrics } from './types';
+import { seriesMetrics, scalarMetrics, checkboxMetrics } from './types';
 import {
   fromISODate,
   toISODate,
@@ -28,6 +28,7 @@ import {
   computeStat,
   trackerPrimaryStat,
   readTallyValue,
+  readCheckboxValue,
   isScheduleItemDone,
   computeGoalStreak,
 } from './statsEngine';
@@ -35,6 +36,7 @@ import { resolveDailyNote } from './dailyNoteResolver';
 import { logVitamin, logPack, logStack } from './vitaminManager';
 import { logTracker } from './trackerManager';
 import { updateTallyValue } from './tallyManager';
+import * as checkboxMgr from './checkboxManager';
 import { HistoryModal } from './historyModal';
 
 function nowHHmm(): string {
@@ -173,8 +175,13 @@ function buildGoalsSection(
   section.createEl('h3', { text: 'Goals', cls: 'vital-log-dashboard-section-title' });
 
   for (const plan of plans) {
-    const tracker = seriesMetrics(plugin.settings).find((t) => t.id === plan.trackerId && !t.archived);
+    const tracker = [...seriesMetrics(plugin.settings), ...checkboxMetrics(plugin.settings)].find((t) => t.id === plan.trackerId && !t.archived);
     if (!tracker) continue;
+
+    if (tracker.trackerType === 'checkbox') {
+      buildCheckboxGoalRow(plugin, section, tracker, fm, isToday, repaint);
+      continue;
+    }
 
     const values = extractTrackerValues(fm, tracker);
     const primary = trackerPrimaryStat(tracker);
@@ -234,6 +241,38 @@ function buildGoalsSection(
     if (isToday) {
       buildTrackerInlineLog(plugin, row, tracker, repaint);
     }
+  }
+}
+
+function buildCheckboxGoalRow(
+  plugin: VitalLogPlugin,
+  section: HTMLElement,
+  tracker: TrackerConfig,
+  fm: Fm | null,
+  isToday: boolean,
+  repaint: () => Promise<void>
+): void {
+  const current = readCheckboxValue(fm, tracker.propertyKey);
+  const row = section.createDiv('vital-log-goal-row');
+  const head = row.createDiv('vital-log-goal-head');
+  const label = head.createDiv('vital-log-goal-label');
+  if (tracker.icon) {
+    const ic = label.createSpan({ cls: 'vital-log-goal-icon' });
+    setIcon(ic, tracker.icon);
+  }
+  label.createSpan({ text: tracker.displayName });
+  head.createDiv('vital-log-goal-value').createSpan({
+    text: current ? 'Done' : 'Not yet',
+    cls: current ? 'is-complete' : '',
+  });
+  if (isToday) {
+    row.addClass('is-clickable');
+    row.addEventListener('click', async () => {
+      const file = await resolveDailyNote(plugin.app, plugin.settings);
+      if (!file) return;
+      await checkboxMgr.setCheckboxValue(plugin.app, file, tracker, !current);
+      await repaint();
+    });
   }
 }
 
@@ -313,6 +352,10 @@ function scheduleItemDisplay(
       const t = scalarMetrics(plugin.settings).find((x) => x.id === item.refId);
       return t ? { name: t.displayName, icon: t.icon } : null;
     }
+    case 'checkbox': {
+      const t = checkboxMetrics(plugin.settings).find((x) => x.id === item.refId);
+      return t ? { name: t.displayName, icon: t.icon } : null;
+    }
   }
 }
 
@@ -350,6 +393,9 @@ function buildScheduleSection(
     if (item.kind === 'tally') {
       const t = scalarMetrics(plugin.settings).find((x) => x.id === item.refId);
       if (t) buildTallyScheduleControls(plugin, row, check, t, fm, isToday, repaint);
+    } else if (item.kind === 'checkbox') {
+      const t = checkboxMetrics(plugin.settings).find((x) => x.id === item.refId);
+      if (t) buildCheckboxScheduleControls(plugin, row, t, fm, isToday, repaint);
     } else if (isToday && !done) {
       buildSupplementInlineLog(plugin, section, row, item, repaint);
     }
@@ -403,6 +449,25 @@ function buildTallyScheduleControls(
   });
   dec.addEventListener('click', () => void write(value - t.step));
   inc.addEventListener('click', () => void write(value + t.step));
+}
+
+function buildCheckboxScheduleControls(
+  plugin: VitalLogPlugin,
+  row: HTMLElement,
+  t: TrackerConfig,
+  fm: Fm | null,
+  isToday: boolean,
+  repaint: () => Promise<void>
+): void {
+  if (!isToday) return;
+  const current = readCheckboxValue(fm, t.propertyKey);
+  row.addClass('is-clickable');
+  row.addEventListener('click', async () => {
+    const file = await resolveDailyNote(plugin.app, plugin.settings);
+    if (!file) return;
+    await checkboxMgr.setCheckboxValue(plugin.app, file, t, !current);
+    await repaint();
+  });
 }
 
 /** Inline quick-log for vitamins/packs/stacks: a checkmark button (+ note field for vitamins). */
@@ -552,6 +617,12 @@ function collectLoggedItems(plugin: VitalLogPlugin, fm: Fm): LoggedItem[] {
     items.push({ time: null, icon: t.icon, text: `${t.displayName}: ${v}/${t.target}` });
   }
 
+  // Checkboxes — checked habits
+  for (const t of checkboxMetrics(plugin.settings).filter((t) => !t.archived)) {
+    if (fm[t.propertyKey] !== true) continue;
+    items.push({ time: null, icon: t.icon, text: t.displayName });
+  }
+
   return items;
 }
 
@@ -583,7 +654,7 @@ async function buildSummary(
   // Goal streaks
   for (const plan of plugin.settings.plannedLogs.trackerGoals ?? []) {
     if (!plan.enabled) continue;
-    const tracker = seriesMetrics(plugin.settings).find((t) => t.id === plan.trackerId && !t.archived);
+    const tracker = [...seriesMetrics(plugin.settings), ...checkboxMetrics(plugin.settings)].find((t) => t.id === plan.trackerId && !t.archived);
     if (!tracker) continue;
     const streak = await computeGoalStreak(plugin.app, plugin.settings, tracker, plan, dateISO);
     if (streak <= 0) continue;

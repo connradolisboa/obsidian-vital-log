@@ -25,11 +25,12 @@ import type VitalLogPlugin from '../main';
 import { getDailyNoteIfExists, pathMatchesTemplate } from './dailyNoteResolver';
 import * as yaml from './yamlManager';
 import * as tally from './tallyManager';
-import { buildInlineWidget } from './widgets';
-import { scalarMetrics } from './types';
+import * as checkboxMgr from './checkboxManager';
+import { buildInlineWidget, buildInlineCheckboxWidget } from './widgets';
+import { scalarMetrics, checkboxMetrics } from './types';
 
-const INLINE_RE = /`(tally|counter):\s+([^`\n]+?)`/g;
-const INLINE_TEXT_RE = /^(tally|counter):\s+(.+)$/;
+const INLINE_RE = /`(tally|checkbox|counter):\s+([^`\n]+?)`/g;
+const INLINE_TEXT_RE = /^(tally|checkbox|counter):\s+(.+)$/;
 
 function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -53,6 +54,8 @@ export function registerInlineRenderers(plugin: VitalLogPlugin): void {
       };
       if (kind === 'tally') {
         code.replaceWith(buildTallyWidget(plugin, name, getFile));
+      } else if (kind === 'checkbox') {
+        code.replaceWith(buildCheckboxWidget(plugin, name, getFile));
       } else {
         code.replaceWith(buildCounterWidget(plugin.app, name, getFile));
       }
@@ -102,6 +105,44 @@ function buildTallyWidget(
       return typeof raw === 'object' && raw !== null && 'value' in raw
         ? ((raw as Record<string, unknown>)['value'] as number) ?? 0
         : 0;
+    },
+  });
+}
+
+function buildCheckboxWidget(
+  plugin: VitalLogPlugin,
+  name: string,
+  getFile: () => TFile | null,
+): HTMLElement {
+  const { app, settings } = plugin;
+  const config = checkboxMetrics(settings).find(
+    (t) => t.displayName.toLowerCase() === name.toLowerCase(),
+  );
+  if (!config) {
+    const span = document.createElement('span');
+    span.className = 'vital-log-inline-checkbox vital-log-inline-checkbox--unresolved';
+    span.setText(`checkbox: ${name} (not configured)`);
+    span.title = `No checkbox tracker named "${name}". Add one in Settings → Metrics.`;
+    return span;
+  }
+
+  const widgetFile = getFile();
+  const targetNote =
+    widgetFile && pathMatchesTemplate(widgetFile.path, settings.dailyNotePath)
+      ? widgetFile
+      : getDailyNoteIfExists(app, settings);
+
+  return buildInlineCheckboxWidget({
+    className: 'vital-log-inline-checkbox',
+    name: config.displayName,
+    icon: config.icon,
+    persist: async (v) => {
+      if (targetNote) await checkboxMgr.setCheckboxValue(app, targetNote, config, v);
+    },
+    load: async () => {
+      if (!targetNote) return false;
+      const fm = await yaml.readAllFrontmatter(app, targetNote);
+      return fm[config.propertyKey] === true;
     },
   });
 }
@@ -191,7 +232,7 @@ async function writeCounterToLine(
 
 class InlineWidget extends WidgetType {
   constructor(
-    private kind: 'tally' | 'counter',
+    private kind: 'tally' | 'checkbox' | 'counter',
     private name: string,
     private plugin: VitalLogPlugin,
     private getFile: () => TFile | null,
@@ -206,6 +247,9 @@ class InlineWidget extends WidgetType {
   toDOM(): HTMLElement {
     if (this.kind === 'tally') {
       return buildTallyWidget(this.plugin, this.name, this.getFile);
+    }
+    if (this.kind === 'checkbox') {
+      return buildCheckboxWidget(this.plugin, this.name, this.getFile);
     }
     return buildCounterWidget(this.plugin.app, this.name, this.getFile);
   }
@@ -268,7 +312,7 @@ export function buildInlineEditorExtension(plugin: VitalLogPlugin) {
             if (cursorInside(matchFrom, matchTo)) continue;
             if (isInsideCodeBlock(view, matchFrom)) continue;
 
-            const kind = m[1] as 'tally' | 'counter';
+            const kind = m[1] as 'tally' | 'checkbox' | 'counter';
             const name = m[2].trim();
             const widget = new InlineWidget(kind, name, plugin, () => fileForView(view));
             widgets.push(

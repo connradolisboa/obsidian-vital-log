@@ -17,6 +17,7 @@ import {
 const ENTITY_ICON: Record<string, string> = {
   tracker: 'activity',
   tally: 'hash',
+  checkbox: 'check-square',
   vitamin: 'pill',
   customField: 'layout-grid',
 };

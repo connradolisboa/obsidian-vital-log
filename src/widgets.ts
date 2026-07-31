@@ -37,6 +37,56 @@ export interface InlineWidgetOptions {
   load: () => number | Promise<number>;
 }
 
+export interface InlineCheckboxWidgetOptions {
+  className: string;
+  name: string;
+  icon?: string;
+  persist: (value: boolean) => void | Promise<void>;
+  load: () => boolean | Promise<boolean>;
+}
+
+/**
+ * Build an interactive inline checkbox widget: `[square/check-square] [icon] name`.
+ * Returns the root span; the caller inserts it into the document.
+ */
+export function buildInlineCheckboxWidget(opts: InlineCheckboxWidgetOptions): HTMLElement {
+  const widget = document.createElement('span');
+  widget.className = opts.className;
+  attachWidgetGuards(widget);
+
+  const toggleBtn = widget.createEl('button', {
+    cls: 'vital-log-inline-checkbox-btn',
+    attr: { 'aria-label': `Toggle ${opts.name}`, type: 'button' },
+  });
+
+  if (opts.icon) {
+    const iconSpan = widget.createSpan({ cls: 'vital-log-inline-icon' });
+    setIcon(iconSpan, opts.icon);
+  }
+  widget.createSpan({ cls: 'vital-log-inline-name', text: opts.name });
+
+  let value = false;
+  const refresh = () => {
+    setIcon(toggleBtn, value ? 'check-square' : 'square');
+    widget.toggleClass('is-checked', value);
+  };
+  refresh();
+
+  toggleBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    value = !value;
+    refresh();
+    void opts.persist(value);
+  });
+
+  void (async () => {
+    value = await opts.load();
+    refresh();
+  })();
+
+  return widget;
+}
+
 /**
  * Build an interactive inline widget: `[−] [icon] name value [+]`.
  * Returns the root span; the caller inserts it into the document.

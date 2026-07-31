@@ -25,6 +25,10 @@ function tallyExists(settings: VitalLogSettings, id: string): boolean {
   return settings.metrics.some((m) => m.trackerType === 'tally' && m.id === id);
 }
 
+function checkboxExists(settings: VitalLogSettings, id: string): boolean {
+  return settings.metrics.some((m) => m.trackerType === 'checkbox' && m.id === id);
+}
+
 /** Scan the library and schedule for dangling references. Read-only. */
 export function findStaleReferences(settings: VitalLogSettings): StaleReference[] {
   const stale: StaleReference[] = [];
@@ -50,7 +54,8 @@ export function findStaleReferences(settings: VitalLogSettings): StaleReference[
       item.kind === 'vitamin' ? vitaminExists(settings, item.refId)
       : item.kind === 'pack' ? packExists(settings, item.refId)
       : item.kind === 'stack' ? stackExists(settings, item.refId)
-      : tallyExists(settings, item.refId);
+      : item.kind === 'tally' ? tallyExists(settings, item.refId)
+      : checkboxExists(settings, item.refId);
     if (!exists) {
       stale.push({ description: `Schedule has a ${item.kind} entry pointing at a deleted item.` });
     }
@@ -85,7 +90,8 @@ export function removeStaleReferences(settings: VitalLogSettings): number {
     item.kind === 'vitamin' ? vitaminExists(settings, item.refId)
     : item.kind === 'pack' ? packExists(settings, item.refId)
     : item.kind === 'stack' ? stackExists(settings, item.refId)
-    : tallyExists(settings, item.refId)
+    : item.kind === 'tally' ? tallyExists(settings, item.refId)
+    : checkboxExists(settings, item.refId)
   );
   removed += before - settings.plannedLogs.schedule.length;
 
