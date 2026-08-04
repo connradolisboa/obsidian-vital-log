@@ -7,7 +7,15 @@ import { Plugin, Notice, setIcon, TFile } from 'obsidian';
 import type { VitalLogSettings, TallyCounterConfig } from './src/types';
 import { DEFAULT_SETTINGS, scalarMetrics } from './src/types';
 import { migrateSettings } from './src/settingsMigrations';
-import { buildSnapshot } from './src/keySnapshotManager';
+import {
+  buildSnapshot,
+  reconcileSnapshot,
+  detectChanges,
+  changeAffectsVault,
+  changeSignature,
+} from './src/keySnapshotManager';
+import { KeyDiagnosticModal } from './src/keyDiagnosticModal';
+import { confirm } from './src/confirmModal';
 import { getDailyNoteIfExists } from './src/dailyNoteResolver';
 import { VitalLogSettingTab } from './src/settings';
 import { LogModal } from './src/logModal';
@@ -37,6 +45,10 @@ export default class VitalLogPlugin extends Plugin {
   // Identity of the counters currently on the status bar, so refreshStatusBar
   // can tell a real composition change from an ordinary settings save.
   private statusBarSignature = '';
+
+  // True while the rename prompt (or the diagnostic dialog it opens) is up, so
+  // saves that happen underneath it don't stack a duplicate prompt.
+  private keyRenamePromptOpen = false;
 
   private openLogModal(initialType?: 'vitamin' | 'pack' | 'stack'): void {
     new LogModal(
@@ -175,7 +187,12 @@ export default class VitalLogPlugin extends Plugin {
     // loadSettings() can already have built the items via saveSettings(), and
     // rebuilding from scratch is the only idempotent way to get here.
     this.refreshStatusBar();
-    this.app.workspace.onLayoutReady(() => this.updateStatusBar());
+    this.app.workspace.onLayoutReady(() => {
+      this.updateStatusBar();
+      // Catch renames made in a session that ended before the prompt could be
+      // answered. Needs the metadata cache, hence layout-ready rather than here.
+      void this.checkForKeyRenames();
+    });
     this.registerEvent(
       this.app.metadataCache.on('changed', (file: TFile) => {
         const daily = getDailyNoteIfExists(this.app, this.settings);
@@ -314,6 +331,13 @@ export default class VitalLogPlugin extends Plugin {
   }
 
   async saveSettings(): Promise<void> {
+    // Baseline anything created since the last save. Without this a brand-new
+    // vitamin or metric has no recorded key, so renaming it later reads as
+    // "nothing changed" and its already-logged notes are never offered up for
+    // migration.
+    const { snapshot, changed } = reconcileSnapshot(this.settings.propertyKeySnapshot, this.settings);
+    if (changed) this.settings.propertyKeySnapshot = snapshot;
+
     try {
       await this.saveData(this.settings);
     } catch (err) {
@@ -323,5 +347,94 @@ export default class VitalLogPlugin extends Plugin {
     // Settings changes can add, remove, rename, or re-target a status-bar
     // counter, so the bar is rebuilt here rather than only at startup.
     this.refreshStatusBar();
+
+    void this.checkForKeyRenames();
+  }
+
+  /**
+   * Offer to migrate old frontmatter after a key rename.
+   *
+   * Renames used to be found only by opening the diagnostic dialog by hand, so
+   * notes quietly kept the stale key until someone thought to look. This runs
+   * after every save instead, and stays quiet unless a rename actually stranded
+   * data: a key corrected before it was ever logged is silently re-baselined,
+   * and a change the user defers is remembered so it is never raised twice.
+   */
+  private async checkForKeyRenames(): Promise<void> {
+    if (this.keyRenamePromptOpen) return;
+    const snapshot = this.settings.propertyKeySnapshot;
+    if (!snapshot) return;
+
+    const changes = detectChanges(snapshot, this.settings);
+    const signatures = new Set(changes.map(changeSignature));
+
+    // Drop dismissals for changes that no longer exist (migrated, renamed back,
+    // or the entity was deleted) so the list can't grow without bound.
+    const dismissed = (this.settings.keyRenameDismissed ?? []).filter((s) => signatures.has(s));
+    if (dismissed.length !== (this.settings.keyRenameDismissed ?? []).length) {
+      this.settings.keyRenameDismissed = dismissed.length > 0 ? dismissed : undefined;
+      await this.persist();
+    }
+
+    const pending = changes.filter((c) => !dismissed.includes(changeSignature(c)));
+    if (pending.length === 0) return;
+
+    // A key nothing has written yet needs no migration — typically a metric
+    // whose key was fixed up right after it was created.
+    const stranded = pending.filter((c) => changeAffectsVault(this.app, c));
+    if (stranded.length === 0) {
+      this.settings.propertyKeySnapshot = buildSnapshot(this.settings);
+      await this.persist();
+      return;
+    }
+
+    // Held until the user is finished with the prompt (and the diagnostic dialog
+    // behind it), so ordinary saves in the meantime can't stack a second copy.
+    this.keyRenamePromptOpen = true;
+    try {
+      const names = stranded.map((c) => `"${c.entityName}"`).join(', ');
+      const migrate = await confirm(this.app, {
+        title: 'Property key renamed',
+        message: [
+          `${names} now write${stranded.length === 1 ? 's' : ''} to a different frontmatter key, but existing notes still use the old one.`,
+          'Update those notes now, or leave them as they are — you can always revisit this from Settings → Maintenance → Diagnose Changed Keys.',
+        ],
+        confirmText: 'Review and migrate',
+        cancelText: 'Not now',
+        destructive: false,
+      });
+
+      // Whatever the user does from here, these changes have been raised once —
+      // don't interrupt them with the same ones again. A completed migration
+      // stops them being detected at all, so the dismissals get pruned above.
+      this.settings.keyRenameDismissed = [...dismissed, ...stranded.map(changeSignature)];
+      await this.persist();
+
+      if (migrate) {
+        new KeyDiagnosticModal(
+          this.app,
+          this.settings,
+          async () => {
+            this.settings.propertyKeySnapshot = buildSnapshot(this.settings);
+            await this.persist();
+          },
+          () => { this.keyRenamePromptOpen = false; }
+        ).open();
+        return; // the dialog's own close handler releases the guard
+      }
+      this.keyRenamePromptOpen = false;
+    } catch (err) {
+      this.keyRenamePromptOpen = false;
+      console.error('Vital Log key rename check:', err);
+    }
+  }
+
+  /** Write settings straight to disk, skipping the saveSettings side effects. */
+  private async persist(): Promise<void> {
+    try {
+      await this.saveData(this.settings);
+    } catch (err) {
+      console.error('Vital Log persist:', err);
+    }
   }
 }

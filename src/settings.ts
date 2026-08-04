@@ -374,7 +374,8 @@ export class VitalLogSettingTab extends PluginSettingTab {
     new Setting(el)
       .setName('Diagnose changed keys')
       .setDesc(
-        'Scan your vault for notes that still use old property keys after renaming a tracker, tally, vitamin, or custom field. ' +
+        'Renames are detected automatically and you are offered a migration when notes are left behind. ' +
+        'Open this to review changes you deferred, or to re-scan your vault by hand. ' +
         'Supports nested (sub-property) keys that Obsidian\'s built-in rename cannot handle.'
       )
       .addButton((btn) =>

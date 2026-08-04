@@ -34,12 +34,24 @@ interface ChangeRow {
 export class KeyDiagnosticModal extends Modal {
   private settings: VitalLogSettings;
   private onSync: () => Promise<void>;
+  private onDismissed?: () => void;
   private rows: ChangeRow[] = [];
 
-  constructor(app: App, settings: VitalLogSettings, onSync: () => Promise<void>) {
+  /**
+   * @param onSync     Record the current keys as the new baseline.
+   * @param onDismissed Called once the dialog closes, so a caller that opened it
+   *                    automatically can stop raising the same changes.
+   */
+  constructor(
+    app: App,
+    settings: VitalLogSettings,
+    onSync: () => Promise<void>,
+    onDismissed?: () => void
+  ) {
     super(app);
     this.settings = settings;
     this.onSync = onSync;
+    this.onDismissed = onDismissed;
   }
 
   onOpen(): void {
@@ -276,5 +288,6 @@ export class KeyDiagnosticModal extends Modal {
 
   onClose(): void {
     this.contentEl.empty();
+    this.onDismissed?.();
   }
 }

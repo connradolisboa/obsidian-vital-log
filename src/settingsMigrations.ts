@@ -146,6 +146,11 @@ export function validateSettings(raw: Raw, notes: string[] = []): VitalLogSettin
   if (typeof raw['propertyKeySnapshot'] === 'object' && raw['propertyKeySnapshot'] !== null) {
     out.propertyKeySnapshot = raw['propertyKeySnapshot'] as VitalLogSettings['propertyKeySnapshot'];
   }
+  if (Array.isArray(raw['keyRenameDismissed'])) {
+    out.keyRenameDismissed = (raw['keyRenameDismissed'] as unknown[]).filter(
+      (s): s is string => typeof s === 'string'
+    );
+  }
 
   // plannedLogs needs its own arrays rather than the shared default reference,
   // or edits would leak across loads.

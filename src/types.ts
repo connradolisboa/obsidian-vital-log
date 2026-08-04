@@ -60,6 +60,7 @@ export interface VitalLogSettings {
   noteContentTemplate_specificNoteTally: string; // template for per-tally specific-note lines. Tokens: {dailyNote} {time} {name} {value} {target}
   mirrorExcludedKeys?: string[]; // property keys never shown in the "Other Properties" section of mirror modals
   propertyKeySnapshot?: PropertyKeySnapshot; // snapshot of all property keys for rename detection
+  keyRenameDismissed?: string[];             // change signatures the user chose not to migrate — never prompted for again
   eventTypes: EventType[];
   eventsPropertyKey: string;            // frontmatter key for events list (default: "events")
   showEventsInGraph: boolean;           // show event markers on dashboard sparklines
