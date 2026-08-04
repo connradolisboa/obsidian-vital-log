@@ -9,6 +9,7 @@ import type { VitalLogSettings, TrackerConfig } from './types';
 import { seriesMetrics } from './types';
 import { resolveDailyNote } from './dailyNoteResolver';
 import * as tm from './trackerManager';
+import { createAppendToggle } from './formUI';
 
 // moment is bundled with Obsidian
 declare const moment: (date?: Date | string) => { format: (fmt: string) => string };
@@ -191,12 +192,10 @@ export class TrackerModal extends Modal {
 
     // ── Append to note toggle ────────────────────────────────
     const appendSection = contentEl.createDiv('vital-log-modal-section vital-log-append-section');
-    const appendLabel = appendSection.createEl('label', { cls: 'vital-log-append-label' });
-    const appendCheckbox = appendLabel.createEl('input', { type: 'checkbox' });
-    appendCheckbox.checked = this.appendToNote;
-    appendLabel.createSpan({ text: ' Also add to note content' });
-    appendCheckbox.addEventListener('change', () => {
-      this.appendToNote = appendCheckbox.checked;
+    createAppendToggle(appendSection, {
+      label: 'Also add to note content',
+      value: this.appendToNote,
+      onChange: (value) => { this.appendToNote = value; },
     });
 
     // ── Action buttons ──────────────────────────────────────

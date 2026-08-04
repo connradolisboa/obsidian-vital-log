@@ -4,7 +4,7 @@
 // Delegates persistence to saveSettings callback.
 // ============================================================
 
-import { App, Modal, Notice } from 'obsidian';
+import { App, Notice, setIcon } from 'obsidian';
 import type {
   VitalLogSettings,
   Vitamin,
@@ -16,6 +16,15 @@ import type {
 import { SCHEDULING_HINTS } from './types';
 import { confirm } from './confirmModal';
 import { validatePropertyKey, allKeyOwners } from './validation';
+import { makeReorderable } from './dragReorder';
+import {
+  GuardedModal,
+  attachFieldError,
+  guardUnsaved,
+  hasDirtyForm,
+  initInlineForm,
+  requireValue,
+} from './formUI';
 
 export type ManageTab = 'vitamins' | 'packs' | 'stacks';
 
@@ -31,7 +40,36 @@ function slugify(name: string): string {
     .replace(/^_|_$/g, '');
 }
 
-export class ManageModal extends Modal {
+/** Move `list[from]` to index `to`, mapping positions in a filtered view onto the full array. */
+function moveWithin<T>(full: T[], view: T[], from: number, to: number): void {
+  const fromIdx = full.indexOf(view[from]);
+  const toIdx = full.indexOf(view[to]);
+  if (fromIdx === -1 || toIdx === -1) return;
+  const [moved] = full.splice(fromIdx, 1);
+  full.splice(toIdx, 0, moved);
+}
+
+/** A grip icon marking the row as draggable. */
+function addDragHandle(row: HTMLElement): void {
+  const handle = row.createDiv({ cls: 'vital-log-drag-handle' });
+  setIcon(handle, 'grip-vertical');
+  handle.setAttribute('aria-label', 'Drag to reorder');
+}
+
+/** An icon-only action button carrying an accessible name. */
+function iconButton(
+  parent: HTMLElement,
+  opts: { icon: string; label: string; cls?: string }
+): HTMLButtonElement {
+  const btn = parent.createEl('button', {
+    cls: `vital-log-btn mod-compact vital-log-icon-btn${opts.cls ? ' ' + opts.cls : ''}`,
+    attr: { 'aria-label': opts.label, title: opts.label },
+  });
+  setIcon(btn, opts.icon);
+  return btn;
+}
+
+export class ManageModal extends GuardedModal {
   private settings: VitalLogSettings;
   private saveSettings: () => Promise<void>;
   private activeTab: ManageTab;
@@ -57,6 +95,15 @@ export class ManageModal extends Modal {
     this.contentEl.empty();
   }
 
+  protected hasUnsavedWork(): boolean {
+    return hasDirtyForm(this.contentEl);
+  }
+
+  /** Run `action` unless an open form has edits the user would rather keep. */
+  private guarded(action: () => void | Promise<void>): Promise<void> {
+    return guardUnsaved(this.app, this.contentEl, action);
+  }
+
   private render(): void {
     const { contentEl } = this;
     contentEl.empty();
@@ -70,8 +117,10 @@ export class ManageModal extends Modal {
         cls: 'vital-log-tab' + (this.activeTab === tab ? ' is-active' : ''),
       });
       btn.addEventListener('click', () => {
-        this.activeTab = tab;
-        this.render();
+        void this.guarded(() => {
+          this.activeTab = tab;
+          this.render();
+        });
       });
     });
 
@@ -91,11 +140,16 @@ export class ManageModal extends Modal {
     const archived = this.settings.vitamins.filter((v) => v.archived);
 
     const list = container.createDiv('vital-log-item-list');
+    const registerRow = makeReorderable(list, async (from, to) => {
+      moveWithin(this.settings.vitamins, active, from, to);
+      await this.saveSettings();
+      this.render();
+    });
     for (let i = 0; i < active.length; i++) {
-      this.renderVitaminRow(list, active[i], i, active);
+      this.renderVitaminRow(list, active[i], i, registerRow);
     }
     if (active.length === 0) {
-      list.createDiv({ cls: 'vital-log-no-data', text: 'No vitamins yet.' });
+      list.createDiv({ cls: 'vital-log-empty-state', text: 'No vitamins yet.' });
     }
 
     const addBtn = container.createEl('button', { text: '+ Add Vitamin', cls: 'vital-log-btn mod-cta' });
@@ -114,8 +168,16 @@ export class ManageModal extends Modal {
     }
   }
 
-  private renderVitaminRow(container: HTMLElement, vit: Vitamin, activeIndex: number, activeList: Vitamin[]): void {
+  private renderVitaminRow(
+    container: HTMLElement,
+    vit: Vitamin,
+    index: number,
+    registerRow: (row: HTMLElement, index: number) => void
+  ): void {
     const row = container.createDiv('vital-log-item-row');
+    registerRow(row, index);
+    addDragHandle(row);
+
     const info = row.createDiv('vital-log-item-info');
     info.createDiv({ cls: 'vital-log-item-name', text: vit.displayName });
     info.createDiv({
@@ -125,49 +187,30 @@ export class ManageModal extends Modal {
 
     const actions = row.createDiv('vital-log-item-actions');
 
-    if (activeIndex > 0) {
-      const upBtn = actions.createEl('button', { text: '↑', cls: 'vital-log-btn mod-compact' });
-      upBtn.addEventListener('click', async () => {
-        const a = this.settings.vitamins;
-        const fromIdx = a.indexOf(vit);
-        const toIdx = a.indexOf(activeList[activeIndex - 1]);
-        if (fromIdx !== -1 && toIdx !== -1) [a[toIdx], a[fromIdx]] = [a[fromIdx], a[toIdx]];
-        await this.saveSettings();
-        this.render();
-      });
-    }
-    if (activeIndex < activeList.length - 1) {
-      const downBtn = actions.createEl('button', { text: '↓', cls: 'vital-log-btn mod-compact' });
-      downBtn.addEventListener('click', async () => {
-        const a = this.settings.vitamins;
-        const fromIdx = a.indexOf(vit);
-        const toIdx = a.indexOf(activeList[activeIndex + 1]);
-        if (fromIdx !== -1 && toIdx !== -1) [a[toIdx], a[fromIdx]] = [a[fromIdx], a[toIdx]];
-        await this.saveSettings();
-        this.render();
-      });
-    }
-
     const editBtn = actions.createEl('button', { text: 'Edit', cls: 'vital-log-btn mod-compact' });
     const archiveBtn = actions.createEl('button', { text: 'Archive', cls: 'vital-log-btn mod-compact' });
 
     editBtn.addEventListener('click', () => {
-      const form = createDiv();
-      this.renderVitaminForm(form, vit);
-      row.replaceWith(form);
+      void this.guarded(() => {
+        const form = createDiv();
+        row.replaceWith(form);
+        this.renderVitaminForm(form, vit);
+      });
     });
 
-    archiveBtn.addEventListener('click', async () => {
-      const ok = await confirm(this.app, {
-        title: 'Archive vitamin',
-        message: `Archive "${vit.displayName}"? It won't appear in the vitamin picker but pack and stack references keep working. You can restore it any time.`,
-        confirmText: 'Archive',
-        destructive: false,
+    archiveBtn.addEventListener('click', () => {
+      void this.guarded(async () => {
+        const ok = await confirm(this.app, {
+          title: 'Archive vitamin',
+          message: `Archive "${vit.displayName}"? It won't appear in the vitamin picker but pack and stack references keep working. You can restore it any time.`,
+          confirmText: 'Archive',
+          destructive: false,
+        });
+        if (!ok) return;
+        vit.archived = true;
+        await this.saveSettings();
+        this.render();
       });
-      if (!ok) return;
-      vit.archived = true;
-      await this.saveSettings();
-      this.render();
     });
   }
 
@@ -189,7 +232,7 @@ export class ManageModal extends Modal {
       this.render();
     });
 
-    const delBtn = actions.createEl('button', { text: '✕', cls: 'vital-log-btn mod-compact mod-warning', attr: { 'aria-label': 'Delete' } });
+    const delBtn = iconButton(actions, { icon: 'trash-2', label: 'Delete', cls: 'mod-warning' });
     delBtn.addEventListener('click', async () => {
       const usedInPacks = this.settings.packs.filter((p) =>
         p.items.some((i) => i.vitaminId === vit.id)
@@ -226,18 +269,19 @@ export class ManageModal extends Modal {
     const nameRow = form.createDiv('vital-log-form-row');
     nameRow.createEl('label', { text: 'Display Name' });
     const nameInput = nameRow.createEl('input', { type: 'text', value: vit?.displayName ?? '' });
+    nameInput.placeholder = 'e.g. Vitamin C';
+    const nameError = attachFieldError(nameRow, nameInput);
 
     const keyRow = form.createDiv('vital-log-form-row');
     keyRow.createEl('label', { text: 'Property Key' });
     const keyInput = keyRow.createEl('input', { type: 'text', value: vit?.propertyKey ?? '' });
-    const keyError = form.createDiv({ cls: 'vital-log-error' });
-    keyError.style.display = 'none';
+    const keyError = attachFieldError(keyRow, keyInput);
 
     const owners = allKeyOwners(this.settings);
     const showKeyError = (): boolean => {
       const err = validatePropertyKey(keyInput.value.trim(), owners, isEdit ? vit!.id : undefined);
-      keyError.textContent = err ?? '';
-      keyError.style.display = err ? 'block' : 'none';
+      if (err) keyError.show(err);
+      else keyError.clear();
       return err === null;
     };
     keyInput.addEventListener('input', showKeyError);
@@ -252,24 +296,33 @@ export class ManageModal extends Modal {
     const amtRow = form.createDiv('vital-log-form-row');
     amtRow.createEl('label', { text: 'Default Amount' });
     const amtInput = amtRow.createEl('input', { type: 'number', value: String(vit?.defaultAmount ?? '') });
+    amtInput.placeholder = 'e.g. 500';
+    const amtError = attachFieldError(amtRow, amtInput);
 
     const unitRow = form.createDiv('vital-log-form-row');
     unitRow.createEl('label', { text: 'Unit' });
     const unitInput = unitRow.createEl('input', { type: 'text', value: vit?.unit ?? '' });
     unitInput.placeholder = 'mg, IU, mcg…';
+    const unitError = attachFieldError(unitRow, unitInput);
 
     const actionsEl = form.createDiv('vital-log-inline-form-actions');
     const cancelBtn = actionsEl.createEl('button', { text: 'Cancel', cls: 'vital-log-btn' });
     const saveBtn = actionsEl.createEl('button', { text: 'Save', cls: 'vital-log-btn mod-cta' });
 
-    cancelBtn.addEventListener('click', () => { form.remove(); this.render(); });
+    const cancel = (): void => { form.remove(); this.render(); };
 
-    saveBtn.addEventListener('click', async () => {
-      if (!showKeyError()) return;
+    const save = async (): Promise<void> => {
+      if (!requireValue(nameInput, nameError, 'Give this vitamin a display name.')) return;
+      if (!showKeyError()) { keyInput.focus(); return; }
 
       const amount = parseFloat(amtInput.value);
-      if (isNaN(amount) || amount <= 0) { new Notice('Vital Log: Default amount must be a positive number.'); return; }
-      if (!unitInput.value.trim()) { new Notice('Vital Log: Unit cannot be empty.'); return; }
+      if (isNaN(amount) || amount <= 0) {
+        amtError.show('Enter an amount greater than zero.');
+        amtInput.focus();
+        return;
+      }
+      amtError.clear();
+      if (!requireValue(unitInput, unitError, 'Enter a unit, e.g. mg or IU.')) return;
 
       if (isEdit) {
         const existing = this.settings.vitamins.find((v) => v.id === vit!.id);
@@ -291,7 +344,11 @@ export class ManageModal extends Modal {
 
       await this.saveSettings();
       this.render();
-    });
+    };
+
+    cancelBtn.addEventListener('click', cancel);
+    saveBtn.addEventListener('click', () => void save());
+    initInlineForm(form, { onSave: () => void save(), onCancel: cancel });
   }
 
   // ════════════════════════════════════════════════════════════
@@ -303,11 +360,16 @@ export class ManageModal extends Modal {
     const archived = this.settings.packs.filter((p) => p.archived);
 
     const list = container.createDiv('vital-log-item-list');
+    const registerRow = makeReorderable(list, async (from, to) => {
+      moveWithin(this.settings.packs, active, from, to);
+      await this.saveSettings();
+      this.render();
+    });
     for (let i = 0; i < active.length; i++) {
-      this.renderPackRow(list, active[i], i, active);
+      this.renderPackRow(list, active[i], i, registerRow);
     }
     if (active.length === 0) {
-      list.createDiv({ cls: 'vital-log-no-data', text: 'No packs yet.' });
+      list.createDiv({ cls: 'vital-log-empty-state', text: 'No packs yet.' });
     }
 
     const addBtn = container.createEl('button', { text: '+ Add Pack', cls: 'vital-log-btn mod-cta' });
@@ -326,40 +388,25 @@ export class ManageModal extends Modal {
     }
   }
 
-  private renderPackRow(container: HTMLElement, pack: Pack, activeIndex: number, activeList: Pack[]): void {
+  private renderPackRow(
+    container: HTMLElement,
+    pack: Pack,
+    index: number,
+    registerRow: (row: HTMLElement, index: number) => void
+  ): void {
     const wrapper = container.createDiv();
     const row = wrapper.createDiv('vital-log-item-row');
+    registerRow(row, index);
+    addDragHandle(row);
+
     const info = row.createDiv('vital-log-item-info');
     info.createDiv({ cls: 'vital-log-item-name', text: pack.displayName });
     info.createDiv({ cls: 'vital-log-item-meta', text: `${pack.items.length} vitamin(s)` });
 
     const actions = row.createDiv('vital-log-item-actions');
 
-    if (activeIndex > 0) {
-      const upBtn = actions.createEl('button', { text: '↑', cls: 'vital-log-btn mod-compact' });
-      upBtn.addEventListener('click', async () => {
-        const a = this.settings.packs;
-        const fromIdx = a.indexOf(pack);
-        const toIdx = a.indexOf(activeList[activeIndex - 1]);
-        if (fromIdx !== -1 && toIdx !== -1) [a[toIdx], a[fromIdx]] = [a[fromIdx], a[toIdx]];
-        await this.saveSettings();
-        this.render();
-      });
-    }
-    if (activeIndex < activeList.length - 1) {
-      const downBtn = actions.createEl('button', { text: '↓', cls: 'vital-log-btn mod-compact' });
-      downBtn.addEventListener('click', async () => {
-        const a = this.settings.packs;
-        const fromIdx = a.indexOf(pack);
-        const toIdx = a.indexOf(activeList[activeIndex + 1]);
-        if (fromIdx !== -1 && toIdx !== -1) [a[toIdx], a[fromIdx]] = [a[fromIdx], a[toIdx]];
-        await this.saveSettings();
-        this.render();
-      });
-    }
-
     let expanded = false;
-    const expandBtn = actions.createEl('button', { text: '▶', cls: 'vital-log-btn mod-compact' });
+    const expandBtn = iconButton(actions, { icon: 'chevron-right', label: 'Show contents' });
     const subRows = wrapper.createDiv('vital-log-sub-rows');
     subRows.style.display = 'none';
 
@@ -374,28 +421,35 @@ export class ManageModal extends Modal {
     expandBtn.addEventListener('click', () => {
       expanded = !expanded;
       subRows.style.display = expanded ? 'block' : 'none';
-      expandBtn.textContent = expanded ? '▼' : '▶';
+      setIcon(expandBtn, expanded ? 'chevron-down' : 'chevron-right');
+      const label = expanded ? 'Hide contents' : 'Show contents';
+      expandBtn.setAttribute('aria-label', label);
+      expandBtn.title = label;
     });
 
     const editBtn = actions.createEl('button', { text: 'Edit', cls: 'vital-log-btn mod-compact' });
     const archiveBtn = actions.createEl('button', { text: 'Archive', cls: 'vital-log-btn mod-compact' });
 
     editBtn.addEventListener('click', () => {
-      wrapper.remove();
-      this.renderPackForm(container, pack);
+      void this.guarded(() => {
+        wrapper.remove();
+        this.renderPackForm(container, pack);
+      });
     });
 
-    archiveBtn.addEventListener('click', async () => {
-      const ok = await confirm(this.app, {
-        title: 'Archive pack',
-        message: `Archive "${pack.displayName}"? It won't appear in the pack picker but stack references keep working. You can restore it any time.`,
-        confirmText: 'Archive',
-        destructive: false,
+    archiveBtn.addEventListener('click', () => {
+      void this.guarded(async () => {
+        const ok = await confirm(this.app, {
+          title: 'Archive pack',
+          message: `Archive "${pack.displayName}"? It won't appear in the pack picker but stack references keep working. You can restore it any time.`,
+          confirmText: 'Archive',
+          destructive: false,
+        });
+        if (!ok) return;
+        pack.archived = true;
+        await this.saveSettings();
+        this.render();
       });
-      if (!ok) return;
-      pack.archived = true;
-      await this.saveSettings();
-      this.render();
     });
   }
 
@@ -414,7 +468,7 @@ export class ManageModal extends Modal {
       this.render();
     });
 
-    const delBtn = actions.createEl('button', { text: '✕', cls: 'vital-log-btn mod-compact mod-warning', attr: { 'aria-label': 'Delete' } });
+    const delBtn = iconButton(actions, { icon: 'trash-2', label: 'Delete', cls: 'mod-warning' });
     delBtn.addEventListener('click', async () => {
       const usedInStacks = this.settings.stacks.filter((s) =>
         s.items.some((i) => i.type === 'pack' && i.packId === pack.id)
@@ -446,9 +500,12 @@ export class ManageModal extends Modal {
     const nameRow = form.createDiv('vital-log-form-row');
     nameRow.createEl('label', { text: 'Pack Name' });
     const nameInput = nameRow.createEl('input', { type: 'text', value: pack?.displayName ?? '' });
+    nameInput.placeholder = 'e.g. Morning Vitamins';
+    const nameError = attachFieldError(nameRow, nameInput);
 
     form.createEl('p', { text: 'Vitamins:', cls: 'vital-log-item-meta' });
     const itemsContainer = form.createDiv('vital-log-pack-items');
+    const itemsError = attachFieldError(itemsContainer);
 
     const currentItems: Array<{ vitaminId: string; amount: number }> = pack
       ? pack.items.map((i) => ({ ...i }))
@@ -459,6 +516,7 @@ export class ManageModal extends Modal {
       currentItems.forEach((item, idx) => {
         const row = itemsContainer.createDiv('vital-log-pack-item-row');
         const sel = row.createEl('select');
+        sel.setAttribute('aria-label', 'Vitamin');
         sel.createEl('option', { value: '', text: '— select vitamin —' });
         // Show all non-archived vitamins, plus the currently-selected one even if archived
         this.settings.vitamins
@@ -470,6 +528,7 @@ export class ManageModal extends Modal {
 
         const amtInput = row.createEl('input', { type: 'number', value: String(item.amount || '') });
         amtInput.placeholder = 'amount';
+        amtInput.setAttribute('aria-label', 'Amount');
 
         sel.addEventListener('change', () => {
           currentItems[idx].vitaminId = sel.value;
@@ -483,7 +542,7 @@ export class ManageModal extends Modal {
           currentItems[idx].amount = parseFloat(amtInput.value) || 0;
         });
 
-        const rmBtn = row.createEl('button', { text: '✕', cls: 'vital-log-btn mod-compact mod-warning' });
+        const rmBtn = iconButton(row, { icon: 'x', label: 'Remove vitamin', cls: 'mod-warning' });
         rmBtn.addEventListener('click', () => { currentItems.splice(idx, 1); renderItems(); });
       });
     };
@@ -494,21 +553,24 @@ export class ManageModal extends Modal {
     addItemBtn.addEventListener('click', () => {
       currentItems.push({ vitaminId: '', amount: 0 });
       renderItems();
+      itemsError.clear();
     });
 
     const actionsEl = form.createDiv('vital-log-inline-form-actions');
     const cancelBtn = actionsEl.createEl('button', { text: 'Cancel', cls: 'vital-log-btn' });
     const saveBtn = actionsEl.createEl('button', { text: 'Save', cls: 'vital-log-btn mod-cta' });
 
-    cancelBtn.addEventListener('click', () => { form.remove(); this.render(); });
+    const cancel = (): void => { form.remove(); this.render(); };
 
-    saveBtn.addEventListener('click', async () => {
-      if (!nameInput.value.trim()) { new Notice('Vital Log: Pack name cannot be empty.'); return; }
+    const save = async (): Promise<void> => {
+      if (!requireValue(nameInput, nameError, 'Give this pack a name.')) return;
+
       const validItems = currentItems.filter((i) => i.vitaminId && i.amount > 0);
       if (validItems.length === 0) {
-        new Notice('Vital Log: Pack must have at least one vitamin with a valid amount.');
+        itemsError.show('Add at least one vitamin with an amount greater than zero.');
         return;
       }
+      itemsError.clear();
 
       if (isEdit) {
         const existing = this.settings.packs.find((p) => p.id === pack!.id);
@@ -526,7 +588,11 @@ export class ManageModal extends Modal {
 
       await this.saveSettings();
       this.render();
-    });
+    };
+
+    cancelBtn.addEventListener('click', cancel);
+    saveBtn.addEventListener('click', () => void save());
+    initInlineForm(form, { onSave: () => void save(), onCancel: cancel });
   }
 
   // ════════════════════════════════════════════════════════════
@@ -538,11 +604,16 @@ export class ManageModal extends Modal {
     const archived = this.settings.stacks.filter((s) => s.archived);
 
     const list = container.createDiv('vital-log-item-list');
+    const registerRow = makeReorderable(list, async (from, to) => {
+      moveWithin(this.settings.stacks, active, from, to);
+      await this.saveSettings();
+      this.render();
+    });
     for (let i = 0; i < active.length; i++) {
-      this.renderStackRow(list, active[i], i, active);
+      this.renderStackRow(list, active[i], i, registerRow);
     }
     if (active.length === 0) {
-      list.createDiv({ cls: 'vital-log-no-data', text: 'No stacks yet.' });
+      list.createDiv({ cls: 'vital-log-empty-state', text: 'No stacks yet.' });
     }
 
     const addBtn = container.createEl('button', { text: '+ Add Stack', cls: 'vital-log-btn mod-cta' });
@@ -561,8 +632,16 @@ export class ManageModal extends Modal {
     }
   }
 
-  private renderStackRow(container: HTMLElement, stack: Stack, activeIndex: number, activeList: Stack[]): void {
+  private renderStackRow(
+    container: HTMLElement,
+    stack: Stack,
+    index: number,
+    registerRow: (row: HTMLElement, index: number) => void
+  ): void {
     const row = container.createDiv('vital-log-item-row');
+    registerRow(row, index);
+    addDragHandle(row);
+
     const info = row.createDiv('vital-log-item-info');
     info.createDiv({ cls: 'vital-log-item-name', text: stack.displayName });
     info.createDiv({
@@ -572,48 +651,29 @@ export class ManageModal extends Modal {
 
     const actions = row.createDiv('vital-log-item-actions');
 
-    if (activeIndex > 0) {
-      const upBtn = actions.createEl('button', { text: '↑', cls: 'vital-log-btn mod-compact' });
-      upBtn.addEventListener('click', async () => {
-        const a = this.settings.stacks;
-        const fromIdx = a.indexOf(stack);
-        const toIdx = a.indexOf(activeList[activeIndex - 1]);
-        if (fromIdx !== -1 && toIdx !== -1) [a[toIdx], a[fromIdx]] = [a[fromIdx], a[toIdx]];
-        await this.saveSettings();
-        this.render();
-      });
-    }
-    if (activeIndex < activeList.length - 1) {
-      const downBtn = actions.createEl('button', { text: '↓', cls: 'vital-log-btn mod-compact' });
-      downBtn.addEventListener('click', async () => {
-        const a = this.settings.stacks;
-        const fromIdx = a.indexOf(stack);
-        const toIdx = a.indexOf(activeList[activeIndex + 1]);
-        if (fromIdx !== -1 && toIdx !== -1) [a[toIdx], a[fromIdx]] = [a[fromIdx], a[toIdx]];
-        await this.saveSettings();
-        this.render();
-      });
-    }
-
     const editBtn = actions.createEl('button', { text: 'Edit', cls: 'vital-log-btn mod-compact' });
     const archiveBtn = actions.createEl('button', { text: 'Archive', cls: 'vital-log-btn mod-compact' });
 
     editBtn.addEventListener('click', () => {
-      row.remove();
-      this.renderStackForm(container, stack);
+      void this.guarded(() => {
+        row.remove();
+        this.renderStackForm(container, stack);
+      });
     });
 
-    archiveBtn.addEventListener('click', async () => {
-      const ok = await confirm(this.app, {
-        title: 'Archive stack',
-        message: `Archive "${stack.displayName}"? It won't appear in the stack picker. You can restore it any time.`,
-        confirmText: 'Archive',
-        destructive: false,
+    archiveBtn.addEventListener('click', () => {
+      void this.guarded(async () => {
+        const ok = await confirm(this.app, {
+          title: 'Archive stack',
+          message: `Archive "${stack.displayName}"? It won't appear in the stack picker. You can restore it any time.`,
+          confirmText: 'Archive',
+          destructive: false,
+        });
+        if (!ok) return;
+        stack.archived = true;
+        await this.saveSettings();
+        this.render();
       });
-      if (!ok) return;
-      stack.archived = true;
-      await this.saveSettings();
-      this.render();
     });
   }
 
@@ -635,7 +695,7 @@ export class ManageModal extends Modal {
       this.render();
     });
 
-    const delBtn = actions.createEl('button', { text: '✕', cls: 'vital-log-btn mod-compact mod-warning', attr: { 'aria-label': 'Delete' } });
+    const delBtn = iconButton(actions, { icon: 'trash-2', label: 'Delete', cls: 'mod-warning' });
     delBtn.addEventListener('click', async () => {
       const ok = await confirm(this.app, {
         title: 'Delete stack',
@@ -656,6 +716,8 @@ export class ManageModal extends Modal {
     const nameRow = form.createDiv('vital-log-form-row');
     nameRow.createEl('label', { text: 'Stack Name' });
     const nameInput = nameRow.createEl('input', { type: 'text', value: stack?.displayName ?? '' });
+    nameInput.placeholder = 'e.g. Morning Stack';
+    const nameError = attachFieldError(nameRow, nameInput);
 
     const hintRow = form.createDiv('vital-log-form-row');
     hintRow.createEl('label', { text: 'Scheduling Hint' });
@@ -667,6 +729,7 @@ export class ManageModal extends Modal {
 
     form.createEl('p', { text: 'Items:', cls: 'vital-log-item-meta' });
     const itemsContainer = form.createDiv('vital-log-pack-items');
+    const itemsError = attachFieldError(itemsContainer);
 
     type MutableStackItem =
       | { type: 'pack'; packId: string }
@@ -685,15 +748,15 @@ export class ManageModal extends Modal {
       currentItems.forEach((item, idx) => {
         const row = itemsContainer.createDiv('vital-log-pack-item-row');
 
-        const typeSel = row.createEl('select');
-        typeSel.style.width = '90px';
-        typeSel.style.flexShrink = '0';
+        const typeSel = row.createEl('select', { cls: 'vital-log-pack-item-type' });
+        typeSel.setAttribute('aria-label', 'Item type');
         const packOpt = typeSel.createEl('option', { value: 'pack', text: 'Pack' });
         const vitOpt = typeSel.createEl('option', { value: 'vitamin', text: 'Vitamin' });
         if (item.type === 'pack') packOpt.selected = true;
         else vitOpt.selected = true;
 
         const pickerSel = row.createEl('select');
+        pickerSel.setAttribute('aria-label', 'Item');
 
         const renderPickerOptions = (type: 'pack' | 'vitamin', selectedId: string): void => {
           pickerSel.empty();
@@ -724,6 +787,7 @@ export class ManageModal extends Modal {
 
         const amtInput = row.createEl('input', { type: 'number' });
         amtInput.placeholder = 'amount';
+        amtInput.setAttribute('aria-label', 'Amount');
         amtInput.style.display = item.type === 'vitamin' ? '' : 'none';
         if (item.type === 'vitamin') amtInput.value = String(item.amount || '');
 
@@ -761,7 +825,7 @@ export class ManageModal extends Modal {
           }
         });
 
-        const rmBtn = row.createEl('button', { text: '✕', cls: 'vital-log-btn mod-compact mod-warning' });
+        const rmBtn = iconButton(row, { icon: 'x', label: 'Remove item', cls: 'mod-warning' });
         rmBtn.addEventListener('click', () => { currentItems.splice(idx, 1); renderStackItems(); });
       });
     };
@@ -772,16 +836,17 @@ export class ManageModal extends Modal {
     addItemBtn.addEventListener('click', () => {
       currentItems.push({ type: 'pack', packId: '' });
       renderStackItems();
+      itemsError.clear();
     });
 
     const actionsEl = form.createDiv('vital-log-inline-form-actions');
     const cancelBtn = actionsEl.createEl('button', { text: 'Cancel', cls: 'vital-log-btn' });
     const saveBtn = actionsEl.createEl('button', { text: 'Save', cls: 'vital-log-btn mod-cta' });
 
-    cancelBtn.addEventListener('click', () => { form.remove(); this.render(); });
+    const cancel = (): void => { form.remove(); this.render(); };
 
-    saveBtn.addEventListener('click', async () => {
-      if (!nameInput.value.trim()) { new Notice('Vital Log: Stack name cannot be empty.'); return; }
+    const save = async (): Promise<void> => {
+      if (!requireValue(nameInput, nameError, 'Give this stack a name.')) return;
 
       const validItems: StackItemType[] = currentItems
         .filter((i) => (i.type === 'pack' ? i.packId : i.vitaminId))
@@ -790,6 +855,12 @@ export class ManageModal extends Modal {
             ? { type: 'pack', packId: i.packId }
             : { type: 'vitamin', vitaminId: i.vitaminId, amount: i.amount || undefined }
         );
+
+      if (validItems.length === 0) {
+        itemsError.show('Add at least one pack or vitamin to this stack.');
+        return;
+      }
+      itemsError.clear();
 
       if (isEdit) {
         const existing = this.settings.stacks.find((s) => s.id === stack!.id);
@@ -809,6 +880,10 @@ export class ManageModal extends Modal {
 
       await this.saveSettings();
       this.render();
-    });
+    };
+
+    cancelBtn.addEventListener('click', cancel);
+    saveBtn.addEventListener('click', () => void save());
+    initInlineForm(form, { onSave: () => void save(), onCancel: cancel });
   }
 }

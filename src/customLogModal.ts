@@ -22,6 +22,7 @@ import * as tally from './tallyManager';
 import * as tm from './trackerManager';
 import { executeCommandById, getTemplaterPlugin } from './internal';
 import { applyTemplate } from './template';
+import { createAppendToggle } from './formUI';
 
 // moment is bundled with Obsidian
 declare const moment: (date?: Date | string) => {
@@ -432,19 +433,13 @@ export class CustomLogModal extends Modal {
       this.renderOtherPropertiesSection(fieldsContainer, this.otherProps);
     }
 
-    // Append-to-note checkbox for tallies
+    // Append-to-note toggle for tallies
     if (hasTallies) {
-      const appendRow = contentEl.createDiv('vital-log-append-row');
-      const appendCheckbox = appendRow.createEl('input', { type: 'checkbox' });
-      appendCheckbox.checked = this.appendTallies;
-      appendCheckbox.id = 'vital-log-append-tallies';
-      const appendLabel = appendRow.createEl('label', {
-        text: 'Also add tallies to note content',
-        cls: 'vital-log-append-label',
-      });
-      appendLabel.htmlFor = 'vital-log-append-tallies';
-      appendCheckbox.addEventListener('change', () => {
-        this.appendTallies = appendCheckbox.checked;
+      const appendSection = contentEl.createDiv('vital-log-modal-section vital-log-append-section');
+      createAppendToggle(appendSection, {
+        label: 'Also add tallies to note content',
+        value: this.appendTallies,
+        onChange: (value) => { this.appendTallies = value; },
       });
     }
 

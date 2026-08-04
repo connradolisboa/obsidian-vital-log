@@ -2,7 +2,7 @@
 // Vital Log — Settings Tab
 // ============================================================
 
-import { App, Modal, Notice, PluginSettingTab, Setting, setIcon } from 'obsidian';
+import { App, Notice, PluginSettingTab, Setting, setIcon } from 'obsidian';
 import type VitalLogPlugin from '../main';
 import type { CustomModalConfig, CustomField, CustomFieldType, TallyCounterConfig, TrackerConfig, Metric, CustomModalItem, CustomButtonConfig, MirrorConditionalPin, StatType, ScheduleItem, ScheduleKind, Frequency, EventType } from './types';
 import { CUSTOM_FIELD_TYPES, STAT_TYPES, STAT_LABELS, defaultPrimaryStat, defaultDisplayStats, seriesMetrics, scalarMetrics, checkboxMetrics, SEVERITY_LABELS } from './types';
@@ -16,6 +16,15 @@ import { validatePropertyKey, allKeyOwners } from './validation';
 import { findUnknownPathTokens } from './dailyNoteResolver';
 import { createIconField } from './iconPicker';
 import { makeReorderable } from './dragReorder';
+import {
+  GuardedModal,
+  attachFieldError,
+  createToggleRow,
+  guardUnsaved,
+  hasDirtyForm,
+  initInlineForm,
+  requireValue,
+} from './formUI';
 
 function slugify(name: string): string {
   return name
@@ -68,8 +77,10 @@ export class VitalLogSettingTab extends PluginSettingTab {
         cls: `vital-log-settings-tab${tab.id === this.activeTab ? ' is-active' : ''}`,
       });
       btn.addEventListener('click', () => {
-        this.activeTab = tab.id;
-        this.display();
+        void this.guarded(() => {
+          this.activeTab = tab.id;
+          this.display();
+        });
       });
     }
 
@@ -96,6 +107,22 @@ export class VitalLogSettingTab extends PluginSettingTab {
         this.renderEventsTab(content);
         break;
     }
+  }
+
+  /**
+   * Run `action` unless an inline form has unsaved edits the user would rather
+   * keep. Every handler that re-renders the tab (and so destroys an open form)
+   * goes through here.
+   */
+  private guarded(action: () => void | Promise<void>): Promise<void> {
+    return guardUnsaved(this.app, this.containerEl, action);
+  }
+
+  /** Close any inline form already on screen so only one is ever open. */
+  private closeOpenForms(): void {
+    this.containerEl
+      .querySelectorAll('.vital-log-inline-form')
+      .forEach((form) => form.remove());
   }
 
   // ── General tab ──────────────────────────────────────────────
@@ -561,10 +588,12 @@ export class VitalLogSettingTab extends PluginSettingTab {
         .setName(name ?? `(missing ${item.kind})`)
         .setDesc(`${item.kind} · ${describeFrequency(item.frequency)}`);
       setting.addExtraButton((btn) =>
-        btn.setIcon('trash').setTooltip('Remove').onClick(async () => {
-          this.plugin.settings.plannedLogs.schedule = schedule.filter((s) => s.id !== item.id);
-          await this.plugin.saveSettings();
-          this.display();
+        btn.setIcon('trash').setTooltip('Remove').onClick(() => {
+          void this.guarded(async () => {
+            this.plugin.settings.plannedLogs.schedule = schedule.filter((s) => s.id !== item.id);
+            await this.plugin.saveSettings();
+            this.display();
+          });
         })
       );
     }
@@ -572,8 +601,11 @@ export class VitalLogSettingTab extends PluginSettingTab {
     const addBtnRow = new Setting(el);
     addBtnRow.addButton((btn) =>
       btn.setButtonText('Add scheduled item').setCta().onClick(() => {
-        this.renderScheduleAddForm(el, addBtnRow.settingEl);
-        btn.setDisabled(true);
+        void this.guarded(() => {
+          this.closeOpenForms();
+          this.renderScheduleAddForm(el, addBtnRow.settingEl);
+          btn.setDisabled(true);
+        });
       })
     );
   }
@@ -592,6 +624,7 @@ export class VitalLogSettingTab extends PluginSettingTab {
     const refRow = form.createDiv('vital-log-form-row');
     refRow.createEl('label', { text: 'Item' });
     const refSelect = refRow.createEl('select');
+    const refError = attachFieldError(refRow, refSelect);
     const syncRefOptions = () => {
       refSelect.empty();
       const opts = this.scheduleRefOptions(kindSelect.value as ScheduleKind);
@@ -614,6 +647,7 @@ export class VitalLogSettingTab extends PluginSettingTab {
     const weekRow = form.createDiv('vital-log-form-row');
     weekRow.createEl('label', { text: 'Days' });
     const weekWrap = weekRow.createDiv('vital-log-stat-checkboxes');
+    const weekError = attachFieldError(weekRow, weekWrap);
     const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     const dayBoxes: HTMLInputElement[] = [];
     dayNames.forEach((dn, idx) => {
@@ -639,18 +673,27 @@ export class VitalLogSettingTab extends PluginSettingTab {
 
     const actions = form.createDiv('vital-log-inline-form-actions');
     const cancelBtn = actions.createEl('button', { text: 'Cancel', cls: 'vital-log-btn' });
-    cancelBtn.addEventListener('click', () => this.display());
+    const cancel = (): void => this.display();
+    cancelBtn.addEventListener('click', cancel);
 
     const saveBtn = actions.createEl('button', { text: 'Add', cls: 'vital-log-btn mod-cta' });
-    saveBtn.addEventListener('click', async () => {
+    const save = async (): Promise<void> => {
       const kind = kindSelect.value as ScheduleKind;
       const refId = refSelect.value;
-      if (!refId) return;
+      if (!refId) {
+        refError.show(`No ${kind}s are configured yet — add one first, then schedule it.`);
+        return;
+      }
+      refError.clear();
 
       let frequency: Frequency;
       if (freqSelect.value === 'weekdays') {
         const days = dayBoxes.map((cb, i) => (cb.checked ? i : -1)).filter((i) => i >= 0);
-        if (days.length === 0) return;
+        if (days.length === 0) {
+          weekError.show('Pick at least one weekday.');
+          return;
+        }
+        weekError.clear();
         frequency = { type: 'weekdays', days };
       } else if (freqSelect.value === 'everyNDays') {
         const n = parseInt(nInput.value) || 1;
@@ -663,7 +706,10 @@ export class VitalLogSettingTab extends PluginSettingTab {
       this.plugin.settings.plannedLogs.schedule.push(item);
       await this.plugin.saveSettings();
       this.display();
-    });
+    };
+
+    saveBtn.addEventListener('click', () => void save());
+    initInlineForm(form, { onSave: () => void save(), onCancel: cancel });
   }
 
   // ── Metrics tab (unified trackers + tally counters) ──────────
@@ -681,17 +727,19 @@ export class VitalLogSettingTab extends PluginSettingTab {
     const archivedMetrics = metrics.filter((m) => m.archived);
 
     const metricList = el.createDiv('vital-log-item-list');
-    const registerRow = makeReorderable(metricList, async (from, to) => {
-      const arr = this.plugin.settings.metrics;
-      const fromIdx = arr.indexOf(activeMetrics[from]);
-      const toIdx = arr.indexOf(activeMetrics[to]);
-      if (fromIdx !== -1 && toIdx !== -1) {
-        const [moved] = arr.splice(fromIdx, 1);
-        arr.splice(toIdx, 0, moved);
-      }
-      await this.plugin.saveSettings();
-      this.display();
-    });
+    const registerRow = makeReorderable(metricList, (from, to) =>
+      this.guarded(async () => {
+        const arr = this.plugin.settings.metrics;
+        const fromIdx = arr.indexOf(activeMetrics[from]);
+        const toIdx = arr.indexOf(activeMetrics[to]);
+        if (fromIdx !== -1 && toIdx !== -1) {
+          const [moved] = arr.splice(fromIdx, 1);
+          arr.splice(toIdx, 0, moved);
+        }
+        await this.plugin.saveSettings();
+        this.display();
+      })
+    );
 
     for (let i = 0; i < activeMetrics.length; i++) {
       const metric = activeMetrics[i];
@@ -724,22 +772,27 @@ export class VitalLogSettingTab extends PluginSettingTab {
 
       const editBtn = actions.createEl('button', { text: 'Edit', cls: 'vital-log-btn' });
       editBtn.addEventListener('click', () => {
-        this.renderMetricForm(el, metricList, metric);
+        void this.guarded(() => {
+          this.closeOpenForms();
+          this.renderMetricForm(el, metricList, metric);
+        });
       });
 
       const archiveBtn = actions.createEl('button', { text: 'Archive', cls: 'vital-log-btn' });
       archiveBtn.title = 'Hide from logging and dashboard; keep historical data';
-      archiveBtn.addEventListener('click', async () => {
-        const ok = await confirm(this.app, {
-          title: 'Archive metric',
-          message: `Archive "${metric.displayName}"? It will be hidden from logging and the dashboard but historical data stays in your notes. You can restore it any time.`,
-          confirmText: 'Archive',
-          destructive: false,
+      archiveBtn.addEventListener('click', () => {
+        void this.guarded(async () => {
+          const ok = await confirm(this.app, {
+            title: 'Archive metric',
+            message: `Archive "${metric.displayName}"? It will be hidden from logging and the dashboard but historical data stays in your notes. You can restore it any time.`,
+            confirmText: 'Archive',
+            destructive: false,
+          });
+          if (!ok) return;
+          metric.archived = true;
+          await this.plugin.saveSettings();
+          this.display();
         });
-        if (!ok) return;
-        metric.archived = true;
-        await this.plugin.saveSettings();
-        this.display();
       });
     }
 
@@ -753,7 +806,10 @@ export class VitalLogSettingTab extends PluginSettingTab {
           .setButtonText('Add Metric')
           .setCta()
           .onClick(() => {
-            this.renderMetricForm(el, metricList);
+            void this.guarded(() => {
+              this.closeOpenForms();
+              this.renderMetricForm(el, metricList);
+            });
           })
       );
 
@@ -786,23 +842,27 @@ export class VitalLogSettingTab extends PluginSettingTab {
         const actions = row.createDiv('vital-log-item-actions');
 
         const restoreBtn = actions.createEl('button', { text: 'Restore', cls: 'vital-log-btn' });
-        restoreBtn.addEventListener('click', async () => {
-          delete metric.archived;
-          await this.plugin.saveSettings();
-          this.display();
+        restoreBtn.addEventListener('click', () => {
+          void this.guarded(async () => {
+            delete metric.archived;
+            await this.plugin.saveSettings();
+            this.display();
+          });
         });
 
         const delBtn = actions.createEl('button', { text: 'Delete', cls: 'vital-log-btn mod-warning' });
-        delBtn.addEventListener('click', async () => {
-          const ok = await confirm(this.app, {
-            title: 'Delete metric',
-            message: `Delete "${metric.displayName}"? Goals, schedule entries, and dashboard stats for it are removed. Already-logged values in your notes are not affected.`,
-            confirmText: 'Delete',
+        delBtn.addEventListener('click', () => {
+          void this.guarded(async () => {
+            const ok = await confirm(this.app, {
+              title: 'Delete metric',
+              message: `Delete "${metric.displayName}"? Goals, schedule entries, and dashboard stats for it are removed. Already-logged values in your notes are not affected.`,
+              confirmText: 'Delete',
+            });
+            if (!ok) return;
+            this.plugin.settings.metrics = this.plugin.settings.metrics.filter((m) => m.id !== metric.id);
+            await this.plugin.saveSettings();
+            this.display();
           });
-          if (!ok) return;
-          this.plugin.settings.metrics = this.plugin.settings.metrics.filter((m) => m.id !== metric.id);
-          await this.plugin.saveSettings();
-          this.display();
         });
       }
     }
@@ -820,18 +880,20 @@ export class VitalLogSettingTab extends PluginSettingTab {
     const archivedModals = this.plugin.settings.customModals.filter((m) => m.archived);
 
     const modalList = el.createDiv('vital-log-item-list');
-    const registerModalRow = makeReorderable(modalList, async (from, to) => {
-      const arr = this.plugin.settings.customModals;
-      const fromIdx = arr.indexOf(activeModals[from]);
-      const toIdx = arr.indexOf(activeModals[to]);
-      if (fromIdx !== -1 && toIdx !== -1) {
-        const [moved] = arr.splice(fromIdx, 1);
-        arr.splice(toIdx, 0, moved);
-      }
-      await this.plugin.saveSettings();
-      this.plugin.registerCustomModalCommands();
-      this.display();
-    });
+    const registerModalRow = makeReorderable(modalList, (from, to) =>
+      this.guarded(async () => {
+        const arr = this.plugin.settings.customModals;
+        const fromIdx = arr.indexOf(activeModals[from]);
+        const toIdx = arr.indexOf(activeModals[to]);
+        if (fromIdx !== -1 && toIdx !== -1) {
+          const [moved] = arr.splice(fromIdx, 1);
+          arr.splice(toIdx, 0, moved);
+        }
+        await this.plugin.saveSettings();
+        this.plugin.registerCustomModalCommands();
+        this.display();
+      })
+    );
     for (let i = 0; i < activeModals.length; i++) {
       const modal = activeModals[i];
       const row = modalList.createDiv('vital-log-item-row');
@@ -961,15 +1023,12 @@ export class VitalLogSettingTab extends PluginSettingTab {
     keyRow: HTMLElement,
     excludeId?: string
   ): () => boolean {
-    const keyError = createDiv({ cls: 'vital-log-error' });
-    keyError.style.display = 'none';
-    keyRow.insertAdjacentElement('afterend', keyError);
+    const keyError = attachFieldError(keyRow, keyInput);
     const validate = (): boolean => {
       const owners = allKeyOwners(this.plugin.settings);
       const err = validatePropertyKey(keyInput.value.trim(), owners, excludeId);
-      keyError.textContent = err ?? '';
-      keyError.style.display = err ? 'block' : 'none';
-      keyInput.style.outline = err ? '2px solid var(--text-error)' : '';
+      if (err) keyError.show(err);
+      else keyError.clear();
       return err === null;
     };
     keyInput.addEventListener('input', validate);
@@ -1000,6 +1059,7 @@ export class VitalLogSettingTab extends PluginSettingTab {
     const nameRow = form.createDiv('vital-log-form-row');
     nameRow.createEl('label', { text: 'Display Name' });
     const nameInput = nameRow.createEl('input', { type: 'text', placeholder: 'e.g. Mood', value: existing?.displayName ?? '' });
+    const nameError = attachFieldError(nameRow, nameInput);
 
     const keyRow = form.createDiv('vital-log-form-row');
     keyRow.createEl('label', { text: 'Property Key' });
@@ -1009,6 +1069,7 @@ export class VitalLogSettingTab extends PluginSettingTab {
     const valRow = form.createDiv('vital-log-form-row');
     valRow.createEl('label', { text: 'Value Name' });
     const valInput = valRow.createEl('input', { type: 'text', placeholder: 'e.g. mood', value: existing?.valueName ?? '' });
+    const valError = attachFieldError(valRow, valInput);
 
     const descRow = form.createDiv('vital-log-form-row');
     descRow.createEl('label', { text: 'Description' });
@@ -1032,10 +1093,10 @@ export class VitalLogSettingTab extends PluginSettingTab {
     stepRow.createEl('label', { text: 'Step' });
     const stepInput = stepRow.createEl('input', { type: 'number', value: existing && existing.trackerType === 'tally' ? String(existing.step) : '1' });
 
-    const statusBarRow = form.createDiv('vital-log-form-row');
-    statusBarRow.createEl('label', { text: 'Show in status bar' });
-    const statusBarCheckbox = statusBarRow.createEl('input', { type: 'checkbox' });
-    statusBarCheckbox.checked = existing?.showInStatusBar === true;
+    const { rowEl: statusBarRow, toggle: statusBarToggle } = createToggleRow(form, {
+      label: 'Show in status bar',
+      value: existing?.showInStatusBar === true,
+    });
 
     const appendNoteRow = form.createDiv('vital-log-form-row');
     appendNoteRow.createEl('label', { text: 'Append to note (path)' });
@@ -1099,19 +1160,28 @@ export class VitalLogSettingTab extends PluginSettingTab {
 
     const actions = form.createDiv('vital-log-inline-form-actions');
     const cancelBtn = actions.createEl('button', { text: 'Cancel', cls: 'vital-log-btn' });
-    cancelBtn.addEventListener('click', () => { form.remove(); });
+    const cancel = (): void => { form.remove(); };
+    cancelBtn.addEventListener('click', cancel);
 
     const saveBtn = actions.createEl('button', { text: 'Save', cls: 'vital-log-btn mod-cta' });
-    saveBtn.addEventListener('click', async () => {
+    const save = async (): Promise<void> => {
       const type = typeSelect.value as import('./types').TrackerType;
       const isTally = type === 'tally';
       const isCheckbox = type === 'checkbox';
+
+      if (!requireValue(nameInput, nameError, 'Give this metric a display name.')) return;
+      if (!isTally && !isCheckbox && !requireValue(valInput, valError, 'Name the value key written inside each entry, e.g. "mood".')) return;
+      valError.clear();
+      if (!keyInput.value.trim()) {
+        keyInput.focus();
+        validateKey();
+        return;
+      }
+      if (!validateKey()) { keyInput.focus(); return; }
+
       const name = nameInput.value.trim();
       const key = keyInput.value.trim();
       const val = valInput.value.trim();
-      if (!name || !key) return;
-      if (!isTally && !isCheckbox && !val) return;
-      if (!validateKey()) return;
 
       const m: Metric = isEdit ? existing! : ({} as Metric);
       m.id = existing?.id ?? crypto.randomUUID();
@@ -1127,7 +1197,7 @@ export class VitalLogSettingTab extends PluginSettingTab {
         m.description = descInput.value.trim() || undefined;
         m.target = parseInt(targetInput.value) || 10;
         m.step = Math.max(1, parseInt(stepInput.value) || 1);
-        m.showInStatusBar = statusBarCheckbox.checked || undefined;
+        m.showInStatusBar = statusBarToggle.getValue() || undefined;
         m.appendToNoteName = appendNoteInput.value.trim() || undefined;
         m.primaryStat = undefined;
         m.displayStats = undefined;
@@ -1158,7 +1228,10 @@ export class VitalLogSettingTab extends PluginSettingTab {
       if (!isEdit) this.plugin.settings.metrics.push(m);
       await this.plugin.saveSettings();
       this.display();
-    });
+    };
+
+    saveBtn.addEventListener('click', () => void save());
+    initInlineForm(form, { onSave: () => void save(), onCancel: cancel });
   }
 
   // ── Events tab ────────────────────────────────────────────────
@@ -1219,29 +1292,42 @@ export class VitalLogSettingTab extends PluginSettingTab {
     }
 
     // Add event type form
-    const addSection = el.createDiv('vital-log-modal-section');
-    addSection.style.marginTop = '8px';
+    const addSection = el.createDiv('vital-log-add-inline');
     const addInput = addSection.createEl('input', {
       type: 'text',
       placeholder: 'New event type name…',
     });
-    addInput.style.width = 'calc(100% - 80px)';
-    addInput.style.marginRight = '8px';
+    addInput.setAttribute('aria-label', 'New event type name');
     const addBtn = addSection.createEl('button', { text: 'Add', cls: 'vital-log-btn mod-cta' });
-    addBtn.addEventListener('click', async () => {
+    const addError = attachFieldError(addSection, addInput);
+
+    const addEventType = async (): Promise<void> => {
       const name = addInput.value.trim();
-      if (!name) return;
+      if (!name) {
+        addError.show('Type a name for the new event type.');
+        addInput.focus();
+        return;
+      }
       const exists = this.plugin.settings.eventTypes.some(
         (t) => t.displayName.toLowerCase() === name.toLowerCase()
       );
       if (exists) {
-        new Notice(`Event type "${name}" already exists.`);
+        addError.show(`"${name}" already exists.`);
+        addInput.focus();
         return;
       }
+      addError.clear();
       const newType: EventType = { id: crypto.randomUUID(), displayName: name };
       this.plugin.settings.eventTypes.push(newType);
       await this.plugin.saveSettings();
       this.display();
+    };
+
+    addBtn.addEventListener('click', () => void addEventType());
+    addInput.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      void addEventType();
     });
 
     // Archived types
@@ -1357,11 +1443,13 @@ export class VitalLogSettingTab extends PluginSettingTab {
 // Custom Modal Editor — opens as a separate Obsidian Modal
 // ================================================================
 
-class CustomModalEditorModal extends Modal {
+class CustomModalEditorModal extends GuardedModal {
   private plugin: VitalLogPlugin;
   private modal: CustomModalConfig;
   private isEdit: boolean;
   private onSaved: () => void;
+  /** Set once the user changes anything — structural edits don't fire input events. */
+  private touched = false;
 
   constructor(
     app: App,
@@ -1378,10 +1466,21 @@ class CustomModalEditorModal extends Modal {
     this.onSaved = onSaved;
   }
 
+  protected hasUnsavedWork(): boolean {
+    return this.touched || hasDirtyForm(this.contentEl);
+  }
+
+  /** Record a structural change (adding/removing/reordering items) as unsaved work. */
+  private markTouched(): void {
+    this.touched = true;
+  }
+
   onOpen(): void {
     const { contentEl } = this;
     contentEl.addClass('vital-log-modal-editor-modal');
     this.modalEl.addClass('vital-log-modal');
+    contentEl.addEventListener('input', () => this.markTouched());
+    contentEl.addEventListener('change', () => this.markTouched());
 
     contentEl.createEl('h2', {
       text: this.isEdit ? `Edit: ${this.modal.displayName}` : 'New Custom Modal',
@@ -1398,6 +1497,7 @@ class CustomModalEditorModal extends Modal {
       placeholder: 'e.g. Daily Review',
       value: this.modal.displayName,
     });
+    const nameError = attachFieldError(nameRow, nameInput);
 
     const iconRow = metaSection.createDiv('vital-log-form-row');
     iconRow.createEl('label', { text: 'Icon' });
@@ -1437,12 +1537,14 @@ class CustomModalEditorModal extends Modal {
       row.createEl('span', { text: desc });
     }
 
-    const templaterRow = metaSection.createDiv('vital-log-form-row');
-    templaterRow.createEl('label', { text: 'Use Templater' });
-    const templaterCheckbox = templaterRow.createEl('input', { type: 'checkbox' });
-    templaterCheckbox.checked = this.modal.useTemplater;
+    const templatePathRow = createDiv('vital-log-form-row');
+    const { toggle: templaterToggle } = createToggleRow(metaSection, {
+      label: 'Use Templater',
+      value: this.modal.useTemplater,
+      onChange: (on) => { templatePathRow.style.display = on ? '' : 'none'; },
+    });
 
-    const templatePathRow = metaSection.createDiv('vital-log-form-row');
+    metaSection.appendChild(templatePathRow);
     templatePathRow.createEl('label', { text: 'Template File' });
     const templatePathInput = templatePathRow.createEl('input', {
       type: 'text',
@@ -1451,37 +1553,27 @@ class CustomModalEditorModal extends Modal {
     });
     templatePathRow.style.display = this.modal.useTemplater ? '' : 'none';
 
-    templaterCheckbox.addEventListener('change', () => {
-      templatePathRow.style.display = templaterCheckbox.checked ? '' : 'none';
-    });
-
     // ── Mirror Mode ──
-    const mirrorRow = metaSection.createDiv('vital-log-form-row');
-    mirrorRow.createEl('label', { text: 'Mirror Mode' });
-    const mirrorCheckbox = mirrorRow.createEl('input', { type: 'checkbox' });
-    mirrorCheckbox.checked = this.modal.mirrorMode ?? false;
-    mirrorRow.createEl('span', {
-      cls: 'vital-log-form-hint',
-      text: 'Only show properties that already exist in the note. Pin fields below to always show them.',
+    const { toggle: mirrorToggle } = createToggleRow(metaSection, {
+      label: 'Mirror Mode',
+      value: this.modal.mirrorMode ?? false,
+      hint: 'Only show properties that already exist in the note. Pin fields below to always show them.',
+      onChange: (on) => {
+        otherPropsRow.style.display = on ? '' : 'none';
+        conditionalPinsWrapper.style.display = on ? '' : 'none';
+      },
     });
 
-    const otherPropsRow = metaSection.createDiv('vital-log-form-row');
-    otherPropsRow.createEl('label', { text: 'Show "Other Properties" section' });
-    const otherPropsCheckbox = otherPropsRow.createEl('input', { type: 'checkbox' });
-    otherPropsCheckbox.checked = this.modal.showOtherProperties ?? false;
-    otherPropsRow.createEl('span', {
-      cls: 'vital-log-form-hint',
-      text: 'Add a collapsed section showing modal fields that are not yet in the note (excludes globally excluded keys).',
+    const { rowEl: otherPropsRow, toggle: otherPropsToggle } = createToggleRow(metaSection, {
+      label: 'Show "Other Properties" section',
+      value: this.modal.showOtherProperties ?? false,
+      hint: 'Add a collapsed section showing modal fields that are not yet in the note (excludes globally excluded keys).',
     });
-    otherPropsRow.style.display = mirrorCheckbox.checked ? '' : 'none';
-    mirrorCheckbox.addEventListener('change', () => {
-      otherPropsRow.style.display = mirrorCheckbox.checked ? '' : 'none';
-      conditionalPinsWrapper.style.display = mirrorCheckbox.checked ? '' : 'none';
-    });
+    otherPropsRow.style.display = mirrorToggle.getValue() ? '' : 'none';
 
     // ── Conditional Pins (mirror mode only) ──
     const conditionalPinsWrapper = metaSection.createDiv('vital-log-conditional-pins-wrapper');
-    conditionalPinsWrapper.style.display = mirrorCheckbox.checked ? '' : 'none';
+    conditionalPinsWrapper.style.display = mirrorToggle.getValue() ? '' : 'none';
     this.renderConditionalPinsList(conditionalPinsWrapper);
 
     // ── Fields section ──
@@ -1494,20 +1586,27 @@ class CustomModalEditorModal extends Modal {
     // ── Footer actions ──
     const footer = contentEl.createDiv('vital-log-editor-footer');
     const cancelBtn = footer.createEl('button', { text: 'Cancel', cls: 'vital-log-btn' });
+    // An explicit Cancel is a deliberate discard — but still worth confirming
+    // when there's work to lose, so it routes through the same guard.
     cancelBtn.addEventListener('click', () => this.close());
 
     const saveBtn = footer.createEl('button', { text: 'Save Modal', cls: 'vital-log-btn mod-cta' });
     saveBtn.addEventListener('click', async () => {
       const name = nameInput.value.trim();
-      if (!name) return;
+      if (!name) {
+        nameError.show('Give this modal a display name — it becomes its command name.');
+        nameInput.focus();
+        return;
+      }
+      nameError.clear();
 
       this.modal.displayName = name;
       this.modal.icon = iconInput.value.trim() || 'file-text';
       this.modal.notePath = pathInput.value.trim();
-      this.modal.useTemplater = templaterCheckbox.checked;
+      this.modal.useTemplater = templaterToggle.getValue();
       this.modal.templatePath = templatePathInput.value.trim();
-      this.modal.mirrorMode = mirrorCheckbox.checked;
-      this.modal.showOtherProperties = mirrorCheckbox.checked ? otherPropsCheckbox.checked : false;
+      this.modal.mirrorMode = mirrorToggle.getValue();
+      this.modal.showOtherProperties = mirrorToggle.getValue() ? otherPropsToggle.getValue() : false;
 
       if (this.isEdit) {
         const idx = this.plugin.settings.customModals.findIndex((m) => m.id === this.modal.id);
@@ -1521,7 +1620,7 @@ class CustomModalEditorModal extends Modal {
       await this.plugin.saveSettings();
       this.plugin.registerCustomModalCommands();
       this.onSaved();
-      this.close();
+      this.closeWithoutGuard();
     });
   }
 
@@ -1535,6 +1634,7 @@ class CustomModalEditorModal extends Modal {
     const registerFieldRow = makeReorderable(fieldListEl, (from, to) => {
       const [moved] = items.splice(from, 1);
       items.splice(to, 0, moved);
+      this.markTouched();
       this.renderFieldList(fieldListEl);
     });
 
@@ -1635,13 +1735,19 @@ class CustomModalEditorModal extends Modal {
           } else {
             this.modal.mirrorModePinnedIds.push(itemId);
           }
+          this.markTouched();
           this.renderFieldList(fieldListEl);
         });
       }
 
-      const delBtn = actions.createEl('button', { text: '\u00d7', cls: 'vital-log-btn mod-warning' });
+      const delBtn = actions.createEl('button', {
+        cls: 'vital-log-btn mod-warning vital-log-icon-btn',
+        attr: { 'aria-label': 'Remove item', title: 'Remove item' },
+      });
+      setIcon(delBtn, 'x');
       delBtn.addEventListener('click', () => {
         this.modal.items.splice(i, 1);
+        this.markTouched();
         this.renderFieldList(fieldListEl);
       });
     }
@@ -1715,6 +1821,7 @@ class CustomModalEditorModal extends Modal {
     addRow.createEl('button', { text: '+ Add Divider', cls: 'vital-log-btn' })
       .addEventListener('click', () => {
         this.modal.items.push({ type: 'divider' });
+        this.markTouched();
         this.renderFieldList(fieldListEl);
       });
 
@@ -1726,6 +1833,7 @@ class CustomModalEditorModal extends Modal {
     addRow.createEl('button', { text: '+ End Section', cls: 'vital-log-btn' })
       .addEventListener('click', () => {
         this.modal.items.push({ type: 'section-end' });
+        this.markTouched();
         this.renderFieldList(fieldListEl);
       });
   }
@@ -1767,6 +1875,7 @@ class CustomModalEditorModal extends Modal {
       delBtn.addEventListener('click', () => {
         if (!this.modal.mirrorModeConditionalPins) return;
         this.modal.mirrorModeConditionalPins.splice(i, 1);
+        this.markTouched();
         this.renderConditionalPinsList(container);
       });
     }
@@ -1811,6 +1920,7 @@ class CustomModalEditorModal extends Modal {
       placeholder: '#work',
       value: pin.conditionValue,
     });
+    const valueError = attachFieldError(valueRow, valueInput);
 
     typeSelect.addEventListener('change', () => {
       if (typeSelect.value === 'tag') {
@@ -1849,23 +1959,34 @@ class CustomModalEditorModal extends Modal {
     }
 
     const actions = form.createDiv('vital-log-inline-form-actions');
+    const cancel = (): void => { form.remove(); };
     actions.createEl('button', { text: 'Cancel', cls: 'vital-log-btn' })
-      .addEventListener('click', () => { form.remove(); });
+      .addEventListener('click', cancel);
+
+    const save = (): void => {
+      const val = valueInput.value.trim();
+      if (!val) {
+        valueError.show(
+          typeSelect.value === 'tag' ? 'Enter a tag, e.g. #work.' : 'Enter a folder path, e.g. Work/.'
+        );
+        valueInput.focus();
+        return;
+      }
+      valueError.clear();
+      pin.conditionType = typeSelect.value as 'tag' | 'folder';
+      pin.conditionValue = val;
+      pin.pinnedIds = [...selectedIds];
+      if (!isEdit) {
+        if (!this.modal.mirrorModeConditionalPins) this.modal.mirrorModeConditionalPins = [];
+        this.modal.mirrorModeConditionalPins.push(pin);
+      }
+      form.remove();
+      this.renderConditionalPinsList(container);
+    };
 
     actions.createEl('button', { text: 'Save', cls: 'vital-log-btn mod-cta' })
-      .addEventListener('click', () => {
-        const val = valueInput.value.trim();
-        if (!val) return;
-        pin.conditionType = typeSelect.value as 'tag' | 'folder';
-        pin.conditionValue = val;
-        pin.pinnedIds = [...selectedIds];
-        if (!isEdit) {
-          if (!this.modal.mirrorModeConditionalPins) this.modal.mirrorModeConditionalPins = [];
-          this.modal.mirrorModeConditionalPins.push(pin);
-        }
-        form.remove();
-        this.renderConditionalPinsList(container);
-      });
+      .addEventListener('click', save);
+    initInlineForm(form, { onSave: save, onCancel: cancel });
   }
 
   private renderTallyPickerForm(fieldListEl: HTMLElement, available: TallyCounterConfig[]): void {
@@ -1881,16 +2002,20 @@ class CustomModalEditorModal extends Modal {
 
     const actions = form.createDiv('vital-log-inline-form-actions');
     const cancelBtn = actions.createEl('button', { text: 'Cancel', cls: 'vital-log-btn' });
-    cancelBtn.addEventListener('click', () => { form.remove(); });
+    const cancel = (): void => { form.remove(); };
+    cancelBtn.addEventListener('click', cancel);
 
     const addBtn = actions.createEl('button', { text: 'Add', cls: 'vital-log-btn mod-cta' });
-    addBtn.addEventListener('click', () => {
+    const save = (): void => {
       if (!select.value) return;
       const tc = available.find((t) => t.id === select.value);
       this.modal.items.push({ type: 'tally', tallyCounterId: select.value, tallySnapshot: tc ? { ...tc } : undefined });
+      this.markTouched();
       form.remove();
       this.renderFieldList(fieldListEl);
-    });
+    };
+    addBtn.addEventListener('click', save);
+    initInlineForm(form, { onSave: save, onCancel: cancel });
   }
 
   private renderTrackerPickerForm(fieldListEl: HTMLElement, available: TrackerConfig[]): void {
@@ -1906,16 +2031,20 @@ class CustomModalEditorModal extends Modal {
 
     const actions = form.createDiv('vital-log-inline-form-actions');
     const cancelBtn = actions.createEl('button', { text: 'Cancel', cls: 'vital-log-btn' });
-    cancelBtn.addEventListener('click', () => { form.remove(); });
+    const cancel = (): void => { form.remove(); };
+    cancelBtn.addEventListener('click', cancel);
 
     const addBtn = actions.createEl('button', { text: 'Add', cls: 'vital-log-btn mod-cta' });
-    addBtn.addEventListener('click', () => {
+    const save = (): void => {
       if (!select.value) return;
       const tr = available.find((t) => t.id === select.value);
       this.modal.items.push({ type: 'tracker', trackerId: select.value, trackerSnapshot: tr ? { ...tr } : undefined });
+      this.markTouched();
       form.remove();
       this.renderFieldList(fieldListEl);
-    });
+    };
+    addBtn.addEventListener('click', save);
+    initInlineForm(form, { onSave: save, onCancel: cancel });
   }
 
   private renderButtonForm(
@@ -1933,6 +2062,7 @@ class CustomModalEditorModal extends Modal {
       placeholder: 'e.g. Open Journal',
       value: button.displayName,
     });
+    const nameError = attachFieldError(nameRow, nameInput);
 
     const typeRow = form.createDiv('vital-log-form-row');
     typeRow.createEl('label', { text: 'Action' });
@@ -1948,6 +2078,7 @@ class CustomModalEditorModal extends Modal {
       placeholder: 'Notes/Journal.md',
       value: button.target,
     });
+    const targetError = attachFieldError(targetRow, targetInput);
 
     const updateTargetLabel = () => {
       if (typeSelect.value === 'filelink') {
@@ -1969,13 +2100,22 @@ class CustomModalEditorModal extends Modal {
 
     const actions = form.createDiv('vital-log-inline-form-actions');
     const cancelBtn = actions.createEl('button', { text: 'Cancel', cls: 'vital-log-btn' });
-    cancelBtn.addEventListener('click', () => { form.remove(); });
+    const cancel = (): void => { form.remove(); };
+    cancelBtn.addEventListener('click', cancel);
 
     const saveBtn = actions.createEl('button', { text: 'Save Button', cls: 'vital-log-btn mod-cta' });
-    saveBtn.addEventListener('click', () => {
+    const save = (): void => {
+      if (!requireValue(nameInput, nameError, 'Give this button a label.')) return;
+      if (!requireValue(
+        targetInput,
+        targetError,
+        typeSelect.value === 'filelink'
+          ? 'Enter the file path this button should open.'
+          : 'Enter the ID of the command this button should run.'
+      )) return;
+
       const name = nameInput.value.trim();
       const target = targetInput.value.trim();
-      if (!name || !target) return;
 
       button.displayName = name;
       button.buttonType = typeSelect.value as 'filelink' | 'command';
@@ -1991,9 +2131,13 @@ class CustomModalEditorModal extends Modal {
         }
       }
 
+      this.markTouched();
       form.remove();
       this.renderFieldList(fieldListEl);
-    });
+    };
+
+    saveBtn.addEventListener('click', save);
+    initInlineForm(form, { onSave: save, onCancel: cancel });
   }
 
   private renderHeaderForm(
@@ -2011,23 +2155,29 @@ class CustomModalEditorModal extends Modal {
       placeholder: 'e.g. Morning Routine',
       value: item.text,
     });
+    const textError = attachFieldError(textRow, textInput);
 
     const actions = form.createDiv('vital-log-inline-form-actions');
+    const cancel = (): void => { form.remove(); };
     actions.createEl('button', { text: 'Cancel', cls: 'vital-log-btn' })
-      .addEventListener('click', () => form.remove());
+      .addEventListener('click', cancel);
+
+    const save = (): void => {
+      if (!requireValue(textInput, textError, 'Enter the text for this header.')) return;
+      const text = textInput.value.trim();
+      if (!isEdit) {
+        this.modal.items.push({ type: 'header', text });
+      } else {
+        item.text = text;
+      }
+      this.markTouched();
+      form.remove();
+      this.renderFieldList(fieldListEl);
+    };
 
     actions.createEl('button', { text: 'Save', cls: 'vital-log-btn mod-cta' })
-      .addEventListener('click', () => {
-        const text = textInput.value.trim();
-        if (!text) return;
-        if (!isEdit) {
-          this.modal.items.push({ type: 'header', text });
-        } else {
-          item.text = text;
-        }
-        form.remove();
-        this.renderFieldList(fieldListEl);
-      });
+      .addEventListener('click', save);
+    initInlineForm(form, { onSave: save, onCancel: cancel });
   }
 
   private renderSectionForm(
@@ -2045,11 +2195,12 @@ class CustomModalEditorModal extends Modal {
       placeholder: 'e.g. Evening Check-in',
       value: item.title,
     });
+    const titleError = attachFieldError(titleRow, titleInput);
 
-    const openRow = form.createDiv('vital-log-form-row');
-    openRow.createEl('label', { text: 'Expanded by default' });
-    const openCheckbox = openRow.createEl('input', { type: 'checkbox' });
-    openCheckbox.checked = item.defaultOpen;
+    const { toggle: openToggle } = createToggleRow(form, {
+      label: 'Expanded by default',
+      value: item.defaultOpen,
+    });
 
     const colorRow = form.createDiv('vital-log-form-row');
     colorRow.createEl('label', { text: 'Accent color' });
@@ -2069,24 +2220,29 @@ class CustomModalEditorModal extends Modal {
     });
 
     const actions = form.createDiv('vital-log-inline-form-actions');
+    const cancel = (): void => { form.remove(); };
     actions.createEl('button', { text: 'Cancel', cls: 'vital-log-btn' })
-      .addEventListener('click', () => form.remove());
+      .addEventListener('click', cancel);
+
+    const save = (): void => {
+      if (!requireValue(titleInput, titleError, 'Give this section a title.')) return;
+      const title = titleInput.value.trim();
+      const color = useColor ? colorInput.value : undefined;
+      if (!isEdit) {
+        this.modal.items.push({ type: 'section', title, defaultOpen: openToggle.getValue(), color });
+      } else {
+        item.title = title;
+        item.defaultOpen = openToggle.getValue();
+        item.color = color;
+      }
+      this.markTouched();
+      form.remove();
+      this.renderFieldList(fieldListEl);
+    };
 
     actions.createEl('button', { text: 'Save', cls: 'vital-log-btn mod-cta' })
-      .addEventListener('click', () => {
-        const title = titleInput.value.trim();
-        if (!title) return;
-        const color = useColor ? colorInput.value : undefined;
-        if (!isEdit) {
-          this.modal.items.push({ type: 'section', title, defaultOpen: openCheckbox.checked, color });
-        } else {
-          item.title = title;
-          item.defaultOpen = openCheckbox.checked;
-          item.color = color;
-        }
-        form.remove();
-        this.renderFieldList(fieldListEl);
-      });
+      .addEventListener('click', save);
+    initInlineForm(form, { onSave: save, onCancel: cancel });
   }
 
   private getFieldMeta(field: CustomField): string {
@@ -2115,6 +2271,7 @@ class CustomModalEditorModal extends Modal {
       placeholder: 'e.g. Day Review',
       value: field.displayName,
     });
+    const nameError = attachFieldError(nameRow, nameInput);
 
     const keyRow = form.createDiv('vital-log-form-row');
     keyRow.createEl('label', { text: 'Property Key' });
@@ -2123,6 +2280,7 @@ class CustomModalEditorModal extends Modal {
       placeholder: 'e.g. dayReview',
       value: field.propertyKey,
     });
+    const keyError = attachFieldError(keyRow, keyInput);
 
     if (!isEdit) {
       nameInput.addEventListener('input', () => {
@@ -2205,13 +2363,16 @@ class CustomModalEditorModal extends Modal {
 
     const actions = form.createDiv('vital-log-inline-form-actions');
     const cancelBtn = actions.createEl('button', { text: 'Cancel', cls: 'vital-log-btn' });
-    cancelBtn.addEventListener('click', () => { form.remove(); });
+    const cancel = (): void => { form.remove(); };
+    cancelBtn.addEventListener('click', cancel);
 
     const saveBtn = actions.createEl('button', { text: 'Save Field', cls: 'vital-log-btn mod-cta' });
-    saveBtn.addEventListener('click', () => {
+    const save = (): void => {
+      if (!requireValue(nameInput, nameError, 'Give this field a display name.')) return;
+      if (!requireValue(keyInput, keyError, 'Enter the frontmatter key this field writes to.')) return;
+
       const name = nameInput.value.trim();
       const key = keyInput.value.trim();
-      if (!name || !key) return;
 
       field.displayName = name;
       field.propertyKey = key;
@@ -2241,8 +2402,12 @@ class CustomModalEditorModal extends Modal {
         }
       }
 
+      this.markTouched();
       form.remove();
       this.renderFieldList(fieldListEl);
-    });
+    };
+
+    saveBtn.addEventListener('click', save);
+    initInlineForm(form, { onSave: save, onCancel: cancel });
   }
 }
