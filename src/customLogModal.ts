@@ -106,16 +106,24 @@ export class CustomLogModal extends Modal {
     return resolved === this.sourceFilePath;
   }
 
+  // The note a current-note-mode modal operates on: the embed's source note
+  // when it resolves, otherwise the active note. Virtual renderers (Virtual
+  // Content, sidebar views) can hand us an empty or stale source path, so the
+  // active note is always the fallback rather than an error.
+  private currentNoteFile(): TFile | null {
+    if (this.sourceFilePath) {
+      const f = this.app.vault.getAbstractFileByPath(this.sourceFilePath);
+      if (f instanceof TFile) return f;
+    }
+    return this.app.workspace.getActiveFile();
+  }
+
   // Returns the existing target file without creating it.
   // In current-note mode: the embed's source note (if opened from embed), otherwise the active editor file.
   // Otherwise: the path-template–resolved file for the selected date.
   private getTargetFile(): TFile | null {
     if (this.isCurrentNoteMode) {
-      if (this.sourceFilePath) {
-        const f = this.app.vault.getAbstractFileByPath(this.sourceFilePath);
-        return f instanceof TFile ? f : null;
-      }
-      return this.app.workspace.getActiveFile();
+      return this.currentNoteFile();
     }
     if (this.isSourceMatchingPeriodicNote) {
       const f = this.app.vault.getAbstractFileByPath(this.sourceFilePath!);
@@ -127,12 +135,7 @@ export class CustomLogModal extends Modal {
   // Resolves (and creates if needed) the target file for saving.
   private async resolveTargetFile(): Promise<TFile | null> {
     if (this.isCurrentNoteMode) {
-      if (this.sourceFilePath) {
-        const f = this.app.vault.getAbstractFileByPath(this.sourceFilePath);
-        if (!f || !(f instanceof TFile)) new Notice('Vital Log: Source note not found.');
-        return f instanceof TFile ? f : null;
-      }
-      const file = this.app.workspace.getActiveFile();
+      const file = this.currentNoteFile();
       if (!file) new Notice('Vital Log: No note is currently open.');
       return file;
     }

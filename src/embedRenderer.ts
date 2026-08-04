@@ -20,11 +20,11 @@
 //   -         — collapsible, starts collapsed (closed by default)
 // ============================================================
 
-import { App, setIcon, TFile } from 'obsidian';
+import { App, MarkdownRenderChild, setIcon, TFile } from 'obsidian';
 import type VitalLogPlugin from '../main';
 import type { TallyCounterConfig, TrackerConfig, CustomField, CustomButtonConfig, CustomModalConfig, CustomModalItem, VitalLogSettings } from './types';
 import { seriesMetrics, scalarMetrics } from './types';
-import { getDailyNoteIfExists, getNoteIfExists, pathMatchesTemplate, extractDateFromPath } from './dailyNoteResolver';
+import { getNoteIfExists, pathMatchesTemplate, extractDateFromPath } from './dailyNoteResolver';
 import * as yaml from './yamlManager';
 import * as tally from './tallyManager';
 import * as tm from './trackerManager';
@@ -44,7 +44,30 @@ export function registerEmbedRenderer(plugin: VitalLogPlugin): void {
     const invisible = options.has('invisible');
     const collapsible = options.has('+') || options.has('-');
     const defaultOpen = options.has('+');
-    await renderEmbed(plugin, el, modalName, invisible, collapsible, defaultOpen, ctx.sourcePath);
+
+    let followsActiveNote = false;
+    let renderedPath: string | null = null;
+    const draw = async () => {
+      const result = await renderEmbed(
+        plugin, el, modalName, invisible, collapsible, defaultOpen, ctx.sourcePath
+      );
+      followsActiveNote = result.followsActiveNote;
+      renderedPath = result.targetPath;
+    };
+    await draw();
+
+    // Current-note embeds that had no usable source path follow whatever note
+    // is active — virtual renderers (Virtual Content, sidebar views) hand us an
+    // empty or stale path — so they must redraw when the user switches notes.
+    const child = new MarkdownRenderChild(el);
+    ctx.addChild(child);
+    child.registerEvent(
+      plugin.app.workspace.on('file-open', (file) => {
+        if (!followsActiveNote) return;
+        if ((file?.path ?? null) === renderedPath) return;
+        void draw();
+      })
+    );
   });
 }
 
@@ -79,6 +102,35 @@ async function syncSnapshots(plugin: VitalLogPlugin, modalConfig: import('./type
   if (dirty) await plugin.saveSettings();
 }
 
+/**
+ * The note an embed writes to.
+ *
+ * Current-note mode (the modal has no note path) targets the note the block is
+ * rendered in. Normally that's `sourcePath`, but renderers that inject blocks
+ * virtually — Virtual Content, sidebar views — can pass an empty or stale path,
+ * so the active note is the fallback. `followsActiveNote` reports that fallback
+ * so the caller can redraw when the user switches notes.
+ */
+function resolveEmbedTarget(
+  app: App,
+  modalConfig: CustomModalConfig,
+  sourcePath?: string,
+): { file: TFile | null; followsActiveNote: boolean } {
+  const sourceFile = sourcePath ? app.vault.getAbstractFileByPath(sourcePath) : null;
+
+  if (!modalConfig.notePath.trim()) {
+    if (sourceFile instanceof TFile) return { file: sourceFile, followsActiveNote: false };
+    return { file: app.workspace.getActiveFile(), followsActiveNote: true };
+  }
+
+  // A source note matching the modal's template (e.g. a past daily note for a
+  // daily-note modal) is operated on directly; otherwise use today's target.
+  if (sourceFile instanceof TFile && pathMatchesTemplate(sourceFile.path, modalConfig.notePath)) {
+    return { file: sourceFile, followsActiveNote: false };
+  }
+  return { file: getNoteIfExists(app, modalConfig.notePath), followsActiveNote: false };
+}
+
 async function renderEmbed(
   plugin: VitalLogPlugin,
   container: HTMLElement,
@@ -87,7 +139,7 @@ async function renderEmbed(
   collapsible = false,
   defaultOpen = true,
   sourcePath?: string,
-): Promise<void> {
+): Promise<{ followsActiveNote: boolean; targetPath: string | null }> {
   container.empty();
   container.addClass('vital-log-embed');
   if (invisible) container.addClass('vital-log-embed--invisible');
@@ -104,7 +156,7 @@ async function renderEmbed(
       cls: 'vital-log-embed-error',
       text: `Vital Log: no modal named "${modalName}"`,
     });
-    return;
+    return { followsActiveNote: false, targetPath: null };
   }
 
   if (modalConfig.items.length === 0) {
@@ -112,29 +164,14 @@ async function renderEmbed(
       cls: 'vital-log-embed-empty',
       text: 'No items in this modal.',
     });
-    return;
+    return { followsActiveNote: false, targetPath: null };
   }
 
   // Keep snapshots fresh so embeds survive tracker/tally deletion.
   await syncSnapshots(plugin, modalConfig);
 
-  // Prefer the note the embed lives in when (a) the modal is current-note mode,
-  // or (b) the source note matches the modal's notePath template (e.g. a past
-  // daily note for a daily-note modal). Otherwise fall back to today's resolved
-  // target — modal's own notePath if set, else the global daily note.
-  let targetNote: TFile | null = null;
-  if (sourcePath) {
-    const isCurrentNoteMode = !modalConfig.notePath.trim();
-    if (isCurrentNoteMode || pathMatchesTemplate(sourcePath, modalConfig.notePath)) {
-      const f = app.vault.getAbstractFileByPath(sourcePath);
-      if (f instanceof TFile) targetNote = f;
-    }
-  }
-  if (!targetNote) {
-    targetNote = modalConfig.notePath.trim()
-      ? getNoteIfExists(app, modalConfig.notePath)
-      : getDailyNoteIfExists(app, settings);
-  }
+  const { file: targetNote, followsActiveNote } = resolveEmbedTarget(app, modalConfig, sourcePath);
+  const result = { followsActiveNote, targetPath: targetNote?.path ?? null };
 
   const fm: Record<string, unknown> = targetNote
     ? await yaml.readAllFrontmatter(app, targetNote)
@@ -181,15 +218,24 @@ async function renderEmbed(
       const initialDate = sourcePath && modalConfig.notePath.trim()
         ? extractDateFromPath(sourcePath, modalConfig.notePath) ?? undefined
         : undefined;
-      new CustomLogModal(app, settings, plugin.saveSettings.bind(plugin), modalConfig, initialDate, sourcePath).open();
+      // Hand the modal the note the embed is actually showing, so a
+      // current-note embed that fell back to the active note stays in sync.
+      const modalSourcePath = modalConfig.notePath.trim() ? sourcePath : targetNote?.path ?? sourcePath;
+      new CustomLogModal(app, settings, plugin.saveSettings.bind(plugin), modalConfig, initialDate, modalSourcePath).open();
     });
   }
 
   const bodyEl = container.createDiv('vital-log-embed-body');
 
+  // Current-note mode with nothing open: say so rather than render dead controls.
+  if (!targetNote && !modalConfig.notePath.trim()) {
+    bodyEl.createDiv({ cls: 'vital-log-embed-empty', text: 'No note is currently open.' });
+    return result;
+  }
+
   if (visibleItems.length === 0 && modalConfig.mirrorMode && otherProps.length === 0) {
     bodyEl.createDiv({ cls: 'vital-log-embed-empty', text: 'No matching properties in this note.' });
-    return;
+    return result;
   }
 
   const hasStructure = visibleItems.some(
@@ -241,6 +287,8 @@ async function renderEmbed(
   if (otherProps.length > 0) {
     renderEmbedOtherPropsSection(app, bodyEl, otherProps, targetNote);
   }
+
+  return result;
 }
 
 // ── Mirror mode filter (mirrors CustomLogModal.computeVisibleItems) ──

@@ -297,7 +297,7 @@ Morning Checklist
 
 ### Note Path Behaviour
 
-- If the modal's note path is empty, the embed reads from and writes to the **note it lives in**.
+- If the modal's note path is empty, the embed reads from and writes to the **note it lives in** — and falls back to the **active note** when the block is injected virtually (e.g. by Virtual Content / Virtual Footer, or rendered in a sidebar view), re-targeting itself as you switch notes.
 - If the modal has a note path configured, it targets that path (following the same date tokens as daily notes).
 
 ---
