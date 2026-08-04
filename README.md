@@ -466,11 +466,22 @@ Verify your note path template in settings matches your vault's folder structure
 
 **Vitamin missing from pack**
 
-Happens when you delete a vitamin that's still referenced by a pack. Open the pack manager and remove the stale item.
+Happens when you delete a vitamin that's still referenced by a pack or stack. The
+rest of the pack is still logged, and a notice names the references that were
+skipped. Open the pack manager and remove the stale item to stop the warning.
 
-**Custom modal not appearing as a ribbon icon**
+**Custom modal missing from the Command Palette**
 
-After creating a new modal, reload Obsidian (Cmd/Ctrl+R) once so the ribbon and command are registered.
+Commands are re-registered as soon as you add, rename, or archive a modal, so no
+reload is needed. Note that custom modals do not each get their own ribbon icon —
+they are reached through the single **Custom Modals** ribbon icon, or by the
+per-modal command in the palette.
+
+**"Could not parse the frontmatter" notice**
+
+The note's YAML frontmatter is malformed — often an unclosed quote or a stray
+tab. Nothing is written while the file is in that state, so your existing
+properties are left intact. Fix the YAML and log again.
 
 **Templater not running**
 
@@ -490,4 +501,13 @@ MIT — use, modify, and distribute freely.
 
 ## Contributing
 
-Issues and pull requests are welcome on [GitHub](https://github.com/yourusername/vital-log).
+Issues and pull requests are welcome on [GitHub](https://github.com/connradolisboa/obsidian-vital-log).
+
+Before opening a pull request:
+
+```bash
+npm install
+npm run typecheck   # tsc, no emit
+npm test            # vitest
+npm run build       # bundles main.js and refreshes dist/
+```

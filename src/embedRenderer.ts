@@ -667,11 +667,7 @@ function renderTallyRow(
     value = Math.max(0, value + delta);
     refresh();
     if (targetNote) {
-      try {
-        await tally.updateTallyValue(app, targetNote, config, value);
-      } catch (err) {
-        console.error('Vital Log embed:', err);
-      }
+      await yaml.tryWrite(() => tally.updateTallyValue(app, targetNote, config, value));
     }
   };
 

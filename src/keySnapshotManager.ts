@@ -7,7 +7,14 @@
 
 import { App, TFile } from 'obsidian';
 import type { VitalLogSettings, PropertyKeySnapshot, SnapshotRecord } from './types';
-import { readAllFrontmatter, renameTopLevelKey, renameEntrySubKey } from './yamlManager';
+import {
+  readAllFrontmatter,
+  renameTopLevelKey,
+  renameEntrySubKey,
+  renameKeyIn,
+  renameEntrySubKeyIn,
+  mutateFrontmatter,
+} from './yamlManager';
 
 // ── Public types ─────────────────────────────────────────────
 
@@ -162,9 +169,14 @@ export async function migrateFileKey(
     // Only sub-key rename: propertyKey hasn't changed so oldKey === newKey (both equal the current key)
     await renameEntrySubKey(app, file, change.newKey, change.oldValueName, change.newValueName);
   } else if (change.changeType === 'both' && change.oldValueName && change.newValueName) {
-    // First rename the top-level key, then rename sub-keys under the new location
-    await renameTopLevelKey(app, file, change.oldKey, change.newKey);
-    await renameEntrySubKey(app, file, change.newKey, change.oldValueName, change.newValueName);
+    // Rename the top-level key, then the sub-keys under its new location — in a
+    // single write, so an interrupted migration can't leave the key moved but
+    // its entries still using the old sub-key names.
+    const { oldKey, newKey, oldValueName, newValueName } = change;
+    await mutateFrontmatter(app, file, (fm) => {
+      renameKeyIn(fm, oldKey, newKey);
+      renameEntrySubKeyIn(fm, newKey, oldValueName, newValueName);
+    });
   }
 }
 

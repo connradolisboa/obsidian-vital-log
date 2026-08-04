@@ -4,8 +4,9 @@
 // ============================================================
 
 import { Plugin, Notice, setIcon, TFile } from 'obsidian';
-import type { VitalLogSettings, CustomField, TallyCounterConfig } from './src/types';
-import { DEFAULT_SETTINGS, metricFromLegacyTracker, metricFromLegacyTally, scalarMetrics } from './src/types';
+import type { VitalLogSettings, TallyCounterConfig } from './src/types';
+import { DEFAULT_SETTINGS, scalarMetrics } from './src/types';
+import { migrateSettings } from './src/settingsMigrations';
 import { buildSnapshot } from './src/keySnapshotManager';
 import { getDailyNoteIfExists } from './src/dailyNoteResolver';
 import { VitalLogSettingTab } from './src/settings';
@@ -32,6 +33,10 @@ export default class VitalLogPlugin extends Plugin {
 
   // Status bar items for tally counters with showInStatusBar enabled
   private tallyStatusItems: { el: HTMLElement; config: TallyCounterConfig }[] = [];
+
+  // Identity of the counters currently on the status bar, so refreshStatusBar
+  // can tell a real composition change from an ordinary settings save.
+  private statusBarSignature = '';
 
   private openLogModal(initialType?: 'vitamin' | 'pack' | 'stack'): void {
     new LogModal(
@@ -166,7 +171,10 @@ export default class VitalLogPlugin extends Plugin {
     registerMobileKeyboard(this);
 
     // ── Status bar for tally counters ─────────────────────
-    this.initStatusBar();
+    // refreshStatusBar rather than initStatusBar: a migration during
+    // loadSettings() can already have built the items via saveSettings(), and
+    // rebuilding from scratch is the only idempotent way to get here.
+    this.refreshStatusBar();
     this.app.workspace.onLayoutReady(() => this.updateStatusBar());
     this.registerEvent(
       this.app.metadataCache.on('changed', (file: TFile) => {
@@ -228,17 +236,35 @@ export default class VitalLogPlugin extends Plugin {
     }
   }
 
-  private initStatusBar(): void {
+  /**
+   * Bring the status bar in line with current settings.
+   *
+   * Items used to be created once at startup, so enabling, disabling,
+   * renaming, or deleting a counter left the bar stale until Obsidian was
+   * reloaded. This runs after every settings save; because most saves are
+   * ordinary log actions that don't touch the bar's composition, the elements
+   * are only torn down when the set of counters actually changed.
+   */
+  refreshStatusBar(): void {
     const tallies = scalarMetrics(this.settings).filter((t) => t.showInStatusBar);
-    for (const config of tallies) {
-      const el = this.addStatusBarItem();
-      el.addClass('vital-log-status-item');
-      this.tallyStatusItems.push({ el, config });
+    const signature = tallies
+      .map((t) => `${t.id} ${t.propertyKey} ${t.icon ?? ''} ${t.target}`)
+      .join('');
+
+    if (signature !== this.statusBarSignature) {
+      this.statusBarSignature = signature;
+      for (const { el } of this.tallyStatusItems) el.remove();
+      this.tallyStatusItems = tallies.map((config) => {
+        const el = this.addStatusBarItem();
+        el.addClass('vital-log-status-item');
+        return { el, config };
+      });
     }
+
+    this.updateStatusBar();
   }
 
   private updateStatusBar(): void {
-    if (this.tallyStatusItems.length === 0) return;
     const daily = getDailyNoteIfExists(this.app, this.settings);
     const fm = daily
       ? (this.app.metadataCache.getFileCache(daily)?.frontmatter ?? {})
@@ -261,57 +287,25 @@ export default class VitalLogPlugin extends Plugin {
 
   async loadSettings(): Promise<void> {
     try {
-      const stored = await this.loadData() as Partial<VitalLogSettings> | null;
-      this.settings = Object.assign({}, DEFAULT_SETTINGS, stored ?? {});
+      const stored = await this.loadData() as unknown;
 
-      // ── Migrate legacy trackers + tallyCounters → unified metrics ──
-      // One-time, config-only. Daily-note frontmatter is untouched: a series
-      // metric still reads/writes its list, a scalar metric its {value} object.
-      const legacy = stored as (Record<string, unknown> | null);
-      const hasLegacy = !!legacy && ('trackers' in legacy || 'tallyCounters' in legacy);
-      const hasMetrics = !!legacy && Array.isArray((legacy as Record<string, unknown>)['metrics']);
-      if (hasLegacy && !hasMetrics) {
-        const legacyTrackers = Array.isArray(legacy!['trackers']) ? (legacy!['trackers'] as Record<string, unknown>[]) : [];
-        const legacyTallies = Array.isArray(legacy!['tallyCounters']) ? (legacy!['tallyCounters'] as Record<string, unknown>[]) : [];
-        this.settings.metrics = [
-          ...legacyTrackers.map(metricFromLegacyTracker),
-          ...legacyTallies.map(metricFromLegacyTally),
-        ];
-        // Drop legacy arrays so they don't re-serialize or shadow `metrics`.
-        delete this.settings.trackers;
-        delete this.settings.tallyCounters;
-        await this.saveSettings();
+      // Versioned migration + per-field validation. A damaged field is reset on
+      // its own rather than costing the user their whole configuration.
+      const { settings, changed, notes } = migrateSettings(stored);
+      this.settings = settings;
+
+      for (const note of notes) console.info('Vital Log settings:', note);
+      if (notes.some((n) => n.includes('reset to its default'))) {
+        new Notice('Vital Log: Some settings were invalid and have been reset. See the console.');
       }
-      delete this.settings.trackers;
-      delete this.settings.tallyCounters;
-      if (!Array.isArray(this.settings.metrics)) this.settings.metrics = [];
-
-      // Ensure planned-logs structure exists with its own object/arrays
-      // (don't share the DEFAULT_SETTINGS reference).
-      const pl = this.settings.plannedLogs;
-      this.settings.plannedLogs = {
-        trackerGoals: pl?.trackerGoals ?? [],
-        schedule: pl?.schedule ?? [],
-      };
-
-      // Migrate legacy CustomModalConfig.fields → items
-      let needsSave = false;
-      for (const modal of this.settings.customModals) {
-        const legacy = modal as unknown as Record<string, unknown>;
-        if ('fields' in legacy && !('items' in legacy)) {
-          const fields = (legacy['fields'] as CustomField[]) ?? [];
-          (modal as unknown as Record<string, unknown>)['items'] = fields.map((f) => ({ type: 'field', field: f }));
-          delete legacy['fields'];
-          needsSave = true;
-        }
-      }
-      if (needsSave) await this.saveSettings();
 
       // Take an initial snapshot if none exists yet
-      if (!this.settings.propertyKeySnapshot) {
+      const needsSnapshot = !this.settings.propertyKeySnapshot;
+      if (needsSnapshot) {
         this.settings.propertyKeySnapshot = buildSnapshot(this.settings);
-        await this.saveSettings();
       }
+
+      if (changed || needsSnapshot) await this.saveSettings();
     } catch (err) {
       new Notice('Vital Log: Failed to load settings. Using defaults.');
       console.error('Vital Log loadSettings:', err);
@@ -326,5 +320,8 @@ export default class VitalLogPlugin extends Plugin {
       new Notice('Vital Log: Failed to save settings.');
       console.error('Vital Log saveSettings:', err);
     }
+    // Settings changes can add, remove, rename, or re-target a status-bar
+    // counter, so the bar is rebuilt here rather than only at startup.
+    this.refreshStatusBar();
   }
 }

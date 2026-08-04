@@ -15,6 +15,49 @@ type FrontmatterRecord = Record<string, unknown>;
 // ── Public API ───────────────────────────────────────────────
 
 /**
+ * Run a frontmatter write on behalf of a UI event handler.
+ *
+ * Aborted writes have already shown the user a Notice explaining why, so they
+ * are swallowed here; any other failure is reported instead of escaping as an
+ * unhandled promise rejection. Returns true only if the write went through, so
+ * callers can skip an optimistic re-render when it did not.
+ */
+export async function tryWrite(op: () => Promise<void>): Promise<boolean> {
+  try {
+    await op();
+    return true;
+  } catch (err) {
+    if (err instanceof AbortError) return false;
+    new Notice('Vital Log: Failed to write to the note. See the console for details.');
+    console.error('Vital Log write failed:', err);
+    return false;
+  }
+}
+
+/**
+ * Apply several frontmatter changes in a single atomic write.
+ *
+ * Use this instead of chaining individual writers when one logical action
+ * produces several entries (a pack, a stack): a failure part-way through a
+ * chain of separate writes would leave a half-recorded log on disk.
+ *
+ * The callback receives a mutable frontmatter record plus the same list-append
+ * helper the single-entry writers use, so shape checks stay consistent.
+ */
+export async function mutateFrontmatter(
+  app: App,
+  file: TFile,
+  mutate: (fm: FrontmatterRecord, appendTo: AppendToList) => void
+): Promise<void> {
+  await processFrontmatter(app, file, (fm) => {
+    mutate(fm, (propertyKey, entry) => appendToList(fm, propertyKey, entry));
+  });
+}
+
+/** Append one entry to a list property of an in-memory frontmatter record. */
+export type AppendToList = (propertyKey: string, entry: unknown) => void;
+
+/**
  * Append one entry to a list property in the file's frontmatter.
  * - If the property does not exist it is created as a list.
  * - If the property exists and IS a list, the entry is appended.
@@ -27,20 +70,7 @@ export async function appendEntry(
   propertyKey: string,
   entry: unknown
 ): Promise<void> {
-  await processFrontmatter(app, file, (fm) => {
-    const existing = fm[propertyKey];
-    if (existing === undefined || existing === null) {
-      fm[propertyKey] = [entry];
-    } else if (isArray(existing)) {
-      existing.push(entry);
-    } else {
-      new Notice(
-        `Vital Log: The property "${propertyKey}" already exists but is not a list. ` +
-        `Aborting to protect your data.`
-      );
-      throw new AbortError('property not a list');
-    }
-  });
+  await processFrontmatter(app, file, (fm) => appendToList(fm, propertyKey, entry));
 }
 
 /**
@@ -200,24 +230,31 @@ export async function renameTopLevelKey(
   oldDotPath: string,
   newDotPath: string
 ): Promise<void> {
-  await processFrontmatter(app, file, (fm) => {
-    const oldParts = oldDotPath.split('.');
-    const newParts = newDotPath.split('.');
+  await processFrontmatter(app, file, (fm) => renameKeyIn(fm, oldDotPath, newDotPath));
+}
 
-    // Resolve the value at oldDotPath
-    let cursor: unknown = fm;
-    for (const part of oldParts) {
-      if (typeof cursor !== 'object' || cursor === null || !(part in (cursor as Record<string, unknown>))) return;
-      cursor = (cursor as Record<string, unknown>)[part];
-    }
-    const value = cursor;
+/** In-memory half of {@link renameTopLevelKey}, so batched writes can reuse it. */
+export function renameKeyIn(
+  fm: Record<string, unknown>,
+  oldDotPath: string,
+  newDotPath: string
+): void {
+  const oldParts = oldDotPath.split('.');
+  const newParts = newDotPath.split('.');
 
-    // Delete old key
-    deleteNestedKey(fm, oldParts);
+  // Resolve the value at oldDotPath
+  let cursor: unknown = fm;
+  for (const part of oldParts) {
+    if (typeof cursor !== 'object' || cursor === null || !(part in (cursor as Record<string, unknown>))) return;
+    cursor = (cursor as Record<string, unknown>)[part];
+  }
+  const value = cursor;
 
-    // Set new key
-    setNestedKey(fm, newParts, value);
-  });
+  // Delete old key
+  deleteNestedKey(fm, oldParts);
+
+  // Set new key
+  setNestedKey(fm, newParts, value);
 }
 
 /**
@@ -231,18 +268,26 @@ export async function renameEntrySubKey(
   oldSubKey: string,
   newSubKey: string
 ): Promise<void> {
-  await processFrontmatter(app, file, (fm) => {
-    const entries = fm[listKey];
-    if (!Array.isArray(entries)) return;
-    for (const entry of entries) {
-      if (typeof entry !== 'object' || entry === null) continue;
-      const obj = entry as Record<string, unknown>;
-      if (oldSubKey in obj) {
-        obj[newSubKey] = obj[oldSubKey];
-        delete obj[oldSubKey];
-      }
+  await processFrontmatter(app, file, (fm) => renameEntrySubKeyIn(fm, listKey, oldSubKey, newSubKey));
+}
+
+/** In-memory half of {@link renameEntrySubKey}, so batched writes can reuse it. */
+export function renameEntrySubKeyIn(
+  fm: Record<string, unknown>,
+  listKey: string,
+  oldSubKey: string,
+  newSubKey: string
+): void {
+  const entries = fm[listKey];
+  if (!Array.isArray(entries)) return;
+  for (const entry of entries) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const obj = entry as Record<string, unknown>;
+    if (oldSubKey in obj) {
+      obj[newSubKey] = obj[oldSubKey];
+      delete obj[oldSubKey];
     }
-  });
+  }
 }
 
 function deleteNestedKey(obj: Record<string, unknown>, parts: string[]): void {
@@ -286,10 +331,23 @@ export async function appendLineToBody(
 
 // ── Internal helpers ─────────────────────────────────────────
 
+/**
+ * Why a write was aborted.
+ * - 'shape-mismatch': the target property exists but isn't the shape we need
+ *   (e.g. a scalar where a list is required). Benign — the caller already
+ *   showed a Notice explaining it.
+ * - 'malformed-frontmatter': the file's YAML could not be parsed. The write is
+ *   skipped so the unparseable block is preserved verbatim.
+ */
+export type AbortReason = 'shape-mismatch' | 'malformed-frontmatter';
+
 class AbortError extends Error {
-  constructor(reason: string) {
-    super(reason);
+  readonly reason: AbortReason;
+
+  constructor(message: string, reason: AbortReason = 'shape-mismatch') {
+    super(message);
     this.name = 'AbortError';
+    this.reason = reason;
   }
 }
 
@@ -303,7 +361,10 @@ async function processFrontmatter(
   file: TFile,
   mutate: (fm: FrontmatterRecord) => void
 ): Promise<void> {
-  let abortError: AbortError | null = null;
+  // Held in an object rather than a bare `let`: TypeScript does not track
+  // assignments made inside the closure below, and would otherwise narrow a
+  // local to `never` at the post-write check.
+  const abort: { error: AbortError | null } = { error: null };
 
   await app.vault.process(file, (content: string) => {
     let fm: FrontmatterRecord;
@@ -311,14 +372,26 @@ async function processFrontmatter(
 
     const parsed = splitFrontmatter(content);
     if (parsed) {
+      // A file whose frontmatter we cannot understand must never be rewritten:
+      // falling back to an empty object here would drop every existing property.
+      let raw: unknown;
       try {
-        const raw = parseYaml(parsed.yaml) as unknown;
-        fm = (typeof raw === 'object' && raw !== null)
-          ? (raw as FrontmatterRecord)
-          : {};
+        raw = parseYaml(parsed.yaml) as unknown;
       } catch {
-        fm = {};
+        abort.error = new AbortError(
+          `could not parse frontmatter of "${file.path}"`,
+          'malformed-frontmatter'
+        );
+        return content;
       }
+      if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+        abort.error = new AbortError(
+          `frontmatter of "${file.path}" is not a mapping`,
+          'malformed-frontmatter'
+        );
+        return content;
+      }
+      fm = raw as FrontmatterRecord;
       body = parsed.body;
     } else {
       fm = {};
@@ -329,7 +402,7 @@ async function processFrontmatter(
       mutate(fm);
     } catch (err) {
       if (err instanceof AbortError) {
-        abortError = err;
+        abort.error = err;
         // Return original content unchanged
         return content;
       }
@@ -340,9 +413,38 @@ async function processFrontmatter(
     return `---\n${yamlStr}\n---\n${body}`;
   });
 
-  if (abortError) {
+  const aborted = abort.error;
+  if (aborted) {
+    // Shape-mismatch aborts are announced by the mutate callback that raised
+    // them. A parse failure has no such callback, and every logging call site
+    // deliberately swallows AbortError — so warn here or it fails silently.
+    if (aborted.reason === 'malformed-frontmatter') {
+      new Notice(
+        `Vital Log: Could not parse the frontmatter of "${file.basename}". ` +
+        `Nothing was written — fix the YAML and try again.`
+      );
+    }
     // Re-throw so callers can detect the abort if needed
-    throw abortError;
+    throw aborted;
+  }
+}
+
+/**
+ * Shared list-append used by both the single-entry writer and batched writes,
+ * so a pack logged in one pass enforces the same shape rules as a lone vitamin.
+ */
+function appendToList(fm: FrontmatterRecord, propertyKey: string, entry: unknown): void {
+  const existing = fm[propertyKey];
+  if (existing === undefined || existing === null) {
+    fm[propertyKey] = [entry];
+  } else if (isArray(existing)) {
+    existing.push(entry);
+  } else {
+    new Notice(
+      `Vital Log: The property "${propertyKey}" already exists but is not a list. ` +
+      `Aborting to protect your data.`
+    );
+    throw new AbortError('property not a list');
   }
 }
 

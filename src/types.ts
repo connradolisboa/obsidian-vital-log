@@ -36,6 +36,7 @@ export interface Stack {
 }
 
 export interface VitalLogSettings {
+  schemaVersion: number;     // see settingsMigrations.ts — absent in pre-versioning data.json
   dailyNotePath: string;     // template with {{YYYY}}, {{Q}}, {{YYYY-MM-DD dddd}}
   vitamins: Vitamin[];
   packs: Pack[];
@@ -465,6 +466,7 @@ export const SEVERITY_LABELS: Record<number, string> = {
 };
 
 export const DEFAULT_SETTINGS: VitalLogSettings = {
+  schemaVersion: 2,
   dailyNotePath: 'Calendar/Daily/{{YYYY}}/Q{{Q}}/{{YYYY-MM-DD dddd}}',
   vitamins: [],
   packs: [],

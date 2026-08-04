@@ -97,7 +97,9 @@ function buildTallyWidget(
     format: (v) => `${v}/${config.target}`,
     isComplete: (v) => v >= config.target,
     persist: async (v) => {
-      if (targetNote) await tally.updateTallyValue(app, targetNote, config, v);
+      if (targetNote) {
+        await yaml.tryWrite(() => tally.updateTallyValue(app, targetNote, config, v));
+      }
     },
     load: async () => {
       const fm = targetNote ? await yaml.readAllFrontmatter(app, targetNote) : {};
@@ -137,7 +139,9 @@ function buildCheckboxWidget(
     name: config.displayName,
     icon: config.icon,
     persist: async (v) => {
-      if (targetNote) await checkboxMgr.setCheckboxValue(app, targetNote, config, v);
+      if (targetNote) {
+        await yaml.tryWrite(() => checkboxMgr.setCheckboxValue(app, targetNote, config, v));
+      }
     },
     load: async () => {
       if (!targetNote) return false;

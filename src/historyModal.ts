@@ -610,6 +610,6 @@ export class HistoryModal extends Modal {
   private async setTallyEntry(propertyKey: string, entry: TallyEntry): Promise<void> {
     const file = getDailyNoteIfExists(this.app, this.settings, this.selectedDate);
     if (!file) return;
-    await yaml.setTallyEntry(this.app, file, propertyKey, entry);
+    await yaml.tryWrite(() => yaml.setTallyEntry(this.app, file, propertyKey, entry));
   }
 }

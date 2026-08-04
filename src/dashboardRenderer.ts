@@ -37,6 +37,7 @@ import { logVitamin, logPack, logStack } from './vitaminManager';
 import { logTracker } from './trackerManager';
 import { updateTallyValue } from './tallyManager';
 import * as checkboxMgr from './checkboxManager';
+import { tryWrite } from './yamlManager';
 import { HistoryModal } from './historyModal';
 
 function nowHHmm(): string {
@@ -270,7 +271,8 @@ function buildCheckboxGoalRow(
     row.addEventListener('click', async () => {
       const file = await resolveDailyNote(plugin.app, plugin.settings);
       if (!file) return;
-      await checkboxMgr.setCheckboxValue(plugin.app, file, tracker, !current);
+      await tryWrite(() => checkboxMgr.setCheckboxValue(plugin.app, file, tracker, !current));
+      // Repaint either way: on failure this resets the row to what's on disk.
       await repaint();
     });
   }
@@ -422,7 +424,7 @@ function buildTallyScheduleControls(
   const write = async (next: number): Promise<void> => {
     const file = await resolveDailyNote(plugin.app, plugin.settings);
     if (!file) return;
-    await updateTallyValue(plugin.app, file, t, Math.max(0, next));
+    await tryWrite(() => updateTallyValue(plugin.app, file, t, Math.max(0, next)));
     await repaint();
   };
 
@@ -465,7 +467,7 @@ function buildCheckboxScheduleControls(
   row.addEventListener('click', async () => {
     const file = await resolveDailyNote(plugin.app, plugin.settings);
     if (!file) return;
-    await checkboxMgr.setCheckboxValue(plugin.app, file, t, !current);
+    await tryWrite(() => checkboxMgr.setCheckboxValue(plugin.app, file, t, !current));
     await repaint();
   });
 }

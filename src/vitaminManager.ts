@@ -21,6 +21,12 @@ import { applyTemplate } from './template';
 
 const DEFAULT_SUPPLEMENT_TEMPLATE = '- {time} {name} {amount}{unit}';
 
+/** One frontmatter list entry, staged in memory before anything is written. */
+interface StagedEntry {
+  propertyKey: string;
+  entry: unknown;
+}
+
 // ── Public API ───────────────────────────────────────────────
 
 /**
@@ -34,28 +40,8 @@ export async function logVitamin(
   opts: { time: string; amount: number; note?: string; source?: string; appendToNote?: boolean },
   settings: VitalLogSettings
 ): Promise<void> {
-  const includeSource = settings.logSource !== false;
-
-  if (settings.logMode === 'substances') {
-    const entry: SubstanceEntry = {
-      name: vitamin.displayName,
-      amount: opts.amount,
-      unit: vitamin.unit,
-      time: opts.time,
-      ...(opts.note ? { note: opts.note } : {}),
-      ...(includeSource && opts.source ? { source: opts.source } : {}),
-    };
-    await yaml.appendEntry(app, file, 'substances', entry);
-  } else {
-    const entry: VitaminEntry = {
-      time: opts.time,
-      amount: opts.amount,
-      unit: vitamin.unit,
-      ...(opts.note ? { note: opts.note } : {}),
-      ...(includeSource ? { source: opts.source ?? 'manual' } : {}),
-    };
-    await yaml.appendEntry(app, file, vitamin.propertyKey, entry);
-  }
+  const staged = stageVitamin(vitamin, opts, settings);
+  await yaml.appendEntry(app, file, staged.propertyKey, staged.entry);
 
   if (opts.appendToNote) {
     const template = settings.noteContentTemplate_supplements || DEFAULT_SUPPLEMENT_TEMPLATE;
@@ -83,33 +69,14 @@ export async function logPack(
   settings: VitalLogSettings,
   opts: { time: string; source?: string; appendToNote?: boolean }
 ): Promise<void> {
-  const source = opts.source ?? 'manual';
-  const includeSource = settings.logSource !== false;
-
-  // 1. Append pack entry (optional)
-  if (settings.logPackEntries !== false) {
-    const packEntry: PackEntry = {
-      time: opts.time,
-      name: pack.displayName,
-      ...(includeSource ? { source } : {}),
-    };
-    await yaml.appendEntry(app, file, 'packs', packEntry);
-  }
-
-  // 2. Append each vitamin entry (no per-vitamin note content — pack handles that)
   const skipped: string[] = [];
-  for (const item of pack.items) {
-    const vitamin = settings.vitamins.find((v) => v.id === item.vitaminId);
-    if (!vitamin) {
-      skipped.push(item.vitaminId);
-      continue;
-    }
-    await logVitamin(app, file, vitamin, {
-      time: opts.time,
-      amount: item.amount,
-      source: pack.displayName,
-    }, settings);
-  }
+  const staged = stagePack(pack, settings, opts, skipped);
+
+  // Commit the pack entry and every vitamin entry in one pass, so a failure
+  // can't leave the note holding a pack with only some of its contents.
+  await yaml.mutateFrontmatter(app, file, (_fm, appendTo) => {
+    for (const { propertyKey, entry } of staged) appendTo(propertyKey, entry);
+  });
 
   if (skipped.length > 0) {
     new Notice(
@@ -143,17 +110,25 @@ export async function logStack(
   settings: VitalLogSettings,
   opts: { time: string; appendToNote?: boolean }
 ): Promise<void> {
-  // 1. Append stack entry (optional)
+  const skipped: string[] = [];
+  const staged: StagedEntry[] = [];
+
+  // 1. Stack entry (optional)
   if (settings.logStackEntries !== false) {
     const stackEntry: StackEntry = { time: opts.time, name: stack.displayName };
-    await yaml.appendEntry(app, file, 'stacks', stackEntry);
+    staged.push({ propertyKey: 'stacks', entry: stackEntry });
   }
 
-  // 2. Process each item (no per-item note content — stack handles that below)
-  const skipped: string[] = [];
+  // 2. Every item, including the contents of nested packs
+  //    (no per-item note content — the stack handles that below)
   for (const item of stack.items) {
-    await processStackItem(app, file, item, stack, settings, opts, skipped);
+    staged.push(...stageStackItem(item, stack, settings, opts, skipped));
   }
+
+  // Commit the whole stack — entry, packs, and vitamins — in one write.
+  await yaml.mutateFrontmatter(app, file, (_fm, appendTo) => {
+    for (const { propertyKey, entry } of staged) appendTo(propertyKey, entry);
+  });
 
   if (skipped.length > 0) {
     new Notice(
@@ -192,33 +167,96 @@ export async function logStack(
 
 // ── Helpers ──────────────────────────────────────────────────
 
-async function processStackItem(
-  app: App,
-  file: TFile,
+/** Build the single frontmatter entry a vitamin log produces. Pure — writes nothing. */
+function stageVitamin(
+  vitamin: Vitamin,
+  opts: { time: string; amount: number; note?: string; source?: string },
+  settings: VitalLogSettings
+): StagedEntry {
+  const includeSource = settings.logSource !== false;
+
+  if (settings.logMode === 'substances') {
+    const entry: SubstanceEntry = {
+      name: vitamin.displayName,
+      amount: opts.amount,
+      unit: vitamin.unit,
+      time: opts.time,
+      ...(opts.note ? { note: opts.note } : {}),
+      ...(includeSource && opts.source ? { source: opts.source } : {}),
+    };
+    return { propertyKey: 'substances', entry };
+  }
+
+  const entry: VitaminEntry = {
+    time: opts.time,
+    amount: opts.amount,
+    unit: vitamin.unit,
+    ...(opts.note ? { note: opts.note } : {}),
+    ...(includeSource ? { source: opts.source ?? 'manual' } : {}),
+  };
+  return { propertyKey: vitamin.propertyKey, entry };
+}
+
+/** Build every entry a pack log produces, recording unknown vitamin IDs in `skipped`. */
+function stagePack(
+  pack: Pack,
+  settings: VitalLogSettings,
+  opts: { time: string; source?: string },
+  skipped: string[]
+): StagedEntry[] {
+  const staged: StagedEntry[] = [];
+  const includeSource = settings.logSource !== false;
+
+  if (settings.logPackEntries !== false) {
+    const packEntry: PackEntry = {
+      time: opts.time,
+      name: pack.displayName,
+      ...(includeSource ? { source: opts.source ?? 'manual' } : {}),
+    };
+    staged.push({ propertyKey: 'packs', entry: packEntry });
+  }
+
+  for (const item of pack.items) {
+    const vitamin = settings.vitamins.find((v) => v.id === item.vitaminId);
+    if (!vitamin) {
+      skipped.push(item.vitaminId);
+      continue;
+    }
+    staged.push(stageVitamin(vitamin, {
+      time: opts.time,
+      amount: item.amount,
+      source: pack.displayName,
+    }, settings));
+  }
+
+  return staged;
+}
+
+/** Build every entry one stack item produces, flattening nested packs. */
+function stageStackItem(
   item: StackItemType,
   stack: Stack,
   settings: VitalLogSettings,
   opts: { time: string },
   skipped: string[]
-): Promise<void> {
+): StagedEntry[] {
   if (item.type === 'pack') {
     const pack = settings.packs.find((p) => p.id === item.packId);
     if (!pack) {
       skipped.push(`pack:${item.packId}`);
-      return;
+      return [];
     }
-    await logPack(app, file, pack, settings, { time: opts.time, source: stack.displayName });
-  } else {
-    const vitamin = settings.vitamins.find((v) => v.id === item.vitaminId);
-    if (!vitamin) {
-      skipped.push(`vitamin:${item.vitaminId}`);
-      return;
-    }
-    const amount = item.amount ?? vitamin.defaultAmount;
-    await logVitamin(app, file, vitamin, {
-      time: opts.time,
-      amount,
-      source: stack.displayName,
-    }, settings);
+    return stagePack(pack, settings, { time: opts.time, source: stack.displayName }, skipped);
   }
+
+  const vitamin = settings.vitamins.find((v) => v.id === item.vitaminId);
+  if (!vitamin) {
+    skipped.push(`vitamin:${item.vitaminId}`);
+    return [];
+  }
+  return [stageVitamin(vitamin, {
+    time: opts.time,
+    amount: item.amount ?? vitamin.defaultAmount,
+    source: stack.displayName,
+  }, settings)];
 }

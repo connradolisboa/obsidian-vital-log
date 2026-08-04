@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      # main.js is gitignored, but manifest.json and styles.css are tracked at
+      # the root and mirrored into dist/ by the build. A diff here means the
+      # committed dist/ copies drifted from the source files.
+      - name: Check committed dist/ mirrors the source files
+        run: git diff --exit-code -- manifest.json styles.css dist/
