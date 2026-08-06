@@ -28,3 +28,9 @@
 ## 1.1.0
 
 - Previous public release.
+
+## Related
+
+- [README](README.md) - User guide
+- [Feature Roadmap](FEATURES.md) - Planned work
+- [Contributing](CONTRIBUTING.md) - Development and release workflow

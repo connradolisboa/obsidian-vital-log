@@ -2,7 +2,7 @@
 
 An Obsidian plugin for logging vitamins, supplements, wellness trackers, tally counters, and custom forms into your notes — with minimal friction.
 
-All data lands in your vault as clean YAML frontmatter, queryable by DataView or any other plugin.
+Structured logs land in your vault as clean YAML frontmatter, queryable by Dataview or any other plugin. Free-form inline counters update their value directly in note content.
 
 ---
 
@@ -50,17 +50,18 @@ All data lands in your vault as clean YAML frontmatter, queryable by DataView or
 
 ## Installation
 
-### From Obsidian Community Plugins
+Vital Log requires **Obsidian 1.4.0 or newer** and supports both desktop and mobile.
 
-1. Open **Settings** → **Community Plugins**
-2. Search for **Vital Log**
-3. Click **Install**, then **Enable**
+Vital Log is not currently listed in Obsidian's official Community Plugins directory.
 
-### Manual Installation
+### Install with BRAT
 
-1. Download the [latest release from GitHub](https://github.com/connradolisboa/obsidian-vital-log/releases/latest)
-2. Copy `main.js`, `manifest.json`, and `styles.css` to `.obsidian/plugins/vital-log/`
-3. Reload Obsidian and enable the plugin in **Settings → Community Plugins**
+1. Install and enable [BRAT](https://github.com/TfTHacker/obsidian42-brat) from Obsidian's Community Plugins directory.
+2. Run **BRAT: Add a beta plugin for testing** from the Command Palette.
+3. Enter `https://github.com/connradolisboa/obsidian-vital-log` and add the plugin.
+4. Enable **Vital Log** in **Settings → Community Plugins**.
+
+For release-file installation and local development, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
@@ -70,7 +71,7 @@ All data lands in your vault as clean YAML frontmatter, queryable by DataView or
 
 In **Settings → Vital Log → General**, configure the path to your daily (or any periodic) note:
 
-```
+```text
 Calendar/Daily/{{YYYY}}/Q{{Q}}/{{YYYY-MM-DD dddd}}
 ```
 
@@ -90,13 +91,13 @@ Supported tokens:
 
 ### 2. Add Vitamins (Optional)
 
-**Settings → Vital Log → General → Manage Data → Vitamins → Open Manager**
+**Settings → Vital Log → Library → Vitamins → Open Manager**
 
 Add vitamins with a display name, property key (e.g. `vitaminC`), default amount, and unit.
 
 ### 3. Log Something
 
-Press the **pill icon** in the ribbon or use **Cmd/Ctrl+P** → *Log Supplement*.
+Press the **pill icon** in the ribbon or use **Cmd/Ctrl+P** → *Log Vitamin*, *Log Pack*, or *Log Stack*.
 
 ---
 
@@ -131,7 +132,7 @@ Switch between modes in **Settings → Vital Log → General → Log Mode**.
 
 Group vitamins into reusable packs (e.g. "Morning Vitamins"). Log an entire pack with one click. Each pack item can override the vitamin's default amount.
 
-**Settings → Vital Log → Manage Packs**
+**Settings → Vital Log → Library → Packs → Open Manager**
 
 ```yaml
 packs:
@@ -143,7 +144,7 @@ packs:
 
 Combine packs and individual vitamins into named stacks with a scheduling hint (Morning, Evening, Pre-workout, Post-workout, Custom). Log everything in a stack at once.
 
-**Settings → Vital Log → Manage Stacks**
+**Settings → Vital Log → Library → Stacks → Open Manager**
 
 ```yaml
 stacks:
@@ -167,7 +168,7 @@ Independently enable or disable writing `packs: [...]` and `stacks: [...]` entri
 
 Numeric trackers with a configurable range. Two built-in trackers (Mood and Energy, 1–5 scale) and unlimited custom ones.
 
-**Settings → Vital Log → Trackers → Add Tracker**
+**Settings → Vital Log → Metrics → Add Metric**, then choose **Tracker**.
 
 Fields: display name, frontmatter property key, value field name, min, max, icon.
 
@@ -189,7 +190,7 @@ Access via the **activity icon** in the ribbon or *Log Tracker* command.
 
 Running daily counts with a target. Great for habits, repetitions, servings — anything you want to count toward a goal.
 
-**Settings → Vital Log → Tally Counters → Add Counter**
+**Settings → Vital Log → Metrics → Add Metric**, then choose **Tally Counter**.
 
 Options per counter:
 - **Display name** and **icon**
@@ -312,7 +313,7 @@ Enable **Mirror Mode** on any custom modal to make it context-aware: instead of 
 
 **Other Properties** — optionally show a collapsed "Other Properties" section listing all other frontmatter keys in the note that aren't covered by the modal's fields.
 
-Configure excluded keys (keys to never show in Other Properties) at **Settings → Vital Log → Mirror Excluded Keys**.
+Configure excluded keys at **Settings → Vital Log → General → Mirror Mode → Excluded property keys**.
 
 ---
 
@@ -320,7 +321,7 @@ Configure excluded keys (keys to never show in Other Properties) at **Settings �
 
 Render any custom modal as an interactive card directly inside a note using a fenced code block:
 
-````
+````markdown
 ```vital-log
 My Modal Name
 ```
@@ -337,7 +338,7 @@ Add one option per line after the modal name:
 | `-` | Collapsible, starts **collapsed** |
 
 **Example — invisible embed:**
-````
+````markdown
 ```vital-log
 Daily Review
 invisible
@@ -345,7 +346,7 @@ invisible
 ````
 
 **Example — collapsible, starts collapsed:**
-````
+````markdown
 ```vital-log
 Morning Checklist
 -
@@ -377,7 +378,7 @@ The name must match the habit's display name. Toggling it writes the boolean val
 
 Links to a tally counter defined in settings. Displays the current value, target, and +/− buttons.
 
-```
+```markdown
 Today I did `tally: Pushups` sets.
 ```
 
@@ -391,7 +392,7 @@ If the named tally counter isn't found in settings, it renders an error label.
 
 A free-form counter that doesn't require any settings configuration. It stores its value directly on the same line in the note file — the number sitting immediately before the counter tag.
 
-```
+```markdown
 Water glasses: 3 `counter: Water`
 Fried chicken: 0 `counter: Fried Chicken`
 ```
@@ -418,7 +419,7 @@ Customize the appended line in **Settings → Vital Log → General**:
 | Tally specific-note | `{dailyNote}` `{time}` `{name}` `{value}` `{target}` |
 
 Default supplement template:
-```
+```text
 - {time} {name} {amount}{unit}
 ```
 
@@ -574,11 +575,10 @@ MIT — use, modify, and distribute freely.
 
 Issues and pull requests are welcome on [GitHub](https://github.com/connradolisboa/obsidian-vital-log).
 
-Before opening a pull request:
+See [CONTRIBUTING.md](CONTRIBUTING.md) for local setup, validation, manual installation, and the pull-request workflow.
 
-```bash
-npm install
-npm run typecheck   # tsc, no emit
-npm test            # vitest
-npm run build       # bundles main.js and refreshes dist/
-```
+## Related
+
+- [Feature Roadmap](FEATURES.md) - Planned work and implemented roadmap items
+- [Changelog](CHANGELOG.md) - Changes by release
+- [GitHub Releases](https://github.com/connradolisboa/obsidian-vital-log/releases) - Published installation files
