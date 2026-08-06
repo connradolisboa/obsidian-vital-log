@@ -77,6 +77,23 @@
   font-size: 1rem;            /* prevents iOS zoom on focus */
 }
 
+/* Searchable command selector used by custom-modal action buttons. */
+.vital-log-command-picker {
+  display: flex;
+  width: 100%;
+  gap: 0.4rem;
+}
+
+.vital-log-command-picker input[readonly] {
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.vital-log-command-picker .vital-log-btn {
+  flex-shrink: 0;
+}
+
 /* Checkbox rows always lay out horizontally with natural-size checkbox */
 .vital-log-form-row:has(input[type="checkbox"]) {
   flex-direction: row;
@@ -108,6 +125,11 @@
     width: auto;
     min-height: unset;
     font-size: inherit;
+  }
+
+  .vital-log-command-picker {
+    flex: 1;
+    width: auto;
   }
 }
 

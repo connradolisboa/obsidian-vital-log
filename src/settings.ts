@@ -15,6 +15,8 @@ import { findStaleReferences, removeStaleReferences } from './referenceCheck';
 import { validatePropertyKey, allKeyOwners } from './validation';
 import { findUnknownPathTokens } from './dailyNoteResolver';
 import { createIconField } from './iconPicker';
+import { CommandPickerModal, commandLabel } from './commandPicker';
+import { getRegisteredCommands } from './internal';
 import { makeReorderable } from './dragReorder';
 import {
   GuardedModal,
@@ -2072,25 +2074,63 @@ class CustomModalEditorModal extends GuardedModal {
     typeSelect.createEl('option', { value: 'command', text: 'Run command' });
     typeSelect.value = button.buttonType;
 
-    const targetRow = form.createDiv('vital-log-form-row');
-    const targetLabel = targetRow.createEl('label', { text: 'File path' });
-    const targetInput = targetRow.createEl('input', {
+    const fileTargetRow = form.createDiv('vital-log-form-row');
+    fileTargetRow.createEl('label', { text: 'File path' });
+    const fileTargetInput = fileTargetRow.createEl('input', {
       type: 'text',
       placeholder: 'Notes/Journal.md',
-      value: button.target,
+      value: button.buttonType === 'filelink' ? button.target : '',
     });
-    const targetError = attachFieldError(targetRow, targetInput);
+    const fileTargetError = attachFieldError(fileTargetRow, fileTargetInput);
 
-    const updateTargetLabel = () => {
-      if (typeSelect.value === 'filelink') {
-        targetLabel.setText('File path');
-        targetInput.placeholder = 'Notes/Journal.md';
-      } else {
-        targetLabel.setText('Command ID');
-        targetInput.placeholder = 'daily-notes:open-daily-note';
-      }
+    let selectedCommandId = button.buttonType === 'command' ? button.target : '';
+    const registeredCommands = getRegisteredCommands(this.app);
+    const commandTargetRow = form.createDiv('vital-log-form-row');
+    commandTargetRow.createEl('label', { text: 'Command' });
+    const commandPicker = commandTargetRow.createDiv('vital-log-command-picker');
+    const commandNameInput = commandPicker.createEl('input', {
+      type: 'text',
+      placeholder: 'Choose a command',
+      value: commandLabel(registeredCommands, selectedCommandId),
+      attr: { readonly: 'readonly' },
+    });
+    const chooseCommandBtn = commandPicker.createEl('button', {
+      type: 'button',
+      text: selectedCommandId ? 'Change' : 'Choose',
+      cls: 'vital-log-btn',
+    });
+    const commandTargetError = attachFieldError(commandTargetRow, commandNameInput);
+
+    const openCommandPicker = (): void => {
+      new CommandPickerModal(this.app, (command) => {
+        selectedCommandId = command.id;
+        commandNameInput.value = command.name;
+        chooseCommandBtn.setText('Change');
+        commandTargetError.clear();
+        commandNameInput.dispatchEvent(new Event('change', { bubbles: true }));
+      }).open();
     };
-    typeSelect.addEventListener('change', updateTargetLabel);
+    commandNameInput.addEventListener('click', openCommandPicker);
+    commandNameInput.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      event.stopPropagation();
+      openCommandPicker();
+    });
+    chooseCommandBtn.addEventListener('click', openCommandPicker);
+    chooseCommandBtn.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') event.stopPropagation();
+    });
+
+    const updateTargetVisibility = (): void => {
+      const isCommand = typeSelect.value === 'command';
+      fileTargetRow.style.display = isCommand ? 'none' : '';
+      commandTargetRow.style.display = isCommand ? '' : 'none';
+      if (isCommand) fileTargetError.clear();
+      else commandTargetError.clear();
+    };
+    updateTargetVisibility();
+    typeSelect.addEventListener('change', updateTargetVisibility);
 
     const iconRow = form.createDiv('vital-log-form-row');
     iconRow.createEl('label', { text: 'Icon (optional)' });
@@ -2107,16 +2147,16 @@ class CustomModalEditorModal extends GuardedModal {
     const saveBtn = actions.createEl('button', { text: 'Save Button', cls: 'vital-log-btn mod-cta' });
     const save = (): void => {
       if (!requireValue(nameInput, nameError, 'Give this button a label.')) return;
-      if (!requireValue(
-        targetInput,
-        targetError,
-        typeSelect.value === 'filelink'
-          ? 'Enter the file path this button should open.'
-          : 'Enter the ID of the command this button should run.'
-      )) return;
+      if (typeSelect.value === 'filelink') {
+        if (!requireValue(fileTargetInput, fileTargetError, 'Enter the file path this button should open.')) return;
+      } else if (!requireValue(commandNameInput, commandTargetError, 'Choose the command this button should run.')) {
+        return;
+      }
 
       const name = nameInput.value.trim();
-      const target = targetInput.value.trim();
+      const target = typeSelect.value === 'filelink'
+        ? fileTargetInput.value.trim()
+        : selectedCommandId;
 
       button.displayName = name;
       button.buttonType = typeSelect.value as 'filelink' | 'command';

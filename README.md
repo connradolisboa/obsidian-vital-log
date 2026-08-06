@@ -14,6 +14,9 @@ All data lands in your vault as clean YAML frontmatter, queryable by DataView or
 - [Supplement Logging](#supplement-logging)
 - [Wellness Trackers](#wellness-trackers)
 - [Tally Counters](#tally-counters)
+- [Dashboard & Planning](#dashboard--planning)
+- [Checkbox Habits](#checkbox-habits)
+- [Life Events](#life-events)
 - [Custom Modals](#custom-modals)
 - [Embedded Modals](#embedded-modals)
 - [Inline Widgets](#inline-widgets)
@@ -32,6 +35,9 @@ All data lands in your vault as clean YAML frontmatter, queryable by DataView or
 | Supplement logging | Log vitamins, packs, and stacks into daily note frontmatter |
 | Wellness trackers | Mood, energy, and custom numeric trackers |
 | Tally counters | Daily running counts with targets, step sizes, and status bar display |
+| Dashboard & planning | Review a day, track goals and streaks, schedule recurring items, and inspect range sparklines |
+| Checkbox habits | Track simple done/not-done habits with dashboard streaks |
+| Life events | Log events with severity and optionally overlay them on dashboard sparklines |
 | Custom modals | Build your own logging forms with 10 field types |
 | Embedded modals | Render any custom modal as an interactive card inside a note |
 | Inline tally widget | `\`tally: Name\`` renders a live counter anywhere in a note |
@@ -52,7 +58,7 @@ All data lands in your vault as clean YAML frontmatter, queryable by DataView or
 
 ### Manual Installation
 
-1. Download the latest release from GitHub
+1. Download the [latest release from GitHub](https://github.com/connradolisboa/obsidian-vital-log/releases/latest)
 2. Copy `main.js`, `manifest.json`, and `styles.css` to `.obsidian/plugins/vital-log/`
 3. Reload Obsidian and enable the plugin in **Settings → Community Plugins**
 
@@ -202,9 +208,60 @@ Counters mark themselves complete (visual highlight) once the value reaches the 
 
 ---
 
+## Dashboard & Planning
+
+Open the dashboard from the **layout-dashboard ribbon icon** or the **Open Dashboard** command. It provides:
+
+- A navigable day view with tracker goals, checkbox habits, and scheduled supplements, stacks, tallies, and habits
+- One-click logging and completion controls for items due that day
+- Range views with tracker statistics and sparklines
+- Historical goals, so changing a target today does not rewrite past targets
+
+Configure tracker goals and daily, weekday, or every-N-days schedules in **Settings → Vital Log → Plan**.
+
+You can also embed a dashboard in a note:
+
+````markdown
+```vital-dashboard
+range: 2026-08-01..2026-08-07
+trackers: Mood, Energy
+view: sparkline
+```
+````
+
+All options are optional. A blank `vital-dashboard` block uses the note's date when its path matches your configured daily-note template; otherwise it uses today.
+
+---
+
+## Checkbox Habits
+
+Create a metric with the **Checkbox (habit toggle)** type for simple done/not-done tracking. The value is stored as a boolean in frontmatter and can be toggled from the dashboard, schedules, and inline widgets. Enable its goal in the **Plan** tab to show its current streak.
+
+```yaml
+morningWalk: true
+```
+
+---
+
+## Life Events
+
+Log one-off events such as illness, travel, or rest days from the **calendar-clock ribbon icon** or the **Log Event** command. Each event records a time, severity from 1–5, and an optional note. Reused event names become quick-select buttons automatically.
+
+Configure event types, storage, note-body templates, and optional sparkline markers in **Settings → Vital Log → Events**.
+
+```yaml
+events:
+  - time: "10:30"
+    name: "Traveling"
+    severity: 2
+    note: "Long flight"
+```
+
+---
+
 ## Custom Modals
 
-Build your own logging forms. Each modal becomes a ribbon icon and a command.
+Build your own logging forms. Each active modal becomes a command and appears in the Custom Modals chooser.
 
 **Settings → Vital Log → Custom Modals → Add Custom Modal**
 
@@ -239,7 +296,7 @@ Drop any tally counter directly into a custom modal as a +/− row.
 
 Add action buttons to a modal that either:
 - **Open a file** — navigates to a vault note
-- **Run a command** — executes any Obsidian command by ID
+- **Run a command** — opens an Obsidian-style searchable command picker; Vital Log stores the selected command ID internally
 
 ### Templater Integration
 
@@ -306,6 +363,16 @@ Morning Checklist
 
 Render interactive counters anywhere inside a note using inline code syntax. These work in reading view.
 
+### Inline Checkbox — `checkbox: Name`
+
+Links to a checkbox habit defined in **Settings → Vital Log → Metrics** and renders a live done/not-done control.
+
+```markdown
+Morning routine: `checkbox: Morning Walk`
+```
+
+The name must match the habit's display name. Toggling it writes the boolean value to today's daily note.
+
 ### Inline Tally — `tally: Name`
 
 Links to a tally counter defined in settings. Displays the current value, target, and +/− buttons.
@@ -365,8 +432,9 @@ Default supplement template:
 |---|---|
 | Pill | Open main supplement log modal |
 | Activity | Open tracker modal |
+| Calendar clock | Open event modal |
+| Dashboard | Open dashboard pane |
 | Grid | Open custom modal chooser |
-| One icon per custom modal | Open that specific modal directly |
 
 ### Command Palette
 
@@ -374,6 +442,9 @@ Default supplement template:
 - **Log Pack** — open log modal on the Pack tab
 - **Log Stack** — open log modal on the Stack tab
 - **Log Tracker** — open tracker modal
+- **Log Event** — open event modal
+- **Open Dashboard** — open the dashboard pane
+- **Open Dashboard (modal)** — open the dashboard in a modal
 - **View History** — browse all logged entries across daily notes
 - **Manage Vitamins / Packs / Stacks** — open management interface
 - *One command per custom modal* — auto-generated from modal display names

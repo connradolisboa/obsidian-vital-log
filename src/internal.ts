@@ -6,7 +6,7 @@
 // one-file fix instead of a hunt across the codebase.
 // ============================================================
 
-import type { App, TFile } from 'obsidian';
+import type { App, Command, TFile } from 'obsidian';
 
 /** The slice of Templater's plugin API that we use. */
 export interface TemplaterPlugin {
@@ -17,7 +17,8 @@ export interface TemplaterPlugin {
 }
 
 interface CommandRegistry {
-  commands?: Record<string, unknown>;
+  commands?: Record<string, Command>;
+  listCommands?: () => Command[];
   executeCommandById?: (id: string) => void;
 }
 
@@ -49,6 +50,20 @@ export function removeCommand(app: App, fullId: string): void {
 /** Run a registered command by id. No-ops if the command API is unavailable. */
 export function executeCommandById(app: App, id: string): void {
   asInternal(app).commands?.executeCommandById?.(id);
+}
+
+/** Return every command currently available to Obsidian's command palette. */
+export function getRegisteredCommands(app: App): Command[] {
+  const registry = asInternal(app).commands;
+  const commands = registry?.listCommands?.() ?? Object.values(registry?.commands ?? {});
+  const seen = new Set<string>();
+
+  return commands.filter((command): command is Command => {
+    if (!command || typeof command.id !== 'string' || typeof command.name !== 'string') return false;
+    if (seen.has(command.id)) return false;
+    seen.add(command.id);
+    return true;
+  });
 }
 
 /** The Templater plugin instance, or null if it isn't installed/enabled. */
