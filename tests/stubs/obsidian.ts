@@ -54,10 +54,28 @@ export class TFile {
  */
 export class Vault {
   private files = new Map<string, string>();
+  private folders = new Set<string>();
 
   create(path: string, content: string): TFile {
     this.files.set(path, content);
     return new TFile(path);
+  }
+
+  /**
+   * Files only — folders return null, which is what dailyNoteResolver's
+   * ensureFolderExists checks before creating one.
+   */
+  getAbstractFileByPath(path: string): TFile | null {
+    return this.files.has(path) ? new TFile(path) : null;
+  }
+
+  async createFolder(path: string): Promise<void> {
+    this.folders.add(path);
+  }
+
+  /** Test-only: folders created so far. */
+  createdFolders(): string[] {
+    return [...this.folders];
   }
 
   async read(file: TFile): Promise<string> {

@@ -32,9 +32,16 @@ import { DashboardModal } from './src/dashboardModal';
 import { registerDashboardEmbed } from './src/dashboardEmbed';
 import { removeCommand } from './src/internal';
 import { EventModal } from './src/eventModal';
+import { createVitalLogApi } from './src/api';
+import type { VitalLogApi } from './src/api';
 
 export default class VitalLogPlugin extends Plugin {
   settings: VitalLogSettings = DEFAULT_SETTINGS;
+
+  // Public API for other plugins: app.plugins.plugins['vital-log'].api
+  // Built here rather than in onload() so it exists as soon as the instance
+  // does, and reads `this.settings` lazily so it tracks later settings edits.
+  readonly api: VitalLogApi = createVitalLogApi(this.app, () => this.settings);
 
   // Track dynamically registered command IDs so we can unregister on change
   private customModalCommandIds: string[] = [];
