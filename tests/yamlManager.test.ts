@@ -64,6 +64,37 @@ describe('malformed frontmatter', () => {
   });
 });
 
+describe('empty frontmatter', () => {
+  // Regression: an empty block parses to `undefined`, which was being treated
+  // as damage. resolveNote() creates every new note as exactly "---\n---\n",
+  // so this made a freshly created daily note permanently unwritable.
+  it('accepts a write into a newly created note', async () => {
+    const { app, file } = setup('---\n---\n');
+
+    await yaml.appendEntry(app as never, file as never, 'moodLog', { time: '14:30', mood: 4 });
+
+    expect(await yaml.readAllFrontmatter(app as never, file as never)).toMatchObject({
+      moodLog: [{ time: '14:30', mood: 4 }],
+    });
+  });
+
+  it('accepts a whitespace-only block', async () => {
+    const { app, file } = setup('---\n   \n---\nbody\n');
+
+    await yaml.setProperties(app as never, file as never, { steps: 1000 });
+
+    expect(await yaml.readAllFrontmatter(app as never, file as never)).toMatchObject({ steps: 1000 });
+  });
+
+  it('keeps the body when filling in an empty block', async () => {
+    const { app, file } = setup('---\n---\nbody text\n');
+
+    await yaml.setProperties(app as never, file as never, { steps: 1000 });
+
+    expect(app.vault.raw(file.path)).toContain('body text');
+  });
+});
+
 describe('frontmatter preservation on successful writes', () => {
   it('keeps unrelated properties intact', async () => {
     const { app, file } = setup('---\ntitle: Monday\nmood: 7\n---\nbody\n');

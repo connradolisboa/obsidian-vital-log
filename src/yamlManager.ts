@@ -384,14 +384,21 @@ async function processFrontmatter(
         );
         return content;
       }
-      if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+      if (raw === undefined || raw === null) {
+        // An empty block ("---\n---") parses to undefined. That is not damage:
+        // it is exactly what resolveNote() writes when it creates a note, so
+        // treating it as malformed would make a freshly created daily note
+        // permanently unwritable.
+        fm = {};
+      } else if (typeof raw !== 'object' || Array.isArray(raw)) {
         abort.error = new AbortError(
           `frontmatter of "${file.path}" is not a mapping`,
           'malformed-frontmatter'
         );
         return content;
+      } else {
+        fm = raw as FrontmatterRecord;
       }
-      fm = raw as FrontmatterRecord;
       body = parsed.body;
     } else {
       fm = {};
