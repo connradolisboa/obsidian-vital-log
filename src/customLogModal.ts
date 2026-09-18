@@ -21,7 +21,7 @@ import * as yaml from './yamlManager';
 import * as tally from './tallyManager';
 import * as tm from './trackerManager';
 import { executeCommandById, getTemplaterPlugin } from './internal';
-import { applyTemplate } from './template';
+import { applyTemplate, noteContentHeading } from './template';
 import { createAppendToggle } from './formUI';
 
 // moment is bundled with Obsidian
@@ -1033,10 +1033,10 @@ export class CustomLogModal extends Modal {
                 value: String(entry.value),
                 target: String(config.target),
               });
-              await yaml.appendLineToBody(this.app, targetFile, line);
+              await yaml.appendLineToBody(this.app, targetFile, line, noteContentHeading(this.settings));
             }
           } else {
-            await tally.appendTallyToNote(this.app, file, config, entry, template);
+            await tally.appendTallyToNote(this.app, file, config, entry, template, noteContentHeading(this.settings));
           }
         }
       }

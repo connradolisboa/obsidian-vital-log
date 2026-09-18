@@ -17,7 +17,7 @@ import type {
   StackItemType,
 } from './types';
 import * as yaml from './yamlManager';
-import { applyTemplate } from './template';
+import { applyTemplate, noteContentHeading } from './template';
 
 const DEFAULT_SUPPLEMENT_TEMPLATE = '- {time} {name} {amount}{unit}';
 
@@ -52,7 +52,7 @@ export async function logVitamin(
       unit: vitamin.unit,
       note: opts.note ?? '',
     });
-    await yaml.appendLineToBody(app, file, line);
+    await yaml.appendLineToBody(app, file, line, noteContentHeading(settings));
   }
 }
 
@@ -94,7 +94,7 @@ export async function logPack(
       unit: '',
       note: '',
     });
-    await yaml.appendLineToBody(app, file, line);
+    await yaml.appendLineToBody(app, file, line, noteContentHeading(settings));
   }
 }
 
@@ -161,7 +161,7 @@ export async function logStack(
       unit: '',
       note: '',
     });
-    await yaml.appendLineToBody(app, file, line);
+    await yaml.appendLineToBody(app, file, line, noteContentHeading(settings));
   }
 }
 

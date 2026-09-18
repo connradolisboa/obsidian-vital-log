@@ -7,7 +7,7 @@
 import type { App, TFile } from 'obsidian';
 import type { VitalLogSettings, EventEntry, EventType } from './types';
 import { appendEntry, appendLineToBody } from './yamlManager';
-import { applyTemplate } from './template';
+import { applyTemplate, noteContentHeading } from './template';
 
 export async function logEvent(
   app: App,
@@ -25,7 +25,7 @@ export async function logEvent(
       severity: String(entry.severity),
       note: entry.note ?? '',
     });
-    await appendLineToBody(app, file, line);
+    await appendLineToBody(app, file, line, noteContentHeading(settings));
   }
 }
 

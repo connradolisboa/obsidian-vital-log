@@ -263,6 +263,31 @@ export class VitalLogSettingTab extends PluginSettingTab {
     el.createEl('h3', { text: 'Note Content' });
 
     new Setting(el)
+      .setName('Append below a heading')
+      .setDesc('Insert note-content lines under a heading instead of at the very end of the file. Matched by text, at any heading level; created at the end of the note if it doesn\'t exist yet. Applies to supplements, trackers, tallies, and events.')
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.noteContentUseHeading === true)
+          .onChange(async (value) => {
+            this.plugin.settings.noteContentUseHeading = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(el)
+      .setName('Heading text')
+      .setDesc('Heading to append note-content lines under, without the leading "#" (e.g. "Log").')
+      .addText((text) =>
+        text
+          .setPlaceholder('Log')
+          .setValue(this.plugin.settings.noteContentHeading ?? 'Log')
+          .onChange(async (value) => {
+            this.plugin.settings.noteContentHeading = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(el)
       .setName('Append supplements to note content (default on)')
       .setDesc('Default state of the "Also add to note" checkbox when logging vitamins, packs, or stacks.')
       .addToggle((toggle) =>

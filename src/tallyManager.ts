@@ -45,12 +45,13 @@ export async function appendTallyToNote(
   file: TFile,
   config: TallyCounterConfig,
   entry: TallyEntry,
-  template: string
+  template: string,
+  heading?: string
 ): Promise<void> {
   const line = applyTemplate(template, {
     name: config.displayName,
     value: String(entry.value),
     target: String(config.target),
   });
-  await appendLineToBody(app, file, line);
+  await appendLineToBody(app, file, line, heading);
 }

@@ -218,3 +218,96 @@ describe('mutateFrontmatter', () => {
     expect(app.vault.raw(file.path)).toBe(original);
   });
 });
+
+describe('appendLineToBody with a heading', () => {
+  it('appends at the end of the file when no heading is given', async () => {
+    const { app, file } = setup('---\ntitle: Monday\n---\nexisting body\n');
+
+    await yaml.appendLineToBody(app as never, file as never, '- new line');
+
+    expect(app.vault.raw(file.path)).toBe(
+      '---\ntitle: Monday\n---\nexisting body\n- new line\n'
+    );
+  });
+
+  it('inserts under an existing heading, after its current content', async () => {
+    const original = [
+      '---',
+      'title: Monday',
+      '---',
+      '## Log',
+      '- first entry',
+      '',
+      '## Notes',
+      'some notes',
+      '',
+    ].join('\n');
+    const { app, file } = setup(original);
+
+    await yaml.appendLineToBody(app as never, file as never, '- second entry', 'Log');
+
+    expect(app.vault.raw(file.path)).toBe(
+      [
+        '---',
+        'title: Monday',
+        '---',
+        '## Log',
+        '- first entry',
+        '- second entry',
+        '',
+        '## Notes',
+        'some notes',
+        '',
+      ].join('\n')
+    );
+  });
+
+  it('matches the heading by text regardless of its level', async () => {
+    const original = ['---', '---', '# Log', 'existing', ''].join('\n');
+    const { app, file } = setup(original);
+
+    await yaml.appendLineToBody(app as never, file as never, 'new', 'Log');
+
+    expect(app.vault.raw(file.path)).toBe(
+      ['---', '---', '# Log', 'existing', 'new', ''].join('\n')
+    );
+  });
+
+  it('creates the heading at the end of the file when missing', async () => {
+    const { app, file } = setup('---\n---\nsome existing body\n');
+
+    await yaml.appendLineToBody(app as never, file as never, '- entry', 'Log');
+
+    expect(app.vault.raw(file.path)).toBe(
+      '---\n---\nsome existing body\n\n## Log\n- entry\n'
+    );
+  });
+
+  it('creates the heading in an otherwise-empty body without a leading blank line', async () => {
+    const { app, file } = setup('---\n---\n');
+
+    await yaml.appendLineToBody(app as never, file as never, '- entry', 'Log');
+
+    expect(app.vault.raw(file.path)).toBe('---\n---\n\n## Log\n- entry\n');
+  });
+
+  it('inserts before a sibling heading of equal or higher level, skipping deeper subsections', async () => {
+    const original = [
+      '---',
+      '---',
+      '## Log',
+      '- first',
+      '### Sub-section',
+      'sub content',
+      '## Other',
+      'other content',
+      '',
+    ].join('\n');
+    const { app, file } = setup(original);
+
+    await yaml.appendLineToBody(app as never, file as never, '- second', 'Log');
+
+    const raw = app.vault.raw(file.path);
+    expect(raw).toContain('### Sub-section\nsub content\n- second\n## Other');
+  });
+});

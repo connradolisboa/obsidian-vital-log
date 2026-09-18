@@ -7,7 +7,7 @@
 import { App, TFile } from 'obsidian';
 import type { TrackerConfig, VitalLogSettings } from './types';
 import * as yaml from './yamlManager';
-import { applyTemplate } from './template';
+import { applyTemplate, noteContentHeading } from './template';
 
 const DEFAULT_TRACKER_TEMPLATE = '- {time} {name}: {value}';
 
@@ -46,6 +46,6 @@ export async function logTracker(
       value: String(opts.value),
       note: opts.note ?? '',
     });
-    await yaml.appendLineToBody(app, file, line);
+    await yaml.appendLineToBody(app, file, line, noteContentHeading(settings));
   }
 }

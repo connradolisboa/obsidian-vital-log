@@ -67,6 +67,8 @@ export interface VitalLogSettings {
   graphEventSeverityMin: number;        // minimum severity (1–5) to show as a sparkline marker
   appendToNoteDefault_events: boolean;
   noteContentTemplate_events: string;   // tokens: {time} {name} {severity} {note}
+  noteContentUseHeading: boolean;   // insert note-content lines under a heading instead of at the end of the file
+  noteContentHeading: string;       // heading text to insert under, e.g. "Log" (matched by text, any heading level)
 }
 
 // Shape written to frontmatter per vitamin property (list element)
@@ -492,6 +494,8 @@ export const DEFAULT_SETTINGS: VitalLogSettings = {
   noteContentTemplate_tallies: '- {name}: {value}/{target}',
   noteContentTemplate_specificNoteTally: '- [[{dailyNote}]] {time} : {value}/{target}',
   noteContentTemplate_events: '- {time} {name} (severity: {severity})',
+  noteContentUseHeading: false,
+  noteContentHeading: 'Log',
   mirrorExcludedKeys: [],
   eventTypes: [],
   eventsPropertyKey: 'events',

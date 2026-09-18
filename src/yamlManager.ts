@@ -316,17 +316,80 @@ function setNestedKey(obj: Record<string, unknown>, parts: string[], value: unkn
 
 /**
  * Append a line of text to the note body (after the frontmatter).
- * The line is appended at the end of the file, preceded by a newline if needed.
+ *
+ * With no `heading`, the line is appended at the end of the file, preceded by
+ * a newline if needed. With `heading`, the line is inserted as the last line
+ * of that heading's section instead; the heading is created at the end of the
+ * file if the note doesn't have it yet.
  */
 export async function appendLineToBody(
   app: App,
   file: TFile,
-  line: string
+  line: string,
+  heading?: string
 ): Promise<void> {
   await app.vault.process(file, (content: string) => {
-    const trimmed = content.trimEnd();
-    return trimmed + '\n' + line + '\n';
+    const trimmedHeading = heading?.trim();
+    if (!trimmedHeading) {
+      const trimmed = content.trimEnd();
+      return trimmed + '\n' + line + '\n';
+    }
+    return insertUnderHeading(content, trimmedHeading, line);
   });
+}
+
+/**
+ * Insert `line` as the last line of the section under `heading` (a heading's
+ * text, optionally prefixed with '#'s to set its level; defaults to '##').
+ * The heading is matched by text alone, regardless of level, so it lines up
+ * with a heading the user already has. Creates the heading at the end of the
+ * note body if it isn't present yet.
+ */
+function insertUnderHeading(content: string, heading: string, line: string): string {
+  const parsed = splitFrontmatter(content);
+  const fmBlock = parsed ? content.slice(0, content.length - parsed.body.length) : '';
+  const body = parsed ? parsed.body : content;
+
+  const headingMatch = /^(#{1,6})\s*(.*)$/.exec(heading);
+  const level = headingMatch ? headingMatch[1] : '##';
+  const headingText = (headingMatch ? headingMatch[2] : heading).trim();
+
+  const headingLineRegex = /^(#{1,6})\s+(.*)$/;
+  const lines = body.split('\n');
+
+  let sectionStart = -1;
+  let sectionLevel = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const match = headingLineRegex.exec(lines[i]);
+    if (match && match[2].trim() === headingText) {
+      sectionStart = i;
+      sectionLevel = match[1].length;
+      break;
+    }
+  }
+
+  if (sectionStart === -1) {
+    const trimmedBody = body.trimEnd();
+    const newBody = (trimmedBody ? trimmedBody + '\n\n' : '\n') + `${level} ${headingText}\n${line}\n`;
+    return fmBlock + newBody;
+  }
+
+  let sectionEnd = lines.length;
+  for (let i = sectionStart + 1; i < lines.length; i++) {
+    const match = headingLineRegex.exec(lines[i]);
+    if (match && match[1].length <= sectionLevel) {
+      sectionEnd = i;
+      break;
+    }
+  }
+
+  let insertAt = sectionEnd;
+  while (insertAt > sectionStart + 1 && lines[insertAt - 1].trim() === '') {
+    insertAt--;
+  }
+
+  const newLines = [...lines.slice(0, insertAt), line, ...lines.slice(insertAt)];
+  return fmBlock + newLines.join('\n');
 }
 
 // ── Internal helpers ─────────────────────────────────────────
