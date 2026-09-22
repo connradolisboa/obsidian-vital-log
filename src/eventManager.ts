@@ -16,7 +16,12 @@ export async function logEvent(
   settings: VitalLogSettings,
   appendToNote: boolean
 ): Promise<void> {
-  await appendEntry(app, file, settings.eventsPropertyKey, entry);
+  let frontmatterEntry: EventEntry = entry;
+  if (settings.logNoteInFrontmatter === false && entry.note) {
+    frontmatterEntry = { ...entry };
+    delete frontmatterEntry.note;
+  }
+  await appendEntry(app, file, settings.eventsPropertyKey, frontmatterEntry);
 
   if (appendToNote) {
     const line = applyTemplate(settings.noteContentTemplate_events, {

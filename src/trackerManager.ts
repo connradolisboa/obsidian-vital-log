@@ -33,7 +33,7 @@ export async function logTracker(
     time: opts.time,
     [tracker.valueName]: opts.value,
   };
-  if (opts.note) {
+  if (opts.note && settings?.logNoteInFrontmatter !== false) {
     entry['note'] = opts.note;
   }
   await yaml.appendEntry(app, file, tracker.propertyKey, entry);

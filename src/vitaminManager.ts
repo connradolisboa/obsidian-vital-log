@@ -174,6 +174,7 @@ function stageVitamin(
   settings: VitalLogSettings
 ): StagedEntry {
   const includeSource = settings.logSource !== false;
+  const includeNote = settings.logNoteInFrontmatter !== false;
 
   if (settings.logMode === 'substances') {
     const entry: SubstanceEntry = {
@@ -181,7 +182,7 @@ function stageVitamin(
       amount: opts.amount,
       unit: vitamin.unit,
       time: opts.time,
-      ...(opts.note ? { note: opts.note } : {}),
+      ...(includeNote && opts.note ? { note: opts.note } : {}),
       ...(includeSource && opts.source ? { source: opts.source } : {}),
     };
     return { propertyKey: 'substances', entry };
@@ -191,7 +192,7 @@ function stageVitamin(
     time: opts.time,
     amount: opts.amount,
     unit: vitamin.unit,
-    ...(opts.note ? { note: opts.note } : {}),
+    ...(includeNote && opts.note ? { note: opts.note } : {}),
     ...(includeSource ? { source: opts.source ?? 'manual' } : {}),
   };
   return { propertyKey: vitamin.propertyKey, entry };

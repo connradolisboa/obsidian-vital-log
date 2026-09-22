@@ -51,6 +51,7 @@ export interface VitalLogSettings {
   logSource: boolean;         // whether to include the source field on entries
   logPackEntries: boolean;    // whether to write a packs[] entry when logging a pack
   logStackEntries: boolean;   // whether to write a stacks[] entry when logging a stack
+  logNoteInFrontmatter: boolean; // whether to include the note text in the frontmatter entry (independent of appending it to note content)
   appendToNoteDefault_supplements: boolean; // default state of "append to note content" checkbox in log modal
   appendToNoteDefault_trackers: boolean;    // default state of "append to note content" checkbox in tracker modal
   appendToNoteDefault_tallies: boolean;     // default state of "append to note content" checkbox in tally modal
@@ -485,6 +486,7 @@ export const DEFAULT_SETTINGS: VitalLogSettings = {
   logSource: true,
   logPackEntries: true,
   logStackEntries: true,
+  logNoteInFrontmatter: true,
   appendToNoteDefault_supplements: false,
   appendToNoteDefault_trackers: false,
   appendToNoteDefault_tallies: false,

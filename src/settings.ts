@@ -259,6 +259,18 @@ export class VitalLogSettingTab extends PluginSettingTab {
           })
       );
 
+    new Setting(el)
+      .setName('Include note in frontmatter')
+      .setDesc('Store the note text in the entry\'s YAML property. Turn off to keep notes only in the note content (requires "Append to note content" to be enabled when logging, otherwise the note is discarded).')
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.logNoteInFrontmatter !== false)
+          .onChange(async (value) => {
+            this.plugin.settings.logNoteInFrontmatter = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
     // ── Note Content ──
     el.createEl('h3', { text: 'Note Content' });
 
