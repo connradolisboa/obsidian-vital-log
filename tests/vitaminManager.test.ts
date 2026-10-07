@@ -84,6 +84,19 @@ describe('logVitamin', () => {
       { time: '09:00', amount: 500, unit: 'mg' },
     ]);
   });
+
+  it('writes only name, time and amount with source and unit off', async () => {
+    const { app, file } = setup();
+
+    await logVitamin(
+      app as never, file as never, vitaminC,
+      { time: '08:31', amount: 500, source: 'telegram' },
+      settings({ logMode: 'substances', logSource: false, logUnit: false })
+    );
+
+    const raw = app.vault.raw('Daily/2026-08-04.md');
+    expect(raw).toContain('substances:\n  - name: Vitamin C\n    time: \'08:31\'\n    amount: 500\n---');
+  });
 });
 
 describe('logPack', () => {

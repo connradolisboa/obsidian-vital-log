@@ -9,15 +9,20 @@
 // Everything here is glue: resolution and parsing live in this file, but a
 // logged entry is always written by vitaminManager/trackerManager so the API
 // inherits logMode, logSource, units and note templates for free.
+//
+// Version history:
+//   1 — describe, parseCommand, log, logText, help
+//   2 — renderDay: draw the day viewer for any date into another plugin's view
 // ============================================================
 
 import { App, TFile } from 'obsidian';
+import type { Component } from 'obsidian';
 import type { Metric, VitalLogSettings, Vitamin } from './types';
 import { resolveDailyNote } from './dailyNoteResolver';
 import { logVitamin } from './vitaminManager';
 import { logTracker } from './trackerManager';
 
-export const VITAL_LOG_API_VERSION = 1;
+export const VITAL_LOG_API_VERSION = 2;
 
 // ── Public types ─────────────────────────────────────────────
 
@@ -88,6 +93,19 @@ export interface LogResult {
   error?: string;
 }
 
+export interface RenderDayOptions {
+  /** The day to show, as `YYYY-MM-DD` or a Date. */
+  date: string | Date;
+  /** Tab to open on: chart, timeline, substances, trackers, events, time, week, insights. */
+  tab?: string;
+  /** Which tabs to show, in order. Defaults to all. */
+  tabs?: string[];
+  /** Header text. Defaults to "Day". */
+  title?: string;
+}
+
+export type RenderDay = (el: HTMLElement, opts: RenderDayOptions, component: Component) => void;
+
 export interface VitalLogApi {
   version: number;
   describe(): Catalogue;
@@ -95,6 +113,12 @@ export interface VitalLogApi {
   log(command: ParsedLogCommand, opts?: LogOpts): Promise<LogResult>;
   logText(text: string, opts?: LogOpts): Promise<LogResult>;
   help(): string;
+  /**
+   * Draw the `vital-day` viewer for a date into `el` (since version 2).
+   * Listeners are registered on `component`, so they end when it unloads.
+   * A day with no daily note shows an empty state.
+   */
+  renderDay: RenderDay;
 }
 
 // ── Factory ──────────────────────────────────────────────────
@@ -104,7 +128,11 @@ export interface VitalLogApi {
  * captured, so the vocabulary tracks settings edits without the plugin having
  * to rebuild the API.
  */
-export function createVitalLogApi(app: App, getSettings: () => VitalLogSettings): VitalLogApi {
+export function createVitalLogApi(
+  app: App,
+  getSettings: () => VitalLogSettings,
+  renderDay: RenderDay = () => {}
+): VitalLogApi {
   return {
     version: VITAL_LOG_API_VERSION,
     describe: () => describe(getSettings()),
@@ -118,6 +146,7 @@ export function createVitalLogApi(app: App, getSettings: () => VitalLogSettings)
       return log(app, getSettings(), parsed.command, opts);
     },
     help: () => help(getSettings()),
+    renderDay,
   };
 }
 

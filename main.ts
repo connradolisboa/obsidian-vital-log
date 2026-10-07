@@ -18,10 +18,9 @@ import { KeyDiagnosticModal } from './src/keyDiagnosticModal';
 import { confirm } from './src/confirmModal';
 import { getDailyNoteIfExists } from './src/dailyNoteResolver';
 import { VitalLogSettingTab } from './src/settings';
-import { LogModal } from './src/logModal';
+import { VitalLogModal } from './src/vitalLogModal';
 import { HistoryModal } from './src/historyModal';
 import { ManageModal } from './src/manageModal';
-import { TrackerModal } from './src/trackerModal';
 import { CustomLogModal } from './src/customLogModal';
 import { CustomModalChooser } from './src/customModalChooser';
 import { registerEmbedRenderer } from './src/embedRenderer';
@@ -30,8 +29,8 @@ import { registerMobileKeyboard } from './src/mobileKeyboard';
 import { DashboardView, VIEW_TYPE_VITAL_DASHBOARD } from './src/dashboardView';
 import { DashboardModal } from './src/dashboardModal';
 import { registerDashboardEmbed } from './src/dashboardEmbed';
+import { registerDayViewer, renderDayView } from './src/dayViewer';
 import { removeCommand } from './src/internal';
-import { EventModal } from './src/eventModal';
 import { createVitalLogApi } from './src/api';
 import type { VitalLogApi } from './src/api';
 
@@ -41,7 +40,11 @@ export default class VitalLogPlugin extends Plugin {
   // Public API for other plugins: app.plugins.plugins['vital-log'].api
   // Built here rather than in onload() so it exists as soon as the instance
   // does, and reads `this.settings` lazily so it tracks later settings edits.
-  readonly api: VitalLogApi = createVitalLogApi(this.app, () => this.settings);
+  readonly api: VitalLogApi = createVitalLogApi(
+    this.app,
+    () => this.settings,
+    (el, opts, component) => renderDayView(this, el, opts, component)
+  );
 
   // Track dynamically registered command IDs so we can unregister on change
   private customModalCommandIds: string[] = [];
@@ -58,23 +61,21 @@ export default class VitalLogPlugin extends Plugin {
   private keyRenamePromptOpen = false;
 
   private openLogModal(initialType?: 'vitamin' | 'pack' | 'stack'): void {
-    new LogModal(
-      this.app, this.settings, () => this.saveSettings(),
-      initialType,
-      () => this.openTrackerModal()
-    ).open();
+    new VitalLogModal(this.app, this.settings, () => this.saveSettings(), {
+      tab: 'supplements',
+      supplementKind: initialType,
+    }).open();
   }
 
   private openTrackerModal(initialTrackerId?: string): void {
-    new TrackerModal(
-      this.app, this.settings, () => this.saveSettings(),
-      initialTrackerId,
-      () => this.openLogModal()
-    ).open();
+    new VitalLogModal(this.app, this.settings, () => this.saveSettings(), {
+      tab: 'trackers',
+      trackerId: initialTrackerId,
+    }).open();
   }
 
   private openEventModal(): void {
-    new EventModal(this.app, this.settings, () => this.saveSettings()).open();
+    new VitalLogModal(this.app, this.settings, () => this.saveSettings(), { tab: 'events' }).open();
   }
 
   async onload(): Promise<void> {
@@ -183,6 +184,7 @@ export default class VitalLogPlugin extends Plugin {
     this.registerCustomModalCommands();
     registerEmbedRenderer(this);
     registerDashboardEmbed(this);
+    registerDayViewer(this);
     registerInlineRenderers(this);
     this.registerEditorExtension(buildInlineEditorExtension(this));
 

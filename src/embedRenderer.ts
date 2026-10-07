@@ -20,20 +20,71 @@
 //   -         — collapsible, starts collapsed (closed by default)
 // ============================================================
 
-import { App, MarkdownRenderChild, setIcon, TFile } from 'obsidian';
+import { App, MarkdownRenderChild, Notice, setIcon, TFile } from 'obsidian';
 import type VitalLogPlugin from '../main';
 import type { TallyCounterConfig, TrackerConfig, CustomField, CustomButtonConfig, CustomModalConfig, CustomModalItem, VitalLogSettings } from './types';
 import { seriesMetrics, scalarMetrics } from './types';
-import { getNoteIfExists, pathMatchesTemplate, extractDateFromPath } from './dailyNoteResolver';
+import { getNoteIfExists, noteDateForTemplate } from './dailyNoteResolver';
 import * as yaml from './yamlManager';
 import * as tally from './tallyManager';
 import * as tm from './trackerManager';
 import { CustomLogModal } from './customLogModal';
 import { executeCommandById } from './internal';
+import { CustomModalEditorModal } from './settings';
 
 function nowHHmm(): string {
   const d = new Date();
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+/**
+ * Collapse state of embeds and their sections, keyed by modal (and section)
+ * name. Kept for the session so a re-render — Virtual Content re-injecting the
+ * block, a note switch — doesn't snap a section the user opened back shut.
+ */
+const collapsedState = new Map<string, boolean>();
+
+/**
+ * Keep taps inside an embed from reaching the editor around it.
+ *
+ * Embeds injected into the editor (Virtual Content headers, Live Preview) sit
+ * inside the note's scroll area. On mobile, Obsidian and CodeMirror also handle
+ * those taps and can pull focus back to the note just after an input received
+ * it, closing the keyboard so the field has to be tapped again.
+ */
+export function shieldFromEditor(el: HTMLElement): void {
+  el.addEventListener('pointerdown', (e) => e.stopPropagation());
+  el.addEventListener('mousedown', (e) => e.stopPropagation());
+  el.addEventListener('touchstart', (e) => e.stopPropagation(), { passive: true });
+  el.addEventListener('click', (e) => e.stopPropagation());
+}
+
+/**
+ * Opt-in diagnostics for embed focus problems on mobile (Settings →
+ * Maintenance). Reports re-renders, and focus that leaves a field within a
+ * moment of it being gained, as notices — readable on a phone without a console.
+ */
+export function watchFocusForDebug(el: HTMLElement, label: string): void {
+  let focusedAt = 0;
+  el.addEventListener('focusin', () => { focusedAt = Date.now(); });
+  el.addEventListener('focusout', (e) => {
+    const elapsed = Date.now() - focusedAt;
+    const next = e.relatedTarget;
+    window.setTimeout(() => {
+      if (!el.isConnected) {
+        new Notice(`Vital Log [debug] "${label}": embed was re-rendered while a field had focus.`);
+        return;
+      }
+      if (elapsed > 1500 || (next instanceof Node && el.contains(next))) return;
+      new Notice(`Vital Log [debug] "${label}": field lost focus after ${elapsed}ms to ${describeElement(next ?? document.activeElement)}.`);
+    }, 0);
+  });
+}
+
+function describeElement(target: EventTarget | Element | null): string {
+  if (!(target instanceof Element)) return 'nothing';
+  const cls = typeof target.className === 'string' ? target.className.trim().split(/\s+/).slice(0, 2).join('.') : '';
+  return `<${target.tagName.toLowerCase()}${cls ? '.' + cls : ''}>`;
 }
 
 export function registerEmbedRenderer(plugin: VitalLogPlugin): void {
@@ -45,11 +96,17 @@ export function registerEmbedRenderer(plugin: VitalLogPlugin): void {
     const collapsible = options.has('+') || options.has('-');
     const defaultOpen = options.has('+');
 
+    shieldFromEditor(el);
+    if (plugin.settings.debugEmbedFocus) {
+      new Notice(`Vital Log [debug] "${modalName}": rendered.`);
+      watchFocusForDebug(el, modalName);
+    }
+
     let followsActiveNote = false;
     let renderedPath: string | null = null;
     const draw = async () => {
       const result = await renderEmbed(
-        plugin, el, modalName, invisible, collapsible, defaultOpen, ctx.sourcePath
+        plugin, el, modalName, invisible, collapsible, defaultOpen, ctx.sourcePath, () => void draw()
       );
       followsActiveNote = result.followsActiveNote;
       renderedPath = result.targetPath;
@@ -123,9 +180,10 @@ function resolveEmbedTarget(
     return { file: app.workspace.getActiveFile(), followsActiveNote: true };
   }
 
-  // A source note matching the modal's template (e.g. a past daily note for a
-  // daily-note modal) is operated on directly; otherwise use today's target.
-  if (sourceFile instanceof TFile && pathMatchesTemplate(sourceFile.path, modalConfig.notePath)) {
+  // A source note that is one of the modal's periodic notes (e.g. a past
+  // daily note, including ones filed under an older folder layout) is
+  // operated on directly; otherwise use today's target.
+  if (sourceFile instanceof TFile && noteDateForTemplate(sourceFile.path, modalConfig.notePath)) {
     return { file: sourceFile, followsActiveNote: false };
   }
   return { file: getNoteIfExists(app, modalConfig.notePath), followsActiveNote: false };
@@ -139,6 +197,7 @@ async function renderEmbed(
   collapsible = false,
   defaultOpen = true,
   sourcePath?: string,
+  redraw?: () => void,
 ): Promise<{ followsActiveNote: boolean; targetPath: string | null }> {
   container.empty();
   container.addClass('vital-log-embed');
@@ -191,7 +250,8 @@ async function renderEmbed(
         attr: { 'aria-label': 'Toggle' },
       });
       setIcon(chevronBtn, 'chevron-down');
-      if (!defaultOpen) {
+      const stateKey = modalName.toLowerCase();
+      if (collapsedState.get(stateKey) ?? !defaultOpen) {
         container.addClass('vital-log-embed--collapsed');
         chevronBtn.addClass('is-collapsed');
       }
@@ -199,6 +259,7 @@ async function renderEmbed(
         const collapsed = container.hasClass('vital-log-embed--collapsed');
         container.toggleClass('vital-log-embed--collapsed', !collapsed);
         chevronBtn.toggleClass('is-collapsed', !collapsed);
+        collapsedState.set(stateKey, !collapsed);
       };
       headerEl.addEventListener('click', (e) => {
         if ((e.target as HTMLElement).closest('.vital-log-embed-header-btn:not(.vital-log-embed-header-chevron)')) return;
@@ -216,12 +277,22 @@ async function renderEmbed(
       // If the embed is in a periodic note matching this modal's template,
       // open the modal scoped to that note's date rather than today's.
       const initialDate = sourcePath && modalConfig.notePath.trim()
-        ? extractDateFromPath(sourcePath, modalConfig.notePath) ?? undefined
+        ? noteDateForTemplate(sourcePath, modalConfig.notePath) ?? undefined
         : undefined;
       // Hand the modal the note the embed is actually showing, so a
       // current-note embed that fell back to the active note stays in sync.
       const modalSourcePath = modalConfig.notePath.trim() ? sourcePath : targetNote?.path ?? sourcePath;
       new CustomLogModal(app, settings, plugin.saveSettings.bind(plugin), modalConfig, initialDate, modalSourcePath).open();
+    });
+
+    // Edit this modal's configuration in place, then redraw with the result.
+    const editBtn = headerEl.createEl('button', {
+      cls: 'vital-log-embed-header-btn',
+      attr: { 'aria-label': `Edit ${modalConfig.displayName}` },
+    });
+    setIcon(editBtn, 'pencil');
+    editBtn.addEventListener('click', () => {
+      new CustomModalEditorModal(app, plugin, modalConfig, true, () => redraw?.()).open();
     });
   }
 
@@ -279,7 +350,7 @@ async function renderEmbed(
     } else {
       // Mixed mode: render items in configured order.
       const itemsEl = bodyEl.createDiv('vital-log-embed-items');
-      renderMixedItems(app, itemsEl, visibleItems, settings, fm, targetNote);
+      renderMixedItems(app, itemsEl, visibleItems, settings, fm, targetNote, modalName.toLowerCase());
     }
   }
 
@@ -437,7 +508,8 @@ function renderMixedItems(
   items: CustomModalItem[],
   settings: VitalLogSettings,
   fm: Record<string, unknown>,
-  targetNote: TFile | null
+  targetNote: TFile | null,
+  stateKey = ''
 ): void {
   let i = 0;
 
@@ -462,7 +534,8 @@ function renderMixedItems(
       }
       const sectionBody = sectionEl.createDiv('vital-log-embed-section-body');
 
-      if (!item.defaultOpen) {
+      const sectionKey = `${stateKey}:${item.title}`;
+      if (collapsedState.get(sectionKey) ?? !item.defaultOpen) {
         sectionEl.addClass('vital-log-embed-section--collapsed');
         chevronSpan.addClass('is-collapsed');
       }
@@ -471,6 +544,7 @@ function renderMixedItems(
         const isCollapsed = sectionEl.hasClass('vital-log-embed-section--collapsed');
         sectionEl.toggleClass('vital-log-embed-section--collapsed', !isCollapsed);
         chevronSpan.toggleClass('is-collapsed', !isCollapsed);
+        collapsedState.set(sectionKey, !isCollapsed);
       });
 
       i++;
@@ -480,7 +554,7 @@ function renderMixedItems(
         i++;
       }
       if (i < items.length && items[i].type === 'section-end') i++;
-      renderMixedItems(app, sectionBody, sectionItems, settings, fm, targetNote);
+      renderMixedItems(app, sectionBody, sectionItems, settings, fm, targetNote, stateKey);
 
     } else if (item.type === 'header') {
       container.createEl('p', { cls: 'vital-log-embed-item-header', text: item.text });

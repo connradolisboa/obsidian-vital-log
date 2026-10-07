@@ -16,7 +16,7 @@ import type {
   MirrorConditionalPin,
 } from './types';
 import { seriesMetrics, scalarMetrics } from './types';
-import { resolveNote, getNoteIfExists, resolvePathTemplate, pathMatchesTemplate } from './dailyNoteResolver';
+import { resolveNote, getNoteIfExists, resolvePathTemplate, pathMatchesTemplate, noteDateForTemplate } from './dailyNoteResolver';
 import * as yaml from './yamlManager';
 import * as tally from './tallyManager';
 import * as tm from './trackerManager';
@@ -70,9 +70,21 @@ export class CustomLogModal extends Modal {
     this.settings = settings;
     this.saveSettings = saveSettings;
     this.config = config;
-    this.selectedDate = initialDate ?? new Date();
     this.appendTallies = settings.appendToNoteDefault_tallies ?? false;
     this.sourceFilePath = sourceFilePath;
+
+    // Opened without a date (command palette, modal chooser) while one of this
+    // modal's periodic notes is open — e.g. a past daily note: work on that day.
+    let date = initialDate;
+    if (!date && !sourceFilePath && config.notePath.trim()) {
+      const active = app.workspace.getActiveFile();
+      const activeDate = active ? noteDateForTemplate(active.path, config.notePath) : null;
+      if (active && activeDate) {
+        date = activeDate;
+        this.sourceFilePath = active.path;
+      }
+    }
+    this.selectedDate = date ?? new Date();
   }
 
   async onOpen(): Promise<void> {
@@ -101,9 +113,13 @@ export class CustomLogModal extends Modal {
   // succeeded (the date picker stays authoritative if the user changes it).
   private get isSourceMatchingPeriodicNote(): boolean {
     if (!this.sourceFilePath || this.isCurrentNoteMode) return false;
-    if (!pathMatchesTemplate(this.sourceFilePath, this.config.notePath)) return false;
-    const resolved = resolvePathTemplate(this.config.notePath, this.selectedDate) + '.md';
-    return resolved === this.sourceFilePath;
+    if (pathMatchesTemplate(this.sourceFilePath, this.config.notePath)) {
+      const resolved = resolvePathTemplate(this.config.notePath, this.selectedDate) + '.md';
+      return resolved === this.sourceFilePath;
+    }
+    // A note filed under an older folder layout: match on its date instead.
+    const sourceDate = noteDateForTemplate(this.sourceFilePath, this.config.notePath);
+    return sourceDate !== null && sourceDate.toDateString() === this.selectedDate.toDateString();
   }
 
   // The note a current-note-mode modal operates on: the embed's source note

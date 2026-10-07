@@ -22,7 +22,7 @@ import {
 import { Range } from '@codemirror/state';
 import { syntaxTree } from '@codemirror/language';
 import type VitalLogPlugin from '../main';
-import { getDailyNoteIfExists, pathMatchesTemplate } from './dailyNoteResolver';
+import { getDailyNoteIfExists, noteDateForTemplate } from './dailyNoteResolver';
 import * as yaml from './yamlManager';
 import * as tally from './tallyManager';
 import * as checkboxMgr from './checkboxManager';
@@ -85,7 +85,7 @@ function buildTallyWidget(
   // to today's daily note.
   const widgetFile = getFile();
   const targetNote =
-    widgetFile && pathMatchesTemplate(widgetFile.path, settings.dailyNotePath)
+    widgetFile && noteDateForTemplate(widgetFile.path, settings.dailyNotePath)
       ? widgetFile
       : getDailyNoteIfExists(app, settings);
 
@@ -130,7 +130,7 @@ function buildCheckboxWidget(
 
   const widgetFile = getFile();
   const targetNote =
-    widgetFile && pathMatchesTemplate(widgetFile.path, settings.dailyNotePath)
+    widgetFile && noteDateForTemplate(widgetFile.path, settings.dailyNotePath)
       ? widgetFile
       : getDailyNoteIfExists(app, settings);
 

@@ -10,6 +10,7 @@ import { setGoalFromToday, getGoalPlan, todayISO, resolveGoal, describeFrequency
 import { ManageModal } from './manageModal';
 import { KeyDiagnosticModal } from './keyDiagnosticModal';
 import { buildSnapshot } from './keySnapshotManager';
+import { planConversion, applyConversion } from './substanceConversion';
 import { confirm } from './confirmModal';
 import { findStaleReferences, removeStaleReferences } from './referenceCheck';
 import { validatePropertyKey, allKeyOwners } from './validation';
@@ -236,6 +237,21 @@ export class VitalLogSettingTab extends PluginSettingTab {
       );
 
     new Setting(el)
+      .setName('Include unit field')
+      .setDesc(
+        'Write the unit (mg, IU, …) on each supplement entry. When off, the unit is read from the vitamin\'s settings, ' +
+        'so changing a vitamin\'s unit later also changes how its past entries read.'
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.logUnit !== false)
+          .onChange(async (value) => {
+            this.plugin.settings.logUnit = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(el)
       .setName('Log pack entries')
       .setDesc('Write a packs[] record when logging a pack.')
       .addToggle((toggle) =>
@@ -407,6 +423,10 @@ export class VitalLogSettingTab extends PluginSettingTab {
         });
       });
 
+    // ── Day view ──
+    el.createEl('h3', { text: 'Day View' });
+    this.renderDayMarkers(el);
+
     // ── Maintenance ──
     el.createEl('h3', { text: 'Maintenance' });
 
@@ -431,6 +451,138 @@ export class VitalLogSettingTab extends PluginSettingTab {
             ).open();
           })
       );
+
+    new Setting(el)
+      .setName('Embed focus diagnostics')
+      .setDesc(
+        'Show a notice whenever a vital-log embed re-renders, or a field in it loses focus right after you tap it. ' +
+        'Use this to troubleshoot fields that need several taps on mobile; turn it off afterwards.'
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.debugEmbedFocus === true)
+          .onChange(async (value) => {
+            this.plugin.settings.debugEmbedFocus = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(el)
+      .setName('Convert supplement logs to substances list')
+      .setDesc(
+        'Move per-vitamin entries in existing notes into the flat "substances" list, and remove the source/unit fields ' +
+        'from substance entries if those are turned off above. Switches log mode to "Flat substances list".'
+      )
+      .addButton((btn) =>
+        btn
+          .setButtonText('Convert Notes')
+          .onClick(async () => {
+            btn.setDisabled(true);
+            try {
+              await this.runSubstanceConversion();
+            } finally {
+              btn.setDisabled(false);
+            }
+          })
+      );
+  }
+
+  /**
+   * Properties holding a time of day (wake up, bed time) that the `vital-day`
+   * view draws as markers. Values may be "07:30", 730, "0730", or a datetime.
+   */
+  private renderDayMarkers(el: HTMLElement): void {
+    el.createEl('p', {
+      text: 'Properties that hold a time of day, such as when you woke up. The day view shows them on the chart and timeline. ' +
+        'Values like 07:30, 730, or a date-time all work.',
+      cls: 'vital-log-settings-helper',
+    });
+
+    const markers = this.plugin.settings.dayMarkers ?? (this.plugin.settings.dayMarkers = []);
+    const list = el.createDiv('vital-log-day-marker-list');
+
+    for (const marker of markers) {
+      const row = list.createDiv('vital-log-day-marker-row');
+      const label = row.createEl('input', { type: 'text', value: marker.label, placeholder: 'Label, e.g. Wake up' });
+      const key = row.createEl('input', { type: 'text', value: marker.propertyKey, placeholder: 'Property, e.g. wakeUp' });
+      const icon = createIconField(row, { value: marker.icon, placeholder: 'Icon, e.g. sunrise' });
+      const remove = row.createEl('button', { cls: 'vital-log-btn mod-compact mod-warning', attr: { 'aria-label': 'Remove' } });
+      setIcon(remove, 'trash-2');
+
+      const persist = async (): Promise<void> => {
+        marker.label = label.value.trim() || marker.propertyKey;
+        marker.propertyKey = key.value.trim();
+        const iconName = icon.value.trim();
+        if (iconName) marker.icon = iconName;
+        else delete marker.icon;
+        await this.plugin.saveSettings();
+      };
+      for (const input of [label, key, icon]) input.addEventListener('change', () => void persist());
+      remove.addEventListener('click', async () => {
+        this.plugin.settings.dayMarkers = markers.filter((m) => m.id !== marker.id);
+        await this.plugin.saveSettings();
+        this.display();
+      });
+    }
+
+    new Setting(el)
+      .setName('Add time marker')
+      .addButton((btn) =>
+        btn.setButtonText('Add').onClick(async () => {
+          markers.push({ id: crypto.randomUUID(), label: '', propertyKey: '', icon: 'sunrise' });
+          await this.plugin.saveSettings();
+          this.display();
+        })
+      );
+  }
+
+  private async runSubstanceConversion(): Promise<void> {
+    const settings = this.plugin.settings;
+    const plan = await planConversion(this.app, settings);
+
+    if (plan.files.length === 0) {
+      if (settings.logMode !== 'substances') {
+        settings.logMode = 'substances';
+        await this.plugin.saveSettings();
+        this.display();
+      }
+      new Notice(
+        plan.skipped.length > 0
+          ? `Vital Log: Nothing converted. ${plan.skipped.length} note(s) skipped — see the console.`
+          : 'Vital Log: No notes need converting.'
+      );
+      for (const { file, reason } of plan.skipped) console.warn(`Vital Log: skipped "${file.path}": ${reason}`);
+      return;
+    }
+
+    const message = [
+      `${plan.files.length} note(s) will be rewritten: ${plan.converted} per-vitamin entr${plan.converted === 1 ? 'y' : 'ies'} ` +
+        `moved into "substances", ${plan.trimmed} existing substance entr${plan.trimmed === 1 ? 'y' : 'ies'} trimmed.`,
+      'Notes are kept; a unit is only removed when it matches the vitamin\'s configured unit. ' +
+        'Plain names already in a substances list (e.g. "- Ritalin") are left as they are.',
+      'This rewrites note frontmatter and cannot be undone from Vital Log. Back up your vault first.',
+    ];
+    if (plan.skipped.length > 0) {
+      message.push(`${plan.skipped.length} note(s) will be skipped because "substances" is not a list there.`);
+    }
+    const ok = await confirm(this.app, {
+      title: 'Convert supplement logs',
+      message,
+      confirmText: 'Convert',
+    });
+    if (!ok) return;
+
+    settings.logMode = 'substances';
+    await this.plugin.saveSettings();
+
+    const failed = await applyConversion(this.app, settings, plan.files);
+    for (const { file, reason } of plan.skipped) console.warn(`Vital Log: skipped "${file.path}": ${reason}`);
+    new Notice(
+      failed.length === 0
+        ? `Vital Log: Converted ${plan.files.length} note(s).`
+        : `Vital Log: Converted ${plan.files.length - failed.length} note(s); ${failed.length} failed — see the console.`
+    );
+    this.display();
   }
 
   // ── Library tab ──────────────────────────────────────────────
@@ -1483,7 +1635,7 @@ export class VitalLogSettingTab extends PluginSettingTab {
 // Custom Modal Editor — opens as a separate Obsidian Modal
 // ================================================================
 
-class CustomModalEditorModal extends GuardedModal {
+export class CustomModalEditorModal extends GuardedModal {
   private plugin: VitalLogPlugin;
   private modal: CustomModalConfig;
   private isEdit: boolean;

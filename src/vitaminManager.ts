@@ -175,13 +175,14 @@ function stageVitamin(
 ): StagedEntry {
   const includeSource = settings.logSource !== false;
   const includeNote = settings.logNoteInFrontmatter !== false;
+  const includeUnit = settings.logUnit !== false;
 
   if (settings.logMode === 'substances') {
     const entry: SubstanceEntry = {
       name: vitamin.displayName,
-      amount: opts.amount,
-      unit: vitamin.unit,
       time: opts.time,
+      amount: opts.amount,
+      ...(includeUnit ? { unit: vitamin.unit } : {}),
       ...(includeNote && opts.note ? { note: opts.note } : {}),
       ...(includeSource && opts.source ? { source: opts.source } : {}),
     };
@@ -191,7 +192,7 @@ function stageVitamin(
   const entry: VitaminEntry = {
     time: opts.time,
     amount: opts.amount,
-    unit: vitamin.unit,
+    ...(includeUnit ? { unit: vitamin.unit } : {}),
     ...(includeNote && opts.note ? { note: opts.note } : {}),
     ...(includeSource ? { source: opts.source ?? 'manual' } : {}),
   };

@@ -19,9 +19,11 @@ Structured logs land in your vault as clean YAML frontmatter, queryable by Datav
 - [Life Events](#life-events)
 - [Custom Modals](#custom-modals)
 - [Embedded Modals](#embedded-modals)
+- [Day View](#day-view)
 - [Inline Widgets](#inline-widgets)
 - [Note Content Appending](#note-content-appending)
 - [Commands & Ribbon Icons](#commands--ribbon-icons)
+- [API for Other Plugins](#api-for-other-plugins)
 - [Frontmatter Reference](#frontmatter-reference)
 - [Keyboard Shortcuts](#keyboard-shortcuts)
 - [Troubleshooting](#troubleshooting)
@@ -97,7 +99,7 @@ Add vitamins with a display name, property key (e.g. `vitaminC`), default amount
 
 ### 3. Log Something
 
-Press the **pill icon** in the ribbon or use **Cmd/Ctrl+P** → *Log Vitamin*, *Log Pack*, or *Log Stack*.
+Press the **pill icon** in the ribbon or use **Cmd/Ctrl+P** → *Log Vitamin*, *Log Pack*, or *Log Stack*. The log modal has tabs for supplements, trackers, and events. If what you want to log isn't there yet, tap **+ New** to create it on the spot. Next to a substance's amount, **-0,5** and **+0,5** subtract or add half its default dose.
 
 ---
 
@@ -120,13 +122,15 @@ vitaminC:
 ```yaml
 substances:
   - name: "Vitamin C"
+    time: "09:00"
     amount: 500
     unit: "mg"
-    time: "09:00"
     source: "manual"
 ```
 
-Switch between modes in **Settings → Vital Log → General → Log Mode**.
+Switch between modes in **Settings → Vital Log → General → Log Mode**. Turn off **Include source field** and **Include unit field** to log only `name`, `time`, and `amount`; the unit is then read from the substance's settings.
+
+To move notes logged in per-vitamin mode into the `substances` list, use **Settings → Vital Log → Maintenance → Convert Notes**. It shows what will change before writing, keeps notes, and only drops a unit when it matches the substance's configured unit. Back up your vault first.
 
 ### Packs
 
@@ -246,7 +250,7 @@ morningWalk: true
 
 ## Life Events
 
-Log one-off events such as illness, travel, or rest days from the **calendar-clock ribbon icon** or the **Log Event** command. Each event records a time, severity from 1–5, and an optional note. Reused event names become quick-select buttons automatically.
+Log one-off events such as illness, travel, or rest days from the **calendar-clock ribbon icon** or the **Log Event** command, which open the Events tab of the log modal. Each event records a time, severity from 1–5, and an optional note. Add a new event type with **+ New**.
 
 Configure event types, storage, note-body templates, and optional sparkline markers in **Settings → Vital Log → Events**.
 
@@ -327,6 +331,8 @@ My Modal Name
 ```
 ````
 
+The card's header has two buttons: **open** shows the full modal, and **edit** (pencil) opens the modal's configuration, after which the card redraws.
+
 ### Options
 
 Add one option per line after the modal name:
@@ -357,6 +363,48 @@ Morning Checklist
 
 - If the modal's note path is empty, the embed reads from and writes to the **note it lives in** — and falls back to the **active note** when the block is injected virtually (e.g. by Virtual Content / Virtual Footer, or rendered in a sidebar view), re-targeting itself as you switch notes.
 - If the modal has a note path configured, it targets that path (following the same date tokens as daily notes).
+
+---
+
+## Day View
+
+Embed a read-only view of everything logged in a daily note. It looks and is configured like an embedded modal:
+
+````markdown
+```vital-day
+Day
+-
+timeline
+```
+````
+
+Tabs:
+
+- **Chart** — the day on an hour axis: a line per rating tracker (each scaled to its own range), substances and events as lettered dots under the lines (events coloured by severity), time markers such as wake-up as labelled lines, and a "now" line on today's note. Switch between **Today**, **vs yesterday**, and **vs 7-day avg** to overlay a dashed comparison line. Hover a mark, or tap it on mobile, for details.
+- **Timeline** — everything in time order, grouped by part of the day.
+- **Substances** — daily totals and times per substance, plus packs and stacks.
+- **Trackers** — readings and stats per tracker, counters, and habits.
+- **Events** — events with their severity.
+- **Time** — the day's Time Tracker sessions, when the Management Tracker plugin is installed: start–end, title, what each counts toward, area and tags, and minutes, with the day's total in the header. Click a session to edit it; on this tab **+** opens the Time Tracker. Sessions also show as rows in the Timeline and shaded bands on the Chart.
+- **Week** — a heatmap of one tracker by hour across the last 7, 14, or 30 days.
+- **Insights** — how each tracker's daily average differs on days with and without a substance, an event, or an early wake-up, over the last 30 days.
+
+The header shows counts per kind, and **+** opens the log modal for that note's date. The view updates as you log.
+
+Every line is optional:
+
+| Line | Effect |
+|---|---|
+| a tab name | Tab to open on: `chart`, `timeline`, `substances`, `trackers`, `events`, `time`, `week`, `insights` |
+| any other text | Header title (default `Day`) |
+| `+` / `-` | Collapsible, starting open / collapsed |
+| `tabs: chart, timeline` | Which tabs to show, in that order |
+
+The open tab, comparison, and collapsed state are kept while Obsidian is open. In a daily note the block shows that note; injected elsewhere (for example by Virtual Content) it follows the active note.
+
+### Time markers
+
+To show times such as when you woke up, add them in **Settings → Vital Log → General → Day View**: a label, the frontmatter property that holds the time, and an optional icon. Values like `07:30`, `730`, or a date-time all work. Times before 04:00 (e.g. a bed time of `00:30`) are drawn at the end of the day.
 
 ---
 
@@ -431,9 +479,9 @@ Default supplement template:
 
 | Icon | Action |
 |---|---|
-| Pill | Open main supplement log modal |
-| Activity | Open tracker modal |
-| Calendar clock | Open event modal |
+| Pill | Open the log modal on the Supplements tab |
+| Activity | Open the log modal on the Trackers tab |
+| Calendar clock | Open the log modal on the Events tab |
 | Dashboard | Open dashboard pane |
 | Grid | Open custom modal chooser |
 
@@ -442,13 +490,34 @@ Default supplement template:
 - **Log Vitamin** — open log modal on the Vitamin tab
 - **Log Pack** — open log modal on the Pack tab
 - **Log Stack** — open log modal on the Stack tab
-- **Log Tracker** — open tracker modal
-- **Log Event** — open event modal
+- **Log Tracker** — open log modal on the Trackers tab
+- **Log Event** — open log modal on the Events tab
 - **Open Dashboard** — open the dashboard pane
 - **Open Dashboard (modal)** — open the dashboard in a modal
 - **View History** — browse all logged entries across daily notes
 - **Manage Vitamins / Packs / Stacks** — open management interface
 - *One command per custom modal* — auto-generated from modal display names
+
+---
+
+## API for Other Plugins
+
+Other plugins can reach Vital Log at `app.plugins.plugins['vital-log']?.api`. Check `api.version` before using a method.
+
+| Method | Since | Does |
+|---|---|---|
+| `describe()` | 1 | Lists the substances and metrics that can be logged, with their aliases, units, and ranges |
+| `parseCommand(text)` | 1 | Parses text like `ritalin 10 at 9:00` into a log command |
+| `log(command, opts?)` / `logText(text, opts?)` | 1 | Logs through the same code the modals use |
+| `help()` | 1 | Human-readable list of what can be logged |
+| `renderDay(el, { date, tab?, tabs?, title? }, component)` | 2 | Draws the day viewer for `date` (`YYYY-MM-DD`) into `el`; its listeners end when `component` unloads. A day with no note shows an empty state. |
+
+```ts
+const vl = app.plugins.plugins['vital-log']?.api;
+if (vl?.version >= 2) {
+  vl.renderDay(containerEl, { date: '2026-10-07', tab: 'chart' }, this); // `this`: a Component, e.g. your view
+}
+```
 
 ---
 
@@ -470,11 +539,11 @@ vitaminC:
 ```yaml
 substances:
   - name: "Vitamin C"
-    amount: 500
-    unit: "mg"
     time: "09:00"
+    amount: 500
+    unit: "mg"              # optional (Include unit field)
     note: "With food"       # optional
-    source: "manual"        # optional
+    source: "manual"        # optional (Include source field)
 ```
 
 ### Pack Entry
@@ -558,6 +627,10 @@ properties are left intact. Fix the YAML and log again.
 **Templater not running**
 
 Ensure the Templater community plugin is installed and enabled, and that the template file path in Vital Log settings points to an existing note.
+
+**Fields in an embed need several taps on mobile**
+
+Embeds now keep taps from reaching the editor around them. If a field still loses focus, turn on **Settings → Vital Log → Maintenance → Embed focus diagnostics**: a notice then reports when the embed re-renders, or what took focus away from a field. Turn it off once you're done.
 
 **Inline `tally: Name` shows an error**
 

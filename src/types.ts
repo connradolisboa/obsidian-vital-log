@@ -49,6 +49,7 @@ export interface VitalLogSettings {
   sameFolderPrefix: string;  // reserved for future use
   logMode: 'perVitamin' | 'substances'; // perVitamin: each vitamin gets its own key; substances: all go into substances[]
   logSource: boolean;         // whether to include the source field on entries
+  logUnit: boolean;           // whether to include the unit field on supplement entries (the unit always lives on the Vitamin)
   logPackEntries: boolean;    // whether to write a packs[] entry when logging a pack
   logStackEntries: boolean;   // whether to write a stacks[] entry when logging a stack
   logNoteInFrontmatter: boolean; // whether to include the note text in the frontmatter entry (independent of appending it to note content)
@@ -70,13 +71,24 @@ export interface VitalLogSettings {
   noteContentTemplate_events: string;   // tokens: {time} {name} {severity} {note}
   noteContentUseHeading: boolean;   // insert note-content lines under a heading instead of at the end of the file
   noteContentHeading: string;       // heading text to insert under, e.g. "Log" (matched by text, any heading level)
+  recentLogItems: string[];         // most-recent-first "kind:id" keys logged from the log modal, used to order its chips
+  debugEmbedFocus: boolean;         // show notices when an embed re-renders or a field loses focus (mobile diagnostics)
+  dayMarkers: DayMarker[];          // frontmatter properties holding a time of day (wake up, bed time) shown in the day view
+}
+
+/** A frontmatter property that holds a time of day, drawn as a marker on the day view. */
+export interface DayMarker {
+  id: string;
+  label: string;        // e.g. "Wake up"
+  propertyKey: string;  // e.g. "wakeUp"
+  icon?: string;        // e.g. "sunrise"
 }
 
 // Shape written to frontmatter per vitamin property (list element)
 export interface VitaminEntry {
   time: string;          // "HH:mm"
   amount: number;
-  unit: string;
+  unit?: string;         // omitted when logUnit is off — read it from the Vitamin instead
   note?: string;
   source?: string;       // "manual" | pack displayName | stack displayName
 }
@@ -84,9 +96,9 @@ export interface VitaminEntry {
 // Shape written to frontmatter for substances[] array element (flat log mode)
 export interface SubstanceEntry {
   name: string;
-  amount: number;
-  unit: string;
   time: string;          // "HH:mm"
+  amount: number;
+  unit?: string;         // omitted when logUnit is off — read it from the Vitamin instead
   source?: string;
   note?: string;
 }
@@ -112,8 +124,8 @@ export function isSubstanceEntry(v: unknown): v is SubstanceEntry {
   return (
     typeof o['name'] === 'string' &&
     typeof o['amount'] === 'number' &&
-    typeof o['unit'] === 'string' &&
-    typeof o['time'] === 'string'
+    typeof o['time'] === 'string' &&
+    isOptionalString(o['unit'])
   );
 }
 
@@ -123,8 +135,12 @@ export function isVitaminEntry(v: unknown): v is VitaminEntry {
   return (
     typeof o['time'] === 'string' &&
     typeof o['amount'] === 'number' &&
-    typeof o['unit'] === 'string'
+    isOptionalString(o['unit'])
   );
+}
+
+function isOptionalString(v: unknown): boolean {
+  return v === undefined || typeof v === 'string';
 }
 
 export function isPackEntry(v: unknown): v is PackEntry {
@@ -484,6 +500,7 @@ export const DEFAULT_SETTINGS: VitalLogSettings = {
   sameFolderPrefix: '',
   logMode: 'perVitamin',
   logSource: true,
+  logUnit: true,
   logPackEntries: true,
   logStackEntries: true,
   logNoteInFrontmatter: true,
@@ -503,4 +520,7 @@ export const DEFAULT_SETTINGS: VitalLogSettings = {
   eventsPropertyKey: 'events',
   showEventsInGraph: false,
   graphEventSeverityMin: 1,
+  recentLogItems: [],
+  debugEmbedFocus: false,
+  dayMarkers: [],
 };

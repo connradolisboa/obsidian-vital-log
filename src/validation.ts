@@ -55,3 +55,25 @@ export function allKeyOwners(settings: VitalLogSettings): KeyOwner[] {
   for (const m of settings.metrics) owners.push({ id: m.id, key: m.propertyKey, label: m.displayName });
   return owners;
 }
+
+function slugify(name: string): string {
+  return name
+    .trim()
+    .replace(/[^a-zA-Z0-9_]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '');
+}
+
+/**
+ * A free property key derived from `name`: the slug itself, or the slug with
+ * a numeric suffix when another vitamin or metric already owns it.
+ */
+export function uniquePropertyKey(name: string, settings: VitalLogSettings): string {
+  const base = slugify(name);
+  if (!base) return '';
+  const taken = new Set(allKeyOwners(settings).map((o) => o.key));
+  if (!taken.has(base)) return base;
+  let n = 2;
+  while (taken.has(`${base}_${n}`)) n++;
+  return `${base}_${n}`;
+}

@@ -225,7 +225,8 @@ export class HistoryModal extends Modal {
     const row = container.createDiv('vital-log-history-entry');
 
     const info = row.createDiv('vital-log-history-entry-info');
-    let infoText = `${entry.time}  —  ${entry.amount} ${entry.unit}`;
+    const vitamin = this.settings.vitamins.find((v) => v.propertyKey === propertyKey);
+    let infoText = `${entry.time}  —  ${entry.amount} ${entry.unit ?? vitamin?.unit ?? ''}`.trimEnd();
     if (entry.source) infoText += `  —  source: ${entry.source}`;
     if (entry.note) infoText += `  — `;
     info.createSpan({ text: infoText });
@@ -293,7 +294,8 @@ export class HistoryModal extends Modal {
     const row = container.createDiv('vital-log-history-entry');
 
     const info = row.createDiv('vital-log-history-entry-info');
-    let infoText = `${entry.time}  —  ${entry.name}  ${entry.amount} ${entry.unit}`;
+    const vitamin = this.settings.vitamins.find((v) => v.displayName === entry.name);
+    let infoText = `${entry.time}  —  ${entry.name}  ${entry.amount} ${entry.unit ?? vitamin?.unit ?? ''}`.trimEnd();
     if (entry.source) infoText += `  —  source: ${entry.source}`;
     if (entry.note) infoText += `  — `;
     info.createSpan({ text: infoText });
@@ -341,9 +343,9 @@ export class HistoryModal extends Modal {
     saveBtn.addEventListener('click', async () => {
       const updated: SubstanceEntry = {
         name: entry.name,
+        time: timeInput.value,
         amount: parseFloat(amtInput.value) || entry.amount,
         unit: entry.unit,
-        time: timeInput.value,
         source: entry.source,
         ...(noteInput.value ? { note: noteInput.value } : {}),
       };

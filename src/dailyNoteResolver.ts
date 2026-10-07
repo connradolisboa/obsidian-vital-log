@@ -83,6 +83,11 @@ export async function resolveNote(
     return existing;
   }
 
+  // A note for this day filed under an older folder layout is still that
+  // day's note — write there rather than create a duplicate.
+  const legacy = findLegacyNote(app, pathTemplate, date);
+  if (legacy) return legacy;
+
   // Ensure the folder tree exists
   const folderPath = resolvedPath.substring(0, resolvedPath.lastIndexOf('/'));
   if (folderPath) {
@@ -110,7 +115,7 @@ export function getNoteIfExists(
 ): TFile | null {
   const resolvedPath = resolvePathTemplate(pathTemplate, date) + '.md';
   const file = app.vault.getAbstractFileByPath(resolvedPath);
-  return file instanceof TFile ? file : null;
+  return file instanceof TFile ? file : findLegacyNote(app, pathTemplate, date);
 }
 
 /**
@@ -212,6 +217,77 @@ export function extractDateFromPath(path: string, pathTemplate: string): Date | 
     }
   }
   return null;
+}
+
+// ── Older folder layouts ─────────────────────────────────────
+//
+// Templates change over time: a vault whose daily notes now live in
+// "Calendar/Daily/{{YYYY}}/Q{{Q}}/…" still has years of notes filed as
+// "Calendar/Daily/2025/2025-02-15 Saturday.md". For day-granular templates,
+// any note under the template's root folder whose name starts with a date is
+// treated as that day's note, so reading, logging, and embeds keep working
+// on them — and logging never creates a duplicate next to them.
+
+const ISO_PREFIX = /^(\d{4})-(\d{2})-(\d{2})(?!\d)/;
+
+/** The fixed folder a template's notes live under, e.g. "Calendar/Daily/". */
+export function templateRoot(template: string): string {
+  const firstToken = template.indexOf('{{');
+  if (firstToken === -1) return '';
+  const slash = template.lastIndexOf('/', firstToken);
+  return slash === -1 ? '' : template.slice(0, slash + 1);
+}
+
+/** Whether a template names one note per day (rather than per week, month, …). */
+export function isDayTemplate(template: string): boolean {
+  return template.includes('{{YYYY-MM-DD') || template.includes('{{DD}}');
+}
+
+function dateFromISOPrefix(name: string): Date | null {
+  const m = ISO_PREFIX.exec(name);
+  if (!m) return null;
+  const date = new Date(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10), 12);
+  return isNaN(date.getTime()) ? null : date;
+}
+
+function basenameOf(path: string): string {
+  return (path.split('/').pop() ?? path).replace(/\.md$/, '');
+}
+
+/**
+ * An existing note for `date` filed outside the current template: under the
+ * template's root folder, with a name starting with the date.
+ */
+export function findLegacyNote(app: App, pathTemplate: string, date: Date): TFile | null {
+  if (!isDayTemplate(pathTemplate)) return null;
+  const root = templateRoot(pathTemplate);
+  if (!root) return null;
+  const iso = moment(date).format('YYYY-MM-DD');
+  return (
+    app.vault.getMarkdownFiles().find(
+      (f) => f.path.startsWith(root) && ISO_PREFIX.exec(f.basename)?.[0] === iso
+    ) ?? null
+  );
+}
+
+/**
+ * The date of the note at `path` as a note of `pathTemplate`, or null when it
+ * isn't one. Accepts exact template matches and, for day templates, notes
+ * under the template's root folder named after a date (older layouts).
+ */
+export function noteDateForTemplate(path: string, pathTemplate: string): Date | null {
+  if (!pathTemplate.trim()) return null;
+  const fromName = isDayTemplate(pathTemplate) ? dateFromISOPrefix(basenameOf(path)) : null;
+  if (pathMatchesTemplate(path, pathTemplate)) return fromName ?? extractDateFromPath(path, pathTemplate);
+  const root = templateRoot(pathTemplate);
+  if (fromName && root && path.startsWith(root)) return fromName;
+  return null;
+}
+
+/** The open note's date when it's a daily note; null for any other note. */
+export function activeDailyNoteDate(app: App, settings: VitalLogSettings): Date | null {
+  const file = app.workspace.getActiveFile();
+  return file ? noteDateForTemplate(file.path, settings.dailyNotePath) : null;
 }
 
 // ── Helpers ─────────────────────────────────────────────────

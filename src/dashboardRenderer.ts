@@ -543,9 +543,10 @@ function asStr(v: unknown): string | null {
   return typeof v === 'string' && v.trim() ? v : null;
 }
 
-function amountSuffix(e: Record<string, unknown>): string {
+/** `fallbackUnit` is the vitamin's configured unit, for entries logged without one. */
+function amountSuffix(e: Record<string, unknown>, fallbackUnit = ''): string {
   const amount = e['amount'];
-  const unit = typeof e['unit'] === 'string' ? e['unit'] : '';
+  const unit = typeof e['unit'] === 'string' ? e['unit'] : fallbackUnit;
   return typeof amount === 'number' ? ` ${amount}${unit}` : '';
 }
 
@@ -570,7 +571,8 @@ function collectLoggedItems(plugin: VitalLogPlugin, fm: Fm): LoggedItem[] {
         if (!isObj(e)) continue;
         const name = asStr(e['name']);
         if (!name) continue;
-        items.push({ time: asStr(e['time']), icon: 'pill', text: `${name}${amountSuffix(e)}` });
+        const unit = plugin.settings.vitamins.find((v) => v.displayName === name)?.unit;
+        items.push({ time: asStr(e['time']), icon: 'pill', text: `${name}${amountSuffix(e, unit)}` });
       }
     }
   } else {
@@ -579,7 +581,7 @@ function collectLoggedItems(plugin: VitalLogPlugin, fm: Fm): LoggedItem[] {
       if (!Array.isArray(arr)) continue;
       for (const e of arr) {
         if (!isObj(e)) continue;
-        items.push({ time: asStr(e['time']), icon: 'pill', text: `${v.displayName}${amountSuffix(e)}` });
+        items.push({ time: asStr(e['time']), icon: 'pill', text: `${v.displayName}${amountSuffix(e, v.unit)}` });
       }
     }
   }
@@ -799,7 +801,7 @@ async function renderRangeDashboard(
 }
 
 // eventSeverities[i] is the max severity for day i (0 = no event).
-function renderSparkline(
+export function renderSparkline(
   container: HTMLElement,
   values: (number | null)[],
   eventSeverities?: number[]
