@@ -1,6 +1,6 @@
 {
   "name": "vital-log",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Obsidian plugin for logging vitamins, supplements, trackers, tally counters, and custom forms into your notes",
   "main": "main.js",
   "scripts": {

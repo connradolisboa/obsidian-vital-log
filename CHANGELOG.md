@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 1.3.0
+
 ### Highlights
 
 - One log modal for supplements, trackers, and events, with tabs and a shared date and time. Items are picked from chips, recently used first, with a search box for long lists. Events can now be logged to any date.
@@ -19,7 +21,14 @@
 - `vital-day` has a **Time** tab listing the day's Management Tracker sessions (shown when that plugin's API is available): click a session to edit it, the tab badge counts sessions, the header shows the day's total, and **+** on that tab opens the Time Tracker. Sessions also appear in the Timeline and as shaded bands on the Chart, and the view updates when sessions change.
 - The public API is now version 2, adding `renderDay(el, { date, tab?, tabs?, title? }, component)` to draw the day viewer for any date inside another plugin's view.
 
+- **Symptoms**: log them from a new Symptoms tab in the log modal as 0–10 readings (re-rate by logging again, 0 = gone), with an "Active now" list of unresolved symptoms, including ones carried over from earlier days, and one-tap Re-rate / Gone. They show as severity-shaded bars on the day chart, on a Symptoms tab, and in the Timeline. Insights report symptoms that tend to begin within a few hours of a dose. Event types can be moved to symptoms, entries included, from Settings → Events.
+
+- Symptoms, continued: multi-day **episodes** (which day of an illness, with its curve), a 30/90-day **symptom calendar** with weekly totals, **next-day** insights (what tends to come the day before a symptom begins), a **per-substance** after-dose window, and editing or deleting logged symptoms and events in **View History**.
+- The public API is now version 4: `describe()` lists symptoms (with icons) and the day view's tab ids, `headache 5` / `headache gone` log symptoms, and `timeline(date)` returns everything logged on a day as structured entries — the same items the Timeline tab draws.
+
 ### Fixes
+
+- View History no longer shows the events (or symptoms) list as an empty "deleted vitamin" group.
 
 - Daily notes filed under an older folder layout (e.g. `Calendar/Daily/2025/2025-02-15 Saturday.md` when the template now adds a quarter folder) are recognised as that day's note everywhere: embeds, inline widgets, the day view, history, and logging. Logging to such a day writes into the existing note instead of creating a duplicate at the template path. Previously, embeds in those notes wrote to today's note.
 
