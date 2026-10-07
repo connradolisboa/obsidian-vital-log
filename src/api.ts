@@ -13,21 +13,28 @@
 // Version history:
 //   1 — describe, parseCommand, log, logText, help
 //   2 — renderDay: draw the day viewer for any date into another plugin's view
+//   3 — symptoms: describe() lists them; "headache 5" / "headache gone" log them
+//   4 — timeline(date); describe() adds symptom icons and dayTabs
 // ============================================================
 
 import { App, TFile } from 'obsidian';
 import type { Component } from 'obsidian';
-import type { Metric, VitalLogSettings, Vitamin } from './types';
+import type { Metric, SymptomType, VitalLogSettings, Vitamin } from './types';
+import { SYMPTOM_MAX } from './types';
 import { resolveDailyNote } from './dailyNoteResolver';
 import { logVitamin } from './vitaminManager';
 import { logTracker } from './trackerManager';
+import { logSymptom } from './symptomManager';
+import { dayLogFor } from './dayHistory';
+import { timeline as dayTimeline } from './dayLog';
+import { DAY_TABS } from './dayTabs';
 
-export const VITAL_LOG_API_VERSION = 2;
+export const VITAL_LOG_API_VERSION = 4;
 
 // ── Public types ─────────────────────────────────────────────
 
 export interface CatalogueItem {
-  kind: 'vitamin' | 'metric';
+  kind: 'vitamin' | 'metric' | 'symptom';
   id: string;
   displayName: string;
   propertyKey: string;
@@ -38,6 +45,8 @@ export interface CatalogueItem {
   // vitamin only
   unit?: string;
   defaultAmount?: number;
+  /** Lucide icon name, when set (symptoms; since version 4). */
+  icon?: string;
   // metric only
   trackerType?: string;
   valueName?: string;
@@ -48,6 +57,30 @@ export interface CatalogueItem {
 export interface Catalogue {
   vitamins: CatalogueItem[];
   metrics: CatalogueItem[];
+  /** Since version 3. Logged as 0–10; 0 means gone. */
+  symptoms: CatalogueItem[];
+  /** The `vital-day` viewer's tab ids, in order (since version 4) — valid for renderDay's `tab` / `tabs`. */
+  dayTabs: string[];
+}
+
+/** One logged entry on a day's timeline (since version 4). */
+export interface TimelineEntry {
+  /**
+   * What sort of entry: "marker", "session", "substance", "pack", "stack",
+   * "tracker", "tally", "habit", "symptom", "event" — and any added later.
+   * "session" entries are Management Tracker's own Time Tracker sessions.
+   */
+  kind: string;
+  name: string;
+  /** "HH:mm", or null for untimed entries (tallies, habits, a symptom carried in from an earlier day). */
+  time: string | null;
+  icon?: string;
+  /** The amount, reading, minutes, or count, when the entry has one. */
+  value?: number;
+  unit?: string;
+  /** Symptoms 0–10 (0 = gone); events 1–5. */
+  severity?: number;
+  note?: string;
 }
 
 export type ParsedLogCommand =
@@ -64,6 +97,16 @@ export type ParsedLogCommand =
       kind: 'metric';
       metricId: string;
       value: number;
+      time?: string;
+      date?: string;
+      dayOffset?: number;
+      note?: string;
+    }
+  | {
+      kind: 'symptom';
+      symptomId: string;
+      /** 0–10; 0 marks it gone. */
+      severity: number;
       time?: string;
       date?: string;
       dayOffset?: number;
@@ -114,6 +157,13 @@ export interface VitalLogApi {
   logText(text: string, opts?: LogOpts): Promise<LogResult>;
   help(): string;
   /**
+   * Everything logged on a day (`YYYY-MM-DD`), in time order — the items the
+   * `vital-day` Timeline tab draws (since version 4). Empty when the day has
+   * no note or the date is invalid. Reads Obsidian's metadata cache, so it is
+   * synchronous.
+   */
+  timeline(date: string): TimelineEntry[];
+  /**
    * Draw the `vital-day` viewer for a date into `el` (since version 2).
    * Listeners are registered on `component`, so they end when it unloads.
    * A day with no daily note shows an empty state.
@@ -146,6 +196,7 @@ export function createVitalLogApi(
       return log(app, getSettings(), parsed.command, opts);
     },
     help: () => help(getSettings()),
+    timeline: (date: string) => timelineOn(app, getSettings(), date),
     renderDay,
   };
 }
@@ -176,7 +227,42 @@ function describe(settings: VitalLogSettings): Catalogue {
       min: m.min,
       max: m.max,
     })),
+    symptoms: activeSymptoms(settings).map((t) => ({
+      kind: 'symptom' as const,
+      id: t.id,
+      displayName: t.displayName,
+      propertyKey: settings.symptomsPropertyKey || 'symptoms',
+      icon: t.icon ?? 'thermometer',
+      aliases: aliasesOfSymptom(t),
+      supported: true,
+      min: 0,
+      max: SYMPTOM_MAX,
+    })),
+    dayTabs: DAY_TABS.map((t) => t.id),
   };
+}
+
+// ── timeline ─────────────────────────────────────────────────
+
+function timelineOn(app: App, settings: VitalLogSettings, date: string): TimelineEntry[] {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(date ?? '').trim());
+  if (!m) return [];
+  const day = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12);
+  // Reject dates that roll over, e.g. 2026-02-31.
+  if (day.getMonth() !== Number(m[2]) - 1 || day.getDate() !== Number(m[3])) return [];
+
+  const log = dayLogFor(app, settings, day);
+  if (!log) return [];
+  // Copy field by field rather than per kind, so a new kind needs no change here.
+  return dayTimeline(log).map((item) => {
+    const entry: TimelineEntry = { kind: item.kind, name: item.name, time: item.time };
+    if (item.icon !== undefined) entry.icon = item.icon;
+    if (item.value !== undefined) entry.value = item.value;
+    if (item.unit !== undefined) entry.unit = item.unit;
+    if (item.severity !== undefined) entry.severity = item.severity;
+    if (item.note !== undefined) entry.note = item.note;
+    return entry;
+  });
 }
 
 function help(settings: VitalLogSettings): string {
@@ -188,6 +274,8 @@ function help(settings: VitalLogSettings): string {
     '  mood 4',
     '  energy 2 crashed after lunch',
     '  focus 3 @09:15',
+    '  headache 6',
+    '  headache gone',
   ];
 
   const vitamins = activeVitamins(settings);
@@ -206,6 +294,12 @@ function help(settings: VitalLogSettings): string {
     }
   }
 
+  const symptoms = activeSymptoms(settings);
+  if (symptoms.length > 0) {
+    lines.push('', 'Symptoms (0–10, or "gone"):');
+    for (const t of symptoms) lines.push(`  ${t.displayName}`);
+  }
+
   return lines.join('\n');
 }
 
@@ -220,13 +314,17 @@ function describeRange(metric: Metric): string {
 // Words that may prefix a command without being part of an item's name.
 // Only stripped when the text does not already resolve with them included,
 // so an item genuinely called "Log" still wins.
-const COMMAND_PREFIXES: Record<string, 'vitamins' | 'any'> = {
+type Scope = 'any' | 'vitamins' | 'symptoms';
+
+const COMMAND_PREFIXES: Record<string, Scope> = {
   med: 'vitamins',
   meds: 'vitamins',
   medication: 'vitamins',
   supp: 'vitamins',
   supplement: 'vitamins',
   vitamin: 'vitamins',
+  symptom: 'symptoms',
+  symptoms: 'symptoms',
   log: 'any',
   vital: 'any',
   vitals: 'any',
@@ -252,7 +350,7 @@ function parseCommand(settings: VitalLogSettings, text: string): ParseOutcome {
 
   // An exact name match always wins, so an item genuinely called "Log" beats
   // the "/log …" prefix reading of the same word.
-  const direct = resolveLeadingItem(settings, tokens, false);
+  const direct = resolveLeadingItem(settings, tokens, 'any');
   if (direct.ok && direct.exact) return buildCommand(direct.item, tokens.slice(direct.consumed));
 
   // Otherwise treat a leading keyword as a command prefix ("/med ritalin 10").
@@ -268,7 +366,7 @@ function parseCommand(settings: VitalLogSettings, text: string): ParseOutcome {
         return { ok: false, reason: 'empty', message: 'Nothing to log. Send "help" to see what you can log.' };
       }
     } else {
-      const prefixed = resolveLeadingItem(settings, rest, prefixScope === 'vitamins');
+      const prefixed = resolveLeadingItem(settings, rest, prefixScope);
       if (prefixed.ok) return buildCommand(prefixed.item, rest.slice(prefixed.consumed));
       return withHint(prefixed.failure, direct);
     }
@@ -288,13 +386,26 @@ function withHint(
   direct: LeadingItem
 ): Extract<ParseOutcome, { ok: false }> {
   if (!direct.ok) return failure;
-  const name = direct.item.kind === 'vitamin' ? direct.item.vitamin.displayName : direct.item.metric.displayName;
+  const name = itemName(direct.item);
   return { ...failure, message: `${failure.message} Did you mean "${name}"?` };
 }
 
 type ResolvedItem =
   | { kind: 'vitamin'; vitamin: Vitamin }
-  | { kind: 'metric'; metric: Metric };
+  | { kind: 'metric'; metric: Metric }
+  | { kind: 'symptom'; symptom: SymptomType };
+
+function itemName(item: ResolvedItem): string {
+  if (item.kind === 'vitamin') return item.vitamin.displayName;
+  if (item.kind === 'metric') return item.metric.displayName;
+  return item.symptom.displayName;
+}
+
+const SCOPE_NOUN: Record<Scope, string> = {
+  vitamins: 'med or supplement',
+  symptoms: 'symptom',
+  any: 'med, metric, or symptom',
+};
 
 type LeadingItem =
   | { ok: true; item: ResolvedItem; consumed: number; exact: boolean }
@@ -308,9 +419,9 @@ type LeadingItem =
 function resolveLeadingItem(
   settings: VitalLogSettings,
   tokens: string[],
-  onlyVitamins: boolean
+  scope: Scope
 ): LeadingItem {
-  const candidates = buildCandidates(settings, onlyVitamins);
+  const candidates = buildCandidates(settings, scope);
   const maxWords = Math.min(MAX_NAME_WORDS, tokens.length);
 
   // Remembered so an all-ambiguous message beats a generic "unknown item".
@@ -345,14 +456,38 @@ function resolveLeadingItem(
       reason: 'no-match',
       // Name only what was actually searched: under "/med" the metrics were
       // never in the pool, so offering them would misdirect.
-      message: `No ${onlyVitamins ? 'med or supplement' : 'med or metric'} called "${tokens[0]}".`,
+      message: `No ${SCOPE_NOUN[scope]} called "${tokens[0]}".`,
       candidates: candidates.map((c) => c.displayName),
     },
   };
 }
 
+/** Words that mark a symptom as gone, in place of a 0. */
+const GONE_WORDS = new Set(['gone', 'over', 'ended', 'stopped', 'better', 'none']);
+
 function buildCommand(item: ResolvedItem, rest: string[]): ParseOutcome {
   const { time, date, dayOffset, remainder } = extractModifiers(rest);
+
+  if (item.kind === 'symptom') {
+    // The first token is the severity — a number or a "gone" word; the rest is the note.
+    const [first, ...others] = remainder;
+    const name = item.symptom.displayName;
+    const severity = first === undefined
+      ? undefined
+      : GONE_WORDS.has(first.toLowerCase()) ? 0 : parseNumber(first);
+    if (severity === undefined) {
+      return {
+        ok: false,
+        reason: 'bad-value',
+        message: `"${name}" needs how bad it is, 0–10 — e.g. "${name.toLowerCase()} 5", or "${name.toLowerCase()} gone".`,
+      };
+    }
+    if (!Number.isInteger(severity) || severity < 0 || severity > SYMPTOM_MAX) {
+      return { ok: false, reason: 'bad-value', message: `${name} takes 0–10, not ${formatNumber(severity)}.` };
+    }
+    const note = others.join(' ') || undefined;
+    return { ok: true, command: { kind: 'symptom', symptomId: item.symptom.id, severity, time, date, dayOffset, note } };
+  }
 
   // The first bare number is the value; anything after it is the note. Notes
   // containing digits are therefore fine as long as the value comes first.
@@ -511,14 +646,22 @@ interface Candidate {
   item: ResolvedItem;
 }
 
-function buildCandidates(settings: VitalLogSettings, onlyVitamins: boolean): Candidate[] {
+function buildCandidates(settings: VitalLogSettings, scope: Scope): Candidate[] {
+  const symptoms: Candidate[] = activeSymptoms(settings).map((symptom) => ({
+    displayName: symptom.displayName,
+    aliases: aliasesOfSymptom(symptom),
+    item: { kind: 'symptom' as const, symptom },
+  }));
+  if (scope === 'symptoms') return symptoms;
+
   const candidates: Candidate[] = activeVitamins(settings).map((vitamin) => ({
     displayName: vitamin.displayName,
     aliases: aliasesOfVitamin(vitamin),
     item: { kind: 'vitamin' as const, vitamin },
   }));
 
-  if (onlyVitamins) return candidates;
+  if (scope === 'vitamins') return candidates;
+  candidates.push(...symptoms);
 
   // Unsupported metric types stay in the pool deliberately: naming one should
   // report "can't log those yet", not "no such item".
@@ -555,6 +698,10 @@ function matchCandidates(candidates: Candidate[], needle: string): CandidateMatc
 
 function aliasesOfVitamin(vitamin: Vitamin): string[] {
   return uniqueNames([vitamin.displayName, vitamin.propertyKey]);
+}
+
+function aliasesOfSymptom(symptom: SymptomType): string[] {
+  return uniqueNames([symptom.displayName]);
 }
 
 function aliasesOfMetric(metric: Metric): string[] {
@@ -600,6 +747,28 @@ async function log(
   }
 
   try {
+    if (command.kind === 'symptom') {
+      const symptom = activeSymptoms(settings).find((t) => t.id === command.symptomId);
+      if (!symptom) return failure('That symptom no longer exists in Vital Log settings.');
+      await logSymptom(
+        app,
+        file,
+        { time, name: symptom.displayName, severity: command.severity, note: command.note },
+        settings,
+        opts?.appendToNote ?? settings.appendToNoteDefault_symptoms ?? false
+      );
+      return {
+        ok: true,
+        notePath: file.path,
+        summary: summarize(
+          command.severity === 0 ? `${symptom.displayName} gone` : `${symptom.displayName} ${command.severity}/10`,
+          time,
+          file,
+          command.note
+        ),
+      };
+    }
+
     if (command.kind === 'vitamin') {
       const vitamin = activeVitamins(settings).find((v) => v.id === command.vitaminId);
       if (!vitamin) return failure('That supplement no longer exists in Vital Log settings.');
@@ -705,6 +874,10 @@ function resolveTargetDate(command: ParsedLogCommand, base: Date): Date {
 
 function activeVitamins(settings: VitalLogSettings): Vitamin[] {
   return (settings.vitamins ?? []).filter((v) => !v.archived);
+}
+
+function activeSymptoms(settings: VitalLogSettings): SymptomType[] {
+  return (settings.symptomTypes ?? []).filter((t) => !t.archived);
 }
 
 function activeMetrics(settings: VitalLogSettings): Metric[] {

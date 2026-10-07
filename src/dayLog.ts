@@ -12,6 +12,7 @@
 import type { Metric, VitalLogSettings } from './types';
 import type { MtSession } from './managementTracker';
 import { formatMinutes } from './managementTracker';
+import { buildSymptomDays, readSymptomEntries, type SymptomDay } from './symptomManager';
 import { checkboxMetrics, scalarMetrics, seriesMetrics } from './types';
 
 type Fm = Record<string, unknown>;
@@ -77,19 +78,26 @@ export interface DayLog {
   tallies: TallyDay[];
   habits: Metric[];
   events: LoggedEvent[];
+  symptoms: SymptomDay[];
   /** Time Tracker sessions from Management Tracker; empty unless the caller attaches them. */
   sessions: MtSession[];
 }
 
-export type TimelineKind = 'marker' | 'session' | 'substance' | 'pack' | 'stack' | 'tracker' | 'tally' | 'habit' | 'event';
+export type TimelineKind = 'marker' | 'session' | 'symptom' | 'substance' | 'pack' | 'stack' | 'tracker' | 'tally' | 'habit' | 'event';
 
 export interface TimelineItem {
   kind: TimelineKind;
+  /** What was logged: a substance, tracker, symptom, event, … name. */
+  name: string;
   time: string | null;
   icon?: string;
-  text: string;
-  note?: string;
+  /** The amount, reading, or count, when the entry has one. */
+  value?: number;
+  unit?: string;
   severity?: number;
+  note?: string;
+  /** Ready-made display line, e.g. "Vyvanse 50mg" — what the viewer shows. */
+  text: string;
 }
 
 function isObj(v: unknown): v is Fm {
@@ -137,7 +145,16 @@ function byTime<T extends { time: string | null }>(a: T, b: T): number {
   return a.time.localeCompare(b.time);
 }
 
-export function collectDayLog(fm: Fm, settings: VitalLogSettings): DayLog {
+/**
+ * @param carriedIn symptoms still active coming into the day (lowercase
+ *   name → severity), from earlier notes; the caller works these out since
+ *   this function only sees one note.
+ */
+export function collectDayLog(
+  fm: Fm,
+  settings: VitalLogSettings,
+  carriedIn: Map<string, { name: string; severity: number }> = new Map()
+): DayLog {
   const unitFor = (name: string): string =>
     settings.vitamins.find((v) => v.displayName === name)?.unit ?? '';
 
@@ -249,7 +266,9 @@ export function collectDayLog(fm: Fm, settings: VitalLogSettings): DayLog {
   }
   events.sort(byTime);
 
-  return { markers, doses, packs: named('packs'), stacks: named('stacks'), trackers, tallies, habits, events, sessions: [] };
+  const symptoms = buildSymptomDays(readSymptomEntries(fm, settings), carriedIn, settings);
+
+  return { markers, doses, packs: named('packs'), stacks: named('stacks'), trackers, tallies, habits, events, symptoms, sessions: [] };
 }
 
 /** Per-substance totals, in order of first dose. */
@@ -274,36 +293,107 @@ function formatAmount(amount: number | null, unit: string): string {
   return ` ${Math.round(amount * 100) / 100}${unit}`;
 }
 
-/** Every entry as one time-ordered list; untimed items (tallies, habits) first. */
+/**
+ * Every entry as one time-ordered list; untimed items (tallies, habits)
+ * first. The Timeline tab draws this, and the public API's timeline()
+ * returns it, so a kind added here shows up in both.
+ */
 export function timeline(log: DayLog): TimelineItem[] {
   const items: TimelineItem[] = [];
-  for (const m of log.markers) items.push({ kind: 'marker', time: m.time, icon: m.icon ?? 'clock', text: m.label });
+  for (const m of log.markers) {
+    items.push({ kind: 'marker', name: m.label, time: m.time, icon: m.icon ?? 'clock', text: m.label });
+  }
   for (const s of log.sessions) {
+    const name = s.title || 'Session';
     items.push({
       kind: 'session',
+      name,
       time: s.time,
       icon: 'timer',
-      text: `${s.title || 'Session'} · ${formatMinutes(s.minutes)}`,
+      value: s.minutes,
+      unit: 'min',
       note: s.countsToward || undefined,
+      text: `${name} · ${formatMinutes(s.minutes)}`,
     });
   }
   for (const d of log.doses) {
-    items.push({ kind: 'substance', time: d.time, icon: 'pill', text: `${d.name}${formatAmount(d.amount, d.unit)}`, note: d.note });
+    items.push({
+      kind: 'substance',
+      name: d.name,
+      time: d.time,
+      icon: 'pill',
+      ...(d.amount !== null ? { value: d.amount } : {}),
+      ...(d.unit ? { unit: d.unit } : {}),
+      note: d.note,
+      text: `${d.name}${formatAmount(d.amount, d.unit)}`,
+    });
   }
-  for (const p of log.packs) items.push({ kind: 'pack', time: p.time, icon: 'package', text: p.name });
-  for (const s of log.stacks) items.push({ kind: 'stack', time: s.time, icon: 'layers', text: s.name });
+  for (const p of log.packs) items.push({ kind: 'pack', name: p.name, time: p.time, icon: 'package', text: p.name });
+  for (const s of log.stacks) items.push({ kind: 'stack', name: s.name, time: s.time, icon: 'layers', text: s.name });
   for (const t of log.trackers) {
+    const isMinutes = t.tracker.trackerType === 'minutes';
     for (const r of t.readings) {
-      const unit = t.tracker.trackerType === 'minutes' ? ' min' : '';
-      items.push({ kind: 'tracker', time: r.time, icon: t.tracker.icon ?? 'activity', text: `${t.tracker.displayName}: ${r.value}${unit}`, note: r.note });
+      items.push({
+        kind: 'tracker',
+        name: t.tracker.displayName,
+        time: r.time,
+        icon: t.tracker.icon ?? 'activity',
+        value: r.value,
+        ...(isMinutes ? { unit: 'min' } : {}),
+        note: r.note,
+        text: `${t.tracker.displayName}: ${r.value}${isMinutes ? ' min' : ''}`,
+      });
     }
   }
   for (const t of log.tallies) {
-    items.push({ kind: 'tally', time: null, icon: t.tally.icon ?? 'hash', text: `${t.tally.displayName}: ${t.value}/${t.tally.target}` });
+    items.push({
+      kind: 'tally',
+      name: t.tally.displayName,
+      time: null,
+      icon: t.tally.icon ?? 'hash',
+      value: t.value,
+      unit: `/${t.tally.target}`,
+      text: `${t.tally.displayName}: ${t.value}/${t.tally.target}`,
+    });
   }
-  for (const h of log.habits) items.push({ kind: 'habit', time: null, icon: h.icon ?? 'check', text: h.displayName });
+  for (const h of log.habits) {
+    items.push({ kind: 'habit', name: h.displayName, time: null, icon: h.icon ?? 'check', text: h.displayName });
+  }
+  for (const s of log.symptoms) {
+    const icon = s.icon ?? 'thermometer';
+    if (s.carriedIn !== null) {
+      items.push({
+        kind: 'symptom',
+        name: s.name,
+        time: null,
+        icon,
+        severity: s.carriedIn,
+        note: 'Carried over from an earlier day',
+        text: `${s.name} ${s.carriedIn}/10 (from earlier)`,
+      });
+    }
+    for (const r of s.readings) {
+      items.push({
+        kind: 'symptom',
+        name: s.name,
+        time: r.time,
+        icon,
+        severity: r.severity,
+        note: r.note,
+        text: r.severity === 0 ? `${s.name} gone` : `${s.name} ${r.severity}/10`,
+      });
+    }
+  }
   for (const e of log.events) {
-    items.push({ kind: 'event', time: e.time, icon: e.icon ?? 'calendar-clock', text: e.name, note: e.note, severity: e.severity });
+    items.push({
+      kind: 'event',
+      name: e.name,
+      time: e.time,
+      icon: e.icon ?? 'calendar-clock',
+      severity: e.severity,
+      note: e.note,
+      text: e.name,
+    });
   }
   // Stable sort keeps kind order within the same minute.
   return items.sort(byTime);
@@ -313,6 +403,6 @@ export function isEmptyDay(log: DayLog): boolean {
   return (
     log.markers.length === 0 && log.doses.length === 0 && log.packs.length === 0 && log.stacks.length === 0 &&
     log.trackers.length === 0 && log.tallies.length === 0 && log.habits.length === 0 &&
-    log.events.length === 0 && log.sessions.length === 0
+    log.events.length === 0 && log.sessions.length === 0 && log.symptoms.length === 0
   );
 }

@@ -2,7 +2,7 @@
 // Vital Log — Settings Tab
 // ============================================================
 
-import { App, Notice, PluginSettingTab, Setting, setIcon } from 'obsidian';
+import { App, Notice, PluginSettingTab, Setting, setIcon, TFile } from 'obsidian';
 import type VitalLogPlugin from '../main';
 import type { CustomModalConfig, CustomField, CustomFieldType, TallyCounterConfig, TrackerConfig, Metric, CustomModalItem, CustomButtonConfig, MirrorConditionalPin, StatType, ScheduleItem, ScheduleKind, Frequency, EventType } from './types';
 import { CUSTOM_FIELD_TYPES, STAT_TYPES, STAT_LABELS, defaultPrimaryStat, defaultDisplayStats, seriesMetrics, scalarMetrics, checkboxMetrics, SEVERITY_LABELS } from './types';
@@ -11,6 +11,8 @@ import { ManageModal } from './manageModal';
 import { KeyDiagnosticModal } from './keyDiagnosticModal';
 import { buildSnapshot } from './keySnapshotManager';
 import { planConversion, applyConversion } from './substanceConversion';
+import { moveEventsToSymptomsIn, ensureSymptomType } from './symptomManager';
+import { mutateFrontmatter, readAllFrontmatter } from './yamlManager';
 import { confirm } from './confirmModal';
 import { findStaleReferences, removeStaleReferences } from './referenceCheck';
 import { validatePropertyKey, allKeyOwners } from './validation';
@@ -47,7 +49,7 @@ function metricTypeLabel(type: import('./types').TrackerType | undefined): strin
   }
 }
 
-type SettingsTab = 'general' | 'library' | 'metrics' | 'plan' | 'customModals' | 'events';
+type SettingsTab = 'general' | 'library' | 'metrics' | 'plan' | 'customModals' | 'symptoms' | 'events';
 
 export class VitalLogSettingTab extends PluginSettingTab {
   private plugin: VitalLogPlugin;
@@ -71,6 +73,7 @@ export class VitalLogSettingTab extends PluginSettingTab {
       { id: 'metrics', label: 'Metrics' },
       { id: 'plan', label: 'Plan' },
       { id: 'customModals', label: 'Custom Modals' },
+      { id: 'symptoms', label: 'Symptoms' },
       { id: 'events', label: 'Events' },
     ];
 
@@ -105,6 +108,9 @@ export class VitalLogSettingTab extends PluginSettingTab {
         break;
       case 'customModals':
         this.renderCustomModalsTab(content);
+        break;
+      case 'symptoms':
+        this.renderSymptomsTab(content);
         break;
       case 'events':
         this.renderEventsTab(content);
@@ -1428,6 +1434,214 @@ export class VitalLogSettingTab extends PluginSettingTab {
 
   // ── Events tab ────────────────────────────────────────────────
 
+  /**
+   * Turn an event type into a symptom type, moving every logged event of
+   * that name into the symptoms list (severity 1–5 becomes 2–10).
+   */
+  private async moveEventTypeToSymptoms(et: EventType): Promise<void> {
+    const settings = this.plugin.settings;
+    const affected: TFile[] = [];
+    let entries = 0;
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      const events = this.app.metadataCache.getFileCache(file)?.frontmatter?.[settings.eventsPropertyKey || 'events'];
+      if (!Array.isArray(events)) continue;
+      const n = events.filter(
+        (e: unknown) => typeof e === 'object' && e !== null &&
+          String((e as Record<string, unknown>)['name'] ?? '').toLowerCase() === et.displayName.toLowerCase()
+      ).length;
+      if (n > 0) {
+        affected.push(file);
+        entries += n;
+      }
+    }
+
+    const ok = await confirm(this.app, {
+      title: `Move "${et.displayName}" to symptoms`,
+      message: [
+        `"${et.displayName}" becomes a symptom type and leaves the event list.`,
+        entries > 0
+          ? `${entries} logged ${et.displayName} event${entries === 1 ? '' : 's'} in ${affected.length} note${affected.length === 1 ? '' : 's'} ` +
+            'will move into the symptoms list. Severity 1–5 becomes 2–10.'
+          : 'No logged events of this type were found, so no notes change.',
+        'Symptoms have no end until marked gone; a moved one older than a week no longer shows as active.',
+      ],
+      confirmText: 'Move',
+      destructive: false,
+    });
+    if (!ok) return;
+
+    let failed = 0;
+    for (const file of affected) {
+      try {
+        // Re-check against the file itself: the cache may trail recent edits.
+        const fm = await readAllFrontmatter(this.app, file);
+        if (!Array.isArray(fm[settings.eventsPropertyKey || 'events'])) continue;
+        await mutateFrontmatter(this.app, file, (live) => {
+          moveEventsToSymptomsIn(live, et.displayName, settings);
+        });
+      } catch (err) {
+        failed++;
+        console.error(`Vital Log: failed to move events in "${file.path}"`, err);
+      }
+    }
+
+    ensureSymptomType(settings, et.displayName, et.icon);
+    settings.eventTypes = settings.eventTypes.filter((t) => t.id !== et.id);
+    await this.plugin.saveSettings();
+    new Notice(
+      failed === 0
+        ? `Vital Log: "${et.displayName}" is now a symptom${entries > 0 ? ` (${entries} entr${entries === 1 ? 'y' : 'ies'} moved)` : ''}.`
+        : `Vital Log: moved "${et.displayName}", but ${failed} note(s) failed — see the console.`
+    );
+    this.display();
+  }
+
+  private renderSymptomsTab(el: HTMLElement): void {
+    const settings = this.plugin.settings;
+    el.createEl('p', {
+      text: 'Symptoms are logged as readings from 0 to 10. Log the same symptom again to re-rate it, and 0 when it has gone. ' +
+        'A symptom stays active, also on the following days, until it is marked gone.',
+      cls: 'vital-log-settings-helper',
+    });
+
+    el.createEl('h3', { text: 'Symptom Types' });
+    const list = el.createDiv('vital-log-item-list');
+    const active = settings.symptomTypes.filter((t) => !t.archived);
+    for (const st of active) {
+      const row = list.createDiv('vital-log-item-row');
+      const nameEl = row.createDiv('vital-log-item-info').createDiv({ cls: 'vital-log-item-name' });
+      if (st.icon) setIcon(nameEl.createSpan({ cls: 'vital-log-item-icon' }), st.icon);
+      nameEl.createSpan({ text: st.displayName });
+      const actions = row.createDiv('vital-log-item-actions');
+      const archiveBtn = actions.createEl('button', { text: 'Archive', cls: 'vital-log-btn' });
+      archiveBtn.title = 'Hide from the log modal; keeps logged data intact';
+      archiveBtn.addEventListener('click', async () => {
+        st.archived = true;
+        await this.plugin.saveSettings();
+        this.display();
+      });
+      const deleteBtn = actions.createEl('button', { text: 'Delete', cls: 'vital-log-btn mod-warning' });
+      deleteBtn.addEventListener('click', async () => {
+        const ok = await confirm(this.app, {
+          title: 'Delete symptom type',
+          message: `Delete "${st.displayName}"? Symptoms already logged in your notes are not affected.`,
+          confirmText: 'Delete',
+        });
+        if (!ok) return;
+        settings.symptomTypes = settings.symptomTypes.filter((t) => t.id !== st.id);
+        await this.plugin.saveSettings();
+        this.display();
+      });
+    }
+    if (active.length === 0) {
+      list.createDiv({
+        cls: 'vital-log-empty-state',
+        text: 'No symptom types yet. Add one here or with "+ New" in the log modal.',
+      });
+    }
+
+    const addSection = el.createDiv('vital-log-add-inline');
+    const addInput = addSection.createEl('input', { type: 'text', placeholder: 'New symptom name…' });
+    addInput.setAttribute('aria-label', 'New symptom name');
+    const addBtn = addSection.createEl('button', { text: 'Add', cls: 'vital-log-btn mod-cta' });
+    const addError = attachFieldError(addSection, addInput);
+    const add = async (): Promise<void> => {
+      const name = addInput.value.trim();
+      if (!name) {
+        addError.show('Type a name for the new symptom.');
+        addInput.focus();
+        return;
+      }
+      if (settings.symptomTypes.some((t) => t.displayName.toLowerCase() === name.toLowerCase())) {
+        addError.show(`"${name}" already exists.`);
+        addInput.focus();
+        return;
+      }
+      settings.symptomTypes.push({ id: crypto.randomUUID(), displayName: name });
+      await this.plugin.saveSettings();
+      this.display();
+    };
+    addBtn.addEventListener('click', () => void add());
+    addInput.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      void add();
+    });
+
+    const archived = settings.symptomTypes.filter((t) => t.archived);
+    if (archived.length > 0) {
+      const details = el.createEl('details', { cls: 'vital-log-archived-modals' });
+      details.createEl('summary', { text: `Archived symptom types (${archived.length})` });
+      const archivedList = details.createDiv('vital-log-item-list');
+      for (const st of archived) {
+        const row = archivedList.createDiv('vital-log-item-row vital-log-item-row--archived');
+        row.createDiv('vital-log-item-info').createDiv({ cls: 'vital-log-item-name', text: st.displayName });
+        const restore = row.createDiv('vital-log-item-actions').createEl('button', { text: 'Restore', cls: 'vital-log-btn' });
+        restore.addEventListener('click', async () => {
+          delete st.archived;
+          await this.plugin.saveSettings();
+          this.display();
+        });
+      }
+    }
+
+    el.createEl('h3', { text: 'Insights' });
+    new Setting(el)
+      .setName('After-dose window (hours)')
+      .setDesc('The day view\'s Insights tab reports symptoms that began within this many hours of a substance dose. ' +
+        'Override it per substance in Library → Vitamins.')
+      .addText((text) => {
+        text.inputEl.type = 'number';
+        text
+          .setValue(String(settings.symptomDoseWindowHours ?? 6))
+          .onChange(async (val) => {
+            const hours = parseFloat(val);
+            if (!isNaN(hours) && hours > 0 && hours <= 48) {
+              settings.symptomDoseWindowHours = hours;
+              await this.plugin.saveSettings();
+            }
+          });
+      });
+
+    el.createEl('h3', { text: 'Storage' });
+    new Setting(el)
+      .setName('Frontmatter key')
+      .setDesc('Property key used to store symptoms in your daily note.')
+      .addText((text) => {
+        text
+          .setPlaceholder('symptoms')
+          .setValue(settings.symptomsPropertyKey)
+          .onChange(async (val) => {
+            const trimmed = val.trim();
+            if (trimmed) {
+              settings.symptomsPropertyKey = trimmed;
+              await this.plugin.saveSettings();
+            }
+          });
+      });
+    new Setting(el)
+      .setName('Default "append to note"')
+      .setDesc('Pre-check "Also add to note content" on the Symptoms tab of the log modal.')
+      .addToggle((toggle) =>
+        toggle.setValue(settings.appendToNoteDefault_symptoms).onChange(async (val) => {
+          settings.appendToNoteDefault_symptoms = val;
+          await this.plugin.saveSettings();
+        })
+      );
+    new Setting(el)
+      .setName('Note content template')
+      .setDesc('Template for symptom lines appended to the note body. Tokens: {time} {name} {severity} {note}')
+      .addText((text) =>
+        text
+          .setPlaceholder('- {time} {name} {severity}/10')
+          .setValue(settings.noteContentTemplate_symptoms)
+          .onChange(async (val) => {
+            settings.noteContentTemplate_symptoms = val;
+            await this.plugin.saveSettings();
+          })
+      );
+  }
+
   private renderEventsTab(el: HTMLElement): void {
     el.createEl('p', {
       text: 'Events are one-off life occurrences (sick, traveling, rest day, etc.) you can log to your daily note. ' +
@@ -1453,6 +1667,10 @@ export class VitalLogSettingTab extends PluginSettingTab {
       }
       nameEl.createSpan({ text: et.displayName });
       const actions = row.createDiv('vital-log-item-actions');
+
+      const moveBtn = actions.createEl('button', { text: 'Move to symptoms', cls: 'vital-log-btn' });
+      moveBtn.title = 'Turn this event type into a symptom, including entries already logged';
+      moveBtn.addEventListener('click', () => void this.moveEventTypeToSymptoms(et));
 
       const archiveBtn = actions.createEl('button', { text: 'Archive', cls: 'vital-log-btn' });
       archiveBtn.title = 'Hide from log modal; keeps historical data intact';

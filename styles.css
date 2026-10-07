@@ -3947,3 +3947,190 @@
   letter-spacing: 0;
   text-transform: none;
 }
+
+/* ── Symptoms (log modal) ── */
+
+.vital-log-active-symptoms {
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-secondary);
+}
+
+.vital-log-active-symptom {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 40px;
+}
+
+.vital-log-active-symptom + .vital-log-active-symptom {
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.vital-log-active-symptom-info {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.vital-log-active-symptom-name {
+  font-weight: 600;
+}
+
+.vital-log-active-symptom-meta {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.vital-log-symptom-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 0.35rem;
+  margin-top: 0.4rem;
+}
+
+@media (min-width: 520px) {
+  .vital-log-symptom-grid {
+    grid-template-columns: repeat(11, minmax(0, 1fr));
+  }
+}
+
+.vital-log-symptom-btn {
+  height: auto;
+  min-height: 42px;
+  padding: 0;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  /* Darker red as severity rises; --vl-severity is 0–1. */
+  background: color-mix(in srgb, var(--color-red) calc(var(--vl-severity, 0) * 55%), var(--background-primary));
+  box-shadow: none;
+  color: var(--text-normal);
+  font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.vital-log-symptom-btn.is-gone {
+  font-size: 0.8rem;
+  color: var(--color-green);
+}
+
+.vital-log-symptom-btn.is-selected {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 1px;
+  font-weight: 700;
+}
+
+.vital-log-chart-symptom {
+  fill: var(--color-red);
+}
+
+.vital-log-chart-symptom:hover {
+  stroke: var(--color-red);
+  stroke-width: 1;
+}
+
+.vital-log-chart-symptom-label {
+  fill: var(--text-muted);
+  font-size: 9.5px;
+  pointer-events: none;
+}
+
+.vital-log-chart-symptom-label.is-inside {
+  fill: #fff;
+  font-weight: 600;
+}
+
+.vital-log-chart-legend-symptom {
+  width: 0.9em;
+  height: 0.55em;
+  border-radius: 2px;
+  background: linear-gradient(to right, rgba(var(--color-red-rgb), 0.3), rgba(var(--color-red-rgb), 1));
+}
+
+.vital-log-day-symptom-peak {
+  margin-left: auto;
+  color: var(--color-red);
+  font-size: 0.8em;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Symptoms tab: episodes and calendar ── */
+
+.vital-log-day-episode {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5em;
+  margin-top: 0.15em;
+  color: var(--text-muted);
+  font-size: 0.78em;
+}
+
+.vital-log-day-episode .vital-log-range-chart,
+.vital-log-day-row .vital-log-range-chart {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.vital-log-day-row .vital-log-sparkline {
+  width: 72px;
+  height: 20px;
+}
+
+.vital-log-day-section-head {
+  align-items: center;
+  margin-top: 0.6em;
+}
+
+.vital-log-day-section-head .vital-log-day-group-title {
+  margin: 0;
+}
+
+.vital-log-day-section-head .vital-log-day-segmented {
+  margin-bottom: 0;
+}
+
+.vital-log-symptom-calendar {
+  display: grid;
+  gap: 1px;
+  align-items: center;
+  margin-top: 0.4em;
+}
+
+.vital-log-symptom-calendar-name,
+.vital-log-symptom-calendar-total {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 0.72em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vital-log-symptom-calendar-name {
+  padding-right: 0.4em;
+}
+
+.vital-log-symptom-calendar-total {
+  padding-left: 0.4em;
+  font-variant-numeric: tabular-nums;
+}
+
+.vital-log-symptom-calendar-cell {
+  height: 1em;
+  border-radius: 1px;
+  background: var(--background-modifier-hover);
+}
+
+.vital-log-symptom-calendar-cell.is-missing {
+  opacity: 0.35;
+}
+
+.vital-log-symptom-calendar-cell.has-symptom {
+  background: color-mix(in srgb, var(--color-red) calc(25% + var(--vl-severity, 0) * 75%), var(--background-primary));
+  opacity: 1;
+}

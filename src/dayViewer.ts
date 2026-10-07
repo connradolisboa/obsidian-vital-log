@@ -11,7 +11,7 @@
 //
 // Lines, all optional:
 //   <tab name>          — tab to open on: chart, timeline, substances,
-//                         trackers, events, time, week, insights
+//                         trackers, symptoms, events, time, week, insights
 //   <title>             — header text (default "Day")
 //   + / -               — collapsible, starting open / collapsed
 //   tabs: a, b, …       — which tabs to show, in order
@@ -28,6 +28,7 @@ import type VitalLogPlugin from '../main';
 import { getDailyNoteIfExists, noteDateForTemplate } from './dailyNoteResolver';
 import { formatMinutes, getManagementApi, type ManagementApi } from './managementTracker';
 import type { RenderDayOptions } from './api';
+import { DAY_TABS, type DayTab } from './dayTabs';
 import * as yaml from './yamlManager';
 import {
   collectDayLog,
@@ -39,27 +40,17 @@ import {
 } from './dayLog';
 import { renderSparkline } from './dashboardRenderer';
 import { renderDayChart, minutesOf, hourRange } from './dayChart';
-import { loadHistory, loggedDays } from './dayHistory';
-import { findInsights, heatmapRow, hourlyAverage, trackerPoints, type ChartPoint } from './dayStats';
+import { attachSessions, loadHistory, loggedDays, symptomsCarriedInto } from './dayHistory';
+import { findInsights, heatmapRow, hourlyAverage, symptomsAfterDoses, trackerPoints, type ChartPoint } from './dayStats';
+import { symptomCalendar, symptomEpisodes, symptomsNextDay, weeklySymptomTotals } from './symptomStats';
 import { shieldFromEditor } from './embedRenderer';
 import { VitalLogModal, type LogTab } from './vitalLogModal';
 import { SEVERITY_LABELS, seriesMetrics } from './types';
 import { toISODate } from './planManager';
 
-type DayTab = 'chart' | 'timeline' | 'substances' | 'trackers' | 'events' | 'time' | 'week' | 'insights';
 type CompareMode = 'none' | 'yesterday' | 'week';
 
-const ALL_TABS: { id: DayTab; label: string; icon: string }[] = [
-  { id: 'chart', label: 'Chart', icon: 'line-chart' },
-  { id: 'timeline', label: 'Timeline', icon: 'clock' },
-  { id: 'substances', label: 'Substances', icon: 'pill' },
-  { id: 'trackers', label: 'Trackers', icon: 'activity' },
-  { id: 'events', label: 'Events', icon: 'calendar-clock' },
-  // Only shown when Management Tracker's API is available.
-  { id: 'time', label: 'Time', icon: 'timer' },
-  { id: 'week', label: 'Week', icon: 'grid-3x3' },
-  { id: 'insights', label: 'Insights', icon: 'lightbulb' },
-];
+const ALL_TABS: readonly { id: DayTab; label: string; icon: string }[] = DAY_TABS;
 
 const COMPARE_MODES: { id: CompareMode; label: string }[] = [
   { id: 'none', label: 'Today' },
@@ -76,6 +67,7 @@ const LOG_TAB_FOR: Record<DayTab, LogTab> = {
   timeline: 'supplements',
   substances: 'supplements',
   trackers: 'trackers',
+  symptoms: 'symptoms',
   events: 'events',
   time: 'trackers', // unused: "+" opens the Time Tracker on this tab
   week: 'trackers',
@@ -105,6 +97,7 @@ interface ViewerState {
   compare: CompareMode;
   heatmapTrackerId: string;
   heatmapDays: number;
+  symptomRange: number;
 }
 
 /**
@@ -172,6 +165,7 @@ function loadState(opts: ViewerOptions): ViewerState {
       compare: 'week',
       heatmapTrackerId: '',
       heatmapDays: 14,
+      symptomRange: 30,
       ...(state ? { collapsed: state.collapsed } : {}),
     };
     sessionState.set(opts.stateKey, state);
@@ -382,16 +376,12 @@ async function renderViewer(viewer: Viewer): Promise<void> {
   const { plugin, el, opts, state } = viewer;
   const { file: target, date: noteDate } = viewer.target;
   const fm = target ? await yaml.readAllFrontmatter(plugin.app, target) : {};
-  const log = collectDayLog(fm, plugin.settings);
+  // Symptoms still active from earlier days carry into this one.
+  const carried = noteDate ? symptomsCarriedInto(plugin.app, plugin.settings, noteDate) : new Map();
+  const log = collectDayLog(fm, plugin.settings, carried);
 
   const mt = getManagementApi(plugin.app);
-  if (mt && noteDate) {
-    try {
-      log.sessions = mt.sessionsOn(toISODate(noteDate));
-    } catch (err) {
-      console.error('Vital Log: Management Tracker sessionsOn failed', err);
-    }
-  }
+  if (noteDate) attachSessions(plugin.app, log, noteDate);
 
   const tabs = visibleTabs(opts, mt);
   if (tabs.length > 0 && !tabs.includes(state.tab)) state.tab = tabs[0];
@@ -471,6 +461,7 @@ async function renderViewer(viewer: Viewer): Promise<void> {
     case 'timeline': renderTimeline(panel, log); break;
     case 'substances': renderSubstances(panel, log); break;
     case 'trackers': renderTrackers(panel, log); break;
+    case 'symptoms': renderSymptoms(plugin, panel, log, state, noteDate ?? new Date(), viewer.redraw); break;
     case 'events': renderEvents(panel, log); break;
   }
 }
@@ -482,6 +473,7 @@ function tabCount(log: DayLog, tab: DayTab): number {
     case 'insights':
       return 0;
     case 'time': return log.sessions.length;
+    case 'symptoms': return log.symptoms.length;
     case 'timeline': return timeline(log).length;
     case 'substances': return substanceTotals(log).length + log.packs.length + log.stacks.length;
     case 'trackers': return log.trackers.length + log.tallies.length + log.habits.length;
@@ -495,6 +487,7 @@ function renderSummary(container: HTMLElement, log: DayLog): void {
     ['pill', log.doses.length],
     ['activity', log.trackers.reduce((n, t) => n + t.readings.length, 0)],
     ['check-circle', log.tallies.length + log.habits.length],
+    ['thermometer', log.symptoms.length],
     ['calendar-clock', log.events.length],
   ];
   for (const [icon, count] of parts) {
@@ -833,6 +826,61 @@ function renderInsightsTab(plugin: VitalLogPlugin, panel: HTMLElement, endDate: 
   const trackers = seriesMetrics(plugin.settings).filter((t) => !t.archived);
   const insights = findInsights(logs, trackers);
 
+  // Symptoms that tend to begin soon after a dose.
+  const fallbackHours = plugin.settings.symptomDoseWindowHours || 6;
+  const links = symptomsAfterDoses(logs, (substance) =>
+    plugin.settings.vitamins.find((v) => v.displayName === substance)?.symptomWindowHours || fallbackHours
+  );
+  if (links.length > 0) {
+    panel.createDiv({ cls: 'vital-log-day-group-title', text: 'Symptoms after doses' });
+    const list = panel.createDiv('vital-log-day-list');
+    for (const link of links) {
+      const row = list.createDiv('vital-log-day-row vital-log-insight');
+      setIcon(row.createSpan('vital-log-day-row-icon'), 'thermometer');
+      const main = row.createDiv('vital-log-day-row-main');
+      main.createSpan({ cls: 'vital-log-day-row-text', text: `${link.symptom} after ${link.substance}` });
+      main.createSpan({
+        cls: 'vital-log-day-row-note',
+        text: `Began within ${link.windowHours}h of a dose on ${link.doseHits} of ${link.doseDays} days, ` +
+          `and on ${link.otherHits} of ${link.otherDays} days without it.`,
+      });
+      row.createSpan({
+        cls: 'vital-log-insight-delta is-down',
+        text: `${Math.round((link.doseHits / link.doseDays) * 100)}% vs ${Math.round((link.otherHits / link.otherDays) * 100)}%`,
+      });
+    }
+    if (insights.length > 0) panel.createDiv({ cls: 'vital-log-day-group-title', text: 'Tracker averages' });
+  }
+
+  // What tends to hold the day before a symptom begins.
+  const nextDay = symptomsNextDay(loadHistory(plugin.app, plugin.settings, endDate, INSIGHT_DAYS));
+  if (nextDay.length > 0) {
+    panel.createDiv({ cls: 'vital-log-day-group-title', text: 'Symptoms the next day' });
+    const list = panel.createDiv('vital-log-day-list');
+    for (const link of nextDay) {
+      const row = list.createDiv('vital-log-day-row vital-log-insight');
+      setIcon(row.createSpan('vital-log-day-row-icon'), 'calendar-arrow-down');
+      const main = row.createDiv('vital-log-day-row-main');
+      main.createSpan({ cls: 'vital-log-day-row-text', text: `${link.symptom} the day after ${link.condition}` });
+      main.createSpan({
+        cls: 'vital-log-day-row-note',
+        text: `Began the next day after ${link.withHits} of ${link.withDays} such days, ` +
+          `and after ${link.withoutHits} of ${link.withoutDays} other days.`,
+      });
+      row.createSpan({
+        cls: 'vital-log-insight-delta is-down',
+        text: `${Math.round((link.withHits / link.withDays) * 100)}% vs ${Math.round((link.withoutHits / link.withoutDays) * 100)}%`,
+      });
+    }
+  }
+
+  if (insights.length === 0 && (links.length > 0 || nextDay.length > 0)) {
+    panel.createDiv({
+      cls: 'vital-log-heatmap-hint',
+      text: `Over the last ${INSIGHT_DAYS} days. These are patterns, not causes — small samples can mislead.`,
+    });
+    return;
+  }
   if (insights.length === 0) {
     return empty(
       panel,
@@ -860,4 +908,138 @@ function renderInsightsTab(plugin: VitalLogPlugin, panel: HTMLElement, endDate: 
     cls: 'vital-log-heatmap-hint',
     text: `Daily averages over the last ${INSIGHT_DAYS} days. These are patterns, not causes — small samples can mislead.`,
   });
+}
+
+// ── Symptoms tab ─────────────────────────────────────────────
+
+const SYMPTOM_RANGES = [30, 90];
+
+function shortDate(date: Date): string {
+  return date.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+}
+
+function renderSymptoms(
+  plugin: VitalLogPlugin,
+  panel: HTMLElement,
+  log: DayLog,
+  state: ViewerState,
+  endDate: Date,
+  rerender: () => void
+): void {
+  const history = loadHistory(plugin.app, plugin.settings, endDate, state.symptomRange);
+  const episodes = symptomEpisodes(history);
+
+  // ── This day ──
+  if (log.symptoms.length === 0) {
+    empty(panel, 'No symptoms on this day.');
+  }
+  for (const sym of log.symptoms) {
+    const card = panel.createDiv('vital-log-day-card');
+    const head = card.createDiv('vital-log-day-card-head');
+    setIcon(head.createSpan('vital-log-day-row-icon'), sym.icon ?? 'thermometer');
+    head.createSpan({ cls: 'vital-log-day-card-title', text: sym.name });
+    head.createSpan({ cls: 'vital-log-day-symptom-peak', text: `peak ${sym.peak}/10` });
+
+    const from = sym.carriedIn !== null ? 'from an earlier day' : sym.startTime ? `from ${sym.startTime}` : '';
+    const until = sym.activeAtEnd ? 'still active' : sym.endTime ? `gone at ${sym.endTime}` : '';
+    let span = [from, until].filter(Boolean).join(', ');
+    const start = minutesOf(sym.startTime);
+    const end = minutesOf(sym.endTime);
+    if (start !== null && end !== null && end > start) span += ` · ${formatMinutes(end - start)}`;
+    card.createDiv({ cls: 'vital-log-day-card-stats', text: span });
+
+    // A multi-day episode: which day this is, and its curve so far.
+    const episode = episodes.find(
+      (ep) => ep.name.toLowerCase() === sym.name.toLowerCase() &&
+        ep.startDate.getTime() <= endDate.getTime() &&
+        (ep.endDate === null || ep.endDate.getTime() >= new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate()).getTime())
+    );
+    if (episode && episode.days > 1) {
+      const line = card.createDiv('vital-log-day-episode');
+      line.createSpan({
+        text: `Day ${episode.days}${episode.startedBefore ? '+' : ''} · since ${shortDate(episode.startDate)}` +
+          `${episode.startTime ? ' ' + episode.startTime : ''} · peak ${episode.peak}/10`,
+      });
+      renderSparkline(line, episode.dailyPeaks);
+    }
+
+    const readings = card.createDiv('vital-log-day-readings');
+    for (const r of sym.readings) {
+      const chip = readings.createSpan('vital-log-day-reading');
+      if (r.time) chip.createSpan({ cls: 'vital-log-day-time', text: r.time });
+      chip.createSpan({ cls: 'vital-log-day-reading-value', text: r.severity === 0 ? 'gone' : `${r.severity}/10` });
+      if (r.note) chip.setAttribute('aria-label', r.note);
+    }
+  }
+
+  // ── Over the last 30 / 90 days ──
+  const calendar = symptomCalendar(history);
+  if (calendar.length === 0) return;
+
+  const header = panel.createDiv('vital-log-day-controls vital-log-day-section-head');
+  header.createDiv({ cls: 'vital-log-day-group-title', text: `Last ${state.symptomRange} days` });
+  renderSegmented(header, SYMPTOM_RANGES.map((n) => ({ id: n, label: `${n}d` })), state.symptomRange, (n) => {
+    state.symptomRange = n;
+    rerender();
+  });
+
+  // Calendar: a row per symptom, a cell per day, shaded by that day's peak.
+  const grid = panel.createDiv('vital-log-symptom-calendar');
+  grid.style.gridTemplateColumns = `minmax(4em, auto) repeat(${history.length}, minmax(0, 1fr)) auto`;
+  for (const row of calendar) {
+    grid.createDiv({ cls: 'vital-log-symptom-calendar-name', text: row.name });
+    row.cells.forEach((peak, i) => {
+      const cell = grid.createDiv('vital-log-symptom-calendar-cell');
+      if (history[i].log === null) cell.addClass('is-missing');
+      if (peak === null) return;
+      cell.style.setProperty('--vl-severity', String(peak / 10));
+      cell.addClass('has-symptom');
+      cell.title = `${shortDate(history[i].date)} · ${row.name} peak ${peak}/10`;
+    });
+    grid.createDiv({
+      cls: 'vital-log-symptom-calendar-total',
+      text: `${row.days}d · ${Math.round(row.averagePeak * 10) / 10}`,
+    });
+  }
+  panel.createDiv({
+    cls: 'vital-log-heatmap-hint',
+    text: 'Each cell is a day, shaded by that day\'s peak. Right: days with it · average peak.',
+  });
+
+  // Weekly totals.
+  const weeks = weeklySymptomTotals(history).slice(0, state.symptomRange > 30 ? 13 : 5);
+  panel.createDiv({ cls: 'vital-log-day-group-title', text: 'By week' });
+  const weekList = panel.createDiv('vital-log-day-list');
+  for (const w of weeks) {
+    const row = weekList.createDiv('vital-log-day-row');
+    row.createSpan({ cls: 'vital-log-day-time vital-log-day-time--range', text: `Week of ${shortDate(w.weekStart)}` });
+    const main = row.createDiv('vital-log-day-row-main');
+    main.createSpan({
+      cls: 'vital-log-day-row-text',
+      text: w.symptomDays === 0 ? 'No symptoms' : `${w.symptomDays} of ${w.loggedDays} days with symptoms`,
+    });
+    if (w.symptomDays > 0) {
+      row.createSpan({ cls: 'vital-log-day-amount', text: `avg peak ${Math.round(w.averagePeak * 10) / 10}` });
+    }
+  }
+
+  // Multi-day episodes.
+  const longer = episodes.filter((ep) => ep.days > 1).slice(0, 8);
+  if (longer.length > 0) {
+    panel.createDiv({ cls: 'vital-log-day-group-title', text: 'Episodes' });
+    const list = panel.createDiv('vital-log-day-list');
+    for (const ep of longer) {
+      const row = list.createDiv('vital-log-day-row');
+      setIcon(row.createSpan('vital-log-day-row-icon'), 'thermometer');
+      const main = row.createDiv('vital-log-day-row-main');
+      main.createSpan({ cls: 'vital-log-day-row-text', text: ep.name });
+      main.createSpan({
+        cls: 'vital-log-day-row-note',
+        text: `${ep.startedBefore ? 'before ' : ''}${shortDate(ep.startDate)} – ` +
+          `${ep.endDate ? shortDate(ep.endDate) : 'ongoing'} · ${ep.days} days`,
+      });
+      renderSparkline(row, ep.dailyPeaks);
+      row.createSpan({ cls: 'vital-log-day-amount', text: `peak ${ep.peak}` });
+    }
+  }
 }

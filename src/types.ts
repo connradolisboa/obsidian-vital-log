@@ -8,6 +8,8 @@ export interface Vitamin {
   propertyKey: string;   // e.g. "vitaminC" — unique across all vitamins
   defaultAmount: number;
   unit: string;          // free-form: "mg", "IU", "mcg", etc.
+  /** Hours after a dose in which a symptom counts as "after this substance"; falls back to the global window. */
+  symptomWindowHours?: number;
   archived?: boolean;
 }
 
@@ -74,7 +76,33 @@ export interface VitalLogSettings {
   recentLogItems: string[];         // most-recent-first "kind:id" keys logged from the log modal, used to order its chips
   debugEmbedFocus: boolean;         // show notices when an embed re-renders or a field loses focus (mobile diagnostics)
   dayMarkers: DayMarker[];          // frontmatter properties holding a time of day (wake up, bed time) shown in the day view
+  symptomTypes: SymptomType[];
+  symptomsPropertyKey: string;      // frontmatter key for the symptoms list (default: "symptoms")
+  appendToNoteDefault_symptoms: boolean;
+  noteContentTemplate_symptoms: string; // tokens: {time} {name} {severity} {note}
+  symptomDoseWindowHours: number;   // "began within N hours of a dose" window for insights
 }
+
+/** A kind of symptom the user logs (headache, nausea, sick…). */
+export interface SymptomType {
+  id: string;
+  displayName: string;
+  icon?: string;
+  archived?: boolean;
+}
+
+/**
+ * One symptom reading in the daily note. Logging the same symptom again
+ * re-rates it; severity 0 means it has gone.
+ */
+export interface SymptomEntry {
+  time: string;      // "HH:mm"
+  name: string;
+  severity: number;  // 0–10
+  note?: string;
+}
+
+export const SYMPTOM_MAX = 10;
 
 /** A frontmatter property that holds a time of day, drawn as a marker on the day view. */
 export interface DayMarker {
@@ -523,4 +551,9 @@ export const DEFAULT_SETTINGS: VitalLogSettings = {
   recentLogItems: [],
   debugEmbedFocus: false,
   dayMarkers: [],
+  symptomTypes: [],
+  symptomsPropertyKey: 'symptoms',
+  appendToNoteDefault_symptoms: false,
+  noteContentTemplate_symptoms: '- {time} {name} {severity}/10',
+  symptomDoseWindowHours: 6,
 };

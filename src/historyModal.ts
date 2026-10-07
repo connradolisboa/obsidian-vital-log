@@ -97,6 +97,9 @@ export class HistoryModal extends Modal {
     for (const t of checkboxMetrics(this.settings)) {
       systemKeys.add(t.propertyKey);
     }
+    // Symptom and event lists aren't vitamins; keep them out of that section.
+    systemKeys.add(this.settings.symptomsPropertyKey || 'symptoms');
+    systemKeys.add(this.settings.eventsPropertyKey || 'events');
 
     // ── Tracker sections (mood, energy, etc.) ───────────────
     for (const tracker of seriesMetrics(this.settings)) {
@@ -135,6 +138,22 @@ export class HistoryModal extends Modal {
         tallySection.createDiv({ cls: 'vital-log-no-data', text: 'No tally entries.' });
       }
     }
+
+    // ── Symptoms and events ─────────────────────────────────
+    this.renderRatedSection(contentEl, fm, {
+      title: 'Symptoms',
+      propertyKey: this.settings.symptomsPropertyKey || 'symptoms',
+      min: 0,
+      max: 10,
+      format: (severity) => (severity === 0 ? 'gone' : `${severity}/10`),
+    });
+    this.renderRatedSection(contentEl, fm, {
+      title: 'Events',
+      propertyKey: this.settings.eventsPropertyKey || 'events',
+      min: 1,
+      max: 5,
+      format: (severity) => `severity ${severity}`,
+    });
 
     // ── Substances section (flat log mode) ─────────────────
     const substanceEntries = fm['substances'];
@@ -574,6 +593,81 @@ export class HistoryModal extends Modal {
       await this.editEntry(tracker.propertyKey, idx, updated);
       form.remove();
       await this.render();
+    });
+  }
+
+  /**
+   * A list of `{ time, name, severity, note? }` entries — symptoms and events
+   * share the shape, differing only in their severity scale.
+   */
+  private renderRatedSection(
+    contentEl: HTMLElement,
+    fm: Record<string, unknown>,
+    opts: { title: string; propertyKey: string; min: number; max: number; format: (severity: number) => string }
+  ): void {
+    const entries = fm[opts.propertyKey];
+    if (!isArray(entries) || entries.length === 0) return;
+
+    const section = contentEl.createDiv('vital-log-history-section');
+    section.createDiv({ cls: 'vital-log-history-section-title', text: opts.title });
+
+    entries.forEach((raw, idx) => {
+      if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return;
+      const entry = raw as Record<string, unknown>;
+      const name = typeof entry['name'] === 'string' ? entry['name'] : '';
+      const severity = typeof entry['severity'] === 'number' ? entry['severity'] : NaN;
+      if (!name || isNaN(severity)) return;
+      const time = typeof entry['time'] === 'string' ? entry['time'] : '';
+      const note = typeof entry['note'] === 'string' ? entry['note'] : '';
+
+      const row = section.createDiv('vital-log-history-entry');
+      const info = row.createDiv('vital-log-history-entry-info');
+      info.createSpan({ text: `${time}  —  ${name}  ${opts.format(severity)}${note ? '  — ' : ''}` });
+      if (note) info.createEl('em', { cls: 'vital-log-history-entry-note', text: `"${note}"` });
+
+      const actions = row.createDiv('vital-log-history-entry-actions');
+      const editBtn = actions.createEl('button', { text: 'Edit', cls: 'vital-log-btn mod-compact' });
+      const delBtn = actions.createEl('button', { text: '✕', cls: 'vital-log-btn mod-compact mod-warning', attr: { 'aria-label': 'Delete' } });
+
+      editBtn.addEventListener('click', () => {
+        row.remove();
+        const form = section.createDiv('vital-log-inline-edit');
+        const timeRow = form.createDiv('vital-log-inline-edit-row');
+        timeRow.createEl('label', { text: 'Time' });
+        const timeInput = timeRow.createEl('input', { type: 'text', value: time });
+        const sevRow = form.createDiv('vital-log-inline-edit-row');
+        sevRow.createEl('label', { text: `Severity (${opts.min}–${opts.max})` });
+        const sevInput = sevRow.createEl('input', {
+          type: 'number',
+          value: String(severity),
+          attr: { min: String(opts.min), max: String(opts.max), step: '1' },
+        });
+        const noteRow = form.createDiv('vital-log-inline-edit-row');
+        noteRow.createEl('label', { text: 'Note' });
+        const noteInput = noteRow.createEl('input', { type: 'text', value: note });
+
+        const buttons = form.createDiv('vital-log-inline-edit-actions');
+        buttons.createEl('button', { text: 'Cancel', cls: 'vital-log-btn' })
+          .addEventListener('click', () => { form.remove(); void this.render(); });
+        buttons.createEl('button', { text: 'Save', cls: 'vital-log-btn mod-cta' })
+          .addEventListener('click', async () => {
+            const parsed = parseInt(sevInput.value, 10);
+            const next = isNaN(parsed) ? severity : Math.max(opts.min, Math.min(opts.max, parsed));
+            // Keep any extra keys the entry carries; replace only what the form edits.
+            const updated: Record<string, unknown> = { ...entry, time: timeInput.value.trim(), name, severity: next };
+            if (noteInput.value.trim()) updated['note'] = noteInput.value.trim();
+            else delete updated['note'];
+            await this.editEntry(opts.propertyKey, idx, updated);
+            form.remove();
+            await this.render();
+          });
+      });
+
+      delBtn.addEventListener('click', () => {
+        this.renderDeleteConfirm(row, async () => {
+          await this.deleteEntry(opts.propertyKey, idx);
+        });
+      });
     });
   }
 

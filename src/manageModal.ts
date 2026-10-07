@@ -305,6 +305,20 @@ export class ManageModal extends GuardedModal {
     unitInput.placeholder = 'mg, IU, mcg…';
     const unitError = attachFieldError(unitRow, unitInput);
 
+    const windowRow = form.createDiv('vital-log-form-row');
+    windowRow.createEl('label', { text: 'Symptom window (hours, optional)' });
+    const windowInput = windowRow.createEl('input', {
+      type: 'number',
+      value: vit?.symptomWindowHours !== undefined ? String(vit.symptomWindowHours) : '',
+      attr: { min: '0.5', max: '48', step: '0.5' },
+    });
+    windowInput.placeholder = 'Default from Symptoms settings';
+    windowRow.createEl('span', {
+      cls: 'vital-log-form-hint',
+      text: 'Insights count a symptom as "after" this substance when it begins within this many hours of a dose.',
+    });
+    const windowError = attachFieldError(windowRow, windowInput);
+
     const actionsEl = form.createDiv('vital-log-inline-form-actions');
     const cancelBtn = actionsEl.createEl('button', { text: 'Cancel', cls: 'vital-log-btn' });
     const saveBtn = actionsEl.createEl('button', { text: 'Save', cls: 'vital-log-btn mod-cta' });
@@ -324,6 +338,17 @@ export class ManageModal extends GuardedModal {
       amtError.clear();
       if (!requireValue(unitInput, unitError, 'Enter a unit, e.g. mg or IU.')) return;
 
+      let windowHours: number | undefined;
+      if (windowInput.value.trim()) {
+        windowHours = parseFloat(windowInput.value);
+        if (isNaN(windowHours) || windowHours <= 0 || windowHours > 48) {
+          windowError.show('Enter hours between 0.5 and 48, or leave it empty.');
+          windowInput.focus();
+          return;
+        }
+      }
+      windowError.clear();
+
       if (isEdit) {
         const existing = this.settings.vitamins.find((v) => v.id === vit!.id);
         if (existing) {
@@ -331,6 +356,8 @@ export class ManageModal extends GuardedModal {
           existing.propertyKey = keyInput.value.trim();
           existing.defaultAmount = amount;
           existing.unit = unitInput.value.trim();
+          if (windowHours !== undefined) existing.symptomWindowHours = windowHours;
+          else delete existing.symptomWindowHours;
         }
       } else {
         this.settings.vitamins.push({
@@ -339,6 +366,7 @@ export class ManageModal extends GuardedModal {
           propertyKey: keyInput.value.trim(),
           defaultAmount: amount,
           unit: unitInput.value.trim(),
+          ...(windowHours !== undefined ? { symptomWindowHours: windowHours } : {}),
         });
       }
 

@@ -3,8 +3,8 @@
 // One day on an hour axis: a line per rating tracker (each scaled to
 // its own min–max), an optional dashed comparison line per tracker,
 // substances and events as lettered dots in a lane under the plot, and
-// time markers (wake up, bed time) as labelled lines, and Time Tracker
-// sessions as shaded bands. Hover (or tap, on mobile) any mark for its
+// time markers (wake up, bed time) as labelled lines, Time Tracker
+// sessions as shaded bands, and symptoms as bars shaded by severity. Hover (or tap, on mobile) any mark for its
 // details. Zero-dependency inline SVG,
 // re-laid out when the container width changes.
 // ============================================================
@@ -36,6 +36,8 @@ const DOT_RADIUS = 8;
 const DOT_GAP = 2;
 const MAX_DOT_ROWS = 4;
 const AXIS_HEIGHT = 18;
+const SYMPTOM_ROW = 12;
+const SYMPTOM_GAP = 3;
 
 // ── Pure helpers (exported for tests) ────────────────────────
 
@@ -192,7 +194,27 @@ export function renderDayChart(container: HTMLElement, log: DayLog, opts: DayCha
     })
     .filter((s): s is NonNullable<typeof s> => s !== null && s.stop > s.start);
 
-  if (series.length === 0 && dots.length === 0 && markers.length === 0 && sessions.length === 0) return false;
+  // Symptoms: one row each, split into stretches between readings. A symptom
+  // carried in starts at the left edge; one still active runs to now (today)
+  // or the end of the day.
+  type SymptomStretch = { from: number | null; to: number | null; severity: number };
+  const symptomRows = log.symptoms.map((sym) => {
+    const points: { minutes: number | null; severity: number }[] = [];
+    if (sym.carriedIn !== null) points.push({ minutes: null, severity: sym.carriedIn });
+    for (const r of sym.readings) {
+      const m = minutesOf(r.time);
+      if (m !== null) points.push({ minutes: m, severity: r.severity });
+    }
+    const stretches: SymptomStretch[] = [];
+    points.forEach((p, i) => {
+      if (p.severity <= 0) return;
+      const next = points[i + 1];
+      stretches.push({ from: p.minutes, to: next ? next.minutes : null, severity: p.severity });
+    });
+    return { sym, stretches };
+  }).filter((r) => r.stretches.length > 0);
+
+  if (series.length === 0 && dots.length === 0 && markers.length === 0 && sessions.length === 0 && symptomRows.length === 0) return false;
 
   const wrap = container.createDiv('vital-log-chart');
   const svgHost = wrap.createDiv('vital-log-chart-svg');
@@ -200,7 +222,7 @@ export function renderDayChart(container: HTMLElement, log: DayLog, opts: DayCha
   tip.hide();
 
   // Legend: one swatch per tracker line, with its latest value.
-  if (series.length > 0 || dots.length > 0 || sessions.length > 0) {
+  if (series.length > 0 || dots.length > 0 || sessions.length > 0 || symptomRows.length > 0) {
     const legend = wrap.createDiv('vital-log-chart-legend');
     for (const s of series) {
       const item = legend.createSpan('vital-log-chart-legend-item');
@@ -213,6 +235,11 @@ export function renderDayChart(container: HTMLElement, log: DayLog, opts: DayCha
       const item = legend.createSpan('vital-log-chart-legend-item');
       item.createSpan('vital-log-chart-legend-swatch vital-log-chart-legend-swatch--dashed');
       item.createSpan({ text: opts.compare.label });
+    }
+    if (symptomRows.length > 0) {
+      const item = legend.createSpan('vital-log-chart-legend-item');
+      item.createSpan('vital-log-chart-legend-symptom');
+      item.createSpan({ text: 'Symptoms' });
     }
     if (sessions.length > 0) {
       const item = legend.createSpan('vital-log-chart-legend-item');
@@ -235,6 +262,7 @@ export function renderDayChart(container: HTMLElement, log: DayLog, opts: DayCha
     ...series.flatMap((s) => s.points.map((p) => p.minutes)),
     ...dots.map((d) => d.minutes),
     ...sessions.flatMap((s) => [s.start, s.stop - 1]),
+    ...symptomRows.flatMap((r) => r.stretches.flatMap((st) => [st.from, st.to]).filter((m): m is number => m !== null)),
     ...markers.filter((m) => m.minutes >= AFTER_MIDNIGHT).map((m) => m.minutes),
     ...(opts.nowMinutes !== undefined ? [opts.nowMinutes] : []),
   ];
@@ -293,7 +321,9 @@ export function renderDayChart(container: HTMLElement, log: DayLog, opts: DayCha
     const laneRows = dots.length > 0 ? Math.max(...dotRows) + 1 : 0;
     const laneTop = plotBottom + 6;
     const laneHeight = laneRows * (DOT_RADIUS * 2 + DOT_GAP);
-    const axisTop = laneTop + laneHeight + (laneRows > 0 ? 4 : 0);
+    const symptomTop = laneTop + laneHeight + (laneRows > 0 ? 4 : 0);
+    const symptomHeight = symptomRows.length * (SYMPTOM_ROW + SYMPTOM_GAP);
+    const axisTop = symptomTop + symptomHeight + (symptomRows.length > 0 ? 2 : 0);
     const height = axisTop + AXIS_HEIGHT;
 
     const svg = document.createElementNS(SVG_NS, 'svg');
@@ -419,6 +449,36 @@ export function renderDayChart(container: HTMLElement, log: DayLog, opts: DayCha
         bindTip(hit, [`${s.name}: ${fmtNum(p.value)}`, time, ...(p.note ? [p.note] : [])], px, py, width);
       }
     }
+
+    // ── Symptom bars ──
+    const dayEnd = opts.nowMinutes ?? endHour * 60;
+    symptomRows.forEach(({ sym, stretches }, row) => {
+      const y = symptomTop + row * (SYMPTOM_ROW + SYMPTOM_GAP);
+      let firstX: number | null = null;
+      let lastX = 0;
+      for (const st of stretches) {
+        const from = st.from ?? startHour * 60;
+        const to = st.to ?? Math.max(from, dayEnd);
+        const x1 = x(from);
+        const x2 = Math.max(x1 + 3, x(Math.min(to, endHour * 60)));
+        firstX ??= x1;
+        lastX = Math.max(lastX, x2);
+        const bar = add('rect', { x: x1, y, width: x2 - x1, height: SYMPTOM_ROW, rx: 3 }, 'vital-log-chart-symptom vital-log-chart-hit');
+        bar.style.fillOpacity = String(0.25 + 0.75 * (st.severity / 10));
+        const fmt = (m: number | null, fallback: string): string =>
+          m === null ? fallback : `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+        bindTip(bar, [
+          `${sym.name} ${st.severity}/10`,
+          `${fmt(st.from, 'earlier')}–${st.to === null ? (sym.activeAtEnd ? 'ongoing' : '') : fmt(st.to, '')}`,
+        ], (x1 + x2) / 2, y, width);
+      }
+      // Name just after the span, or inside it near the right edge.
+      const label = add('text', {
+        x: lastX + 4 > width - 50 ? (firstX ?? 0) + 4 : lastX + 4,
+        y: y + SYMPTOM_ROW - 2.5,
+      }, lastX + 4 > width - 50 ? 'vital-log-chart-symptom-label is-inside' : 'vital-log-chart-symptom-label');
+      label.textContent = sym.name;
+    });
 
     // ── Substance and event dots ──
     dots.forEach((d, i) => {

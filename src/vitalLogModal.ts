@@ -1,31 +1,34 @@
 // ============================================================
 // Vital Log — Log Modal
 // One modal for everything loggable: supplements (vitamin / pack /
-// stack), trackers, and events. Items are picked from chips, recent
+// stack), trackers, symptoms, and events. Items are picked from chips, recent
 // first; new substances, packs, stacks, and event types can be
 // created inline without opening settings.
 // Delegates all file I/O to the managers.
 // ============================================================
 
 import { App, Modal, Notice, setIcon } from 'obsidian';
-import type { EventType, Pack, Stack, TrackerConfig, VitalLogSettings, Vitamin } from './types';
-import { SEVERITY_LABELS, seriesMetrics } from './types';
+import type { EventType, Pack, Stack, SymptomType, TrackerConfig, VitalLogSettings, Vitamin } from './types';
+import { SEVERITY_LABELS, SYMPTOM_MAX, seriesMetrics } from './types';
 import { activeDailyNoteDate, resolveDailyNote } from './dailyNoteResolver';
 import * as vm from './vitaminManager';
 import * as tm from './trackerManager';
 import { logEvent } from './eventManager';
+import { ensureSymptomType, logSymptom } from './symptomManager';
+import { symptomsActiveOn } from './dayHistory';
 import { createAppendToggle } from './formUI';
 import {
   renderEventTypeQuickAdd,
   renderPackQuickAdd,
   renderStackQuickAdd,
+  renderSymptomTypeQuickAdd,
   renderVitaminQuickAdd,
 } from './quickAdd';
 
 // moment is bundled with Obsidian
 declare const moment: (date?: Date | string) => { format: (fmt: string) => string; toDate: () => Date };
 
-export type LogTab = 'supplements' | 'trackers' | 'events';
+export type LogTab = 'supplements' | 'trackers' | 'symptoms' | 'events';
 export type SupplementKind = 'vitamin' | 'pack' | 'stack';
 
 export interface LogModalOptions {
@@ -36,11 +39,12 @@ export interface LogModalOptions {
   date?: Date;
 }
 
-type QuickAddKind = SupplementKind | 'event';
+type QuickAddKind = SupplementKind | 'event' | 'symptom';
 
 const TABS: { id: LogTab; label: string; icon: string }[] = [
   { id: 'supplements', label: 'Supplements', icon: 'pill' },
   { id: 'trackers', label: 'Trackers', icon: 'activity' },
+  { id: 'symptoms', label: 'Symptoms', icon: 'thermometer' },
   { id: 'events', label: 'Events', icon: 'calendar-clock' },
 ];
 
@@ -93,6 +97,16 @@ export class VitalLogModal extends Modal {
   private eventTypeId = '';
   private severity: number | null = null;
 
+  // Symptoms
+  private symptomTypeId = '';
+  private symptomSeverity: number | null = null;
+  /**
+   * Readings logged from this modal, by "date|lowercase name". The metadata
+   * cache can trail a write by a moment, so the "Active now" list applies
+   * these on top of what it reads.
+   */
+  private loggedSymptoms = new Map<string, { name: string; severity: number; time: string }>();
+
   constructor(
     app: App,
     settings: VitalLogSettings,
@@ -110,6 +124,7 @@ export class VitalLogModal extends Modal {
     this.appendToNote = {
       supplements: settings.appendToNoteDefault_supplements === true,
       trackers: settings.appendToNoteDefault_trackers === true,
+      symptoms: settings.appendToNoteDefault_symptoms === true,
       events: settings.appendToNoteDefault_events === true,
     };
     this.trackerId = opts.trackerId ?? this.orderedChips('tracker', this.trackerChips())[0]?.id ?? '';
@@ -167,6 +182,7 @@ export class VitalLogModal extends Modal {
     let canLog: boolean;
     if (this.tab === 'supplements') canLog = this.renderSupplements(body);
     else if (this.tab === 'trackers') canLog = this.renderTrackers(body);
+    else if (this.tab === 'symptoms') canLog = this.renderSymptoms(body);
     else canLog = this.renderEvents(body);
 
     if (canLog && !this.quickAdd) this.renderCommonFields(body);
@@ -702,6 +718,129 @@ export class VitalLogModal extends Modal {
     return true;
   }
 
+  // ── Symptoms tab ───────────────────────────────────────────
+
+  /** Symptoms still active on the selected day, newest state first applied. */
+  private activeSymptoms(): { name: string; severity: number; since: string }[] {
+    const date = moment(this.dateValue || undefined).toDate();
+    const active = symptomsActiveOn(this.app, this.settings, date);
+    const prefix = `${this.dateValue}|`;
+    for (const [k, logged] of this.loggedSymptoms) {
+      if (!k.startsWith(prefix)) continue;
+      const nameKey = k.slice(prefix.length);
+      if (logged.severity <= 0) active.delete(nameKey);
+      else {
+        const prev = active.get(nameKey);
+        if (prev) prev.severity = logged.severity;
+        else active.set(nameKey, { name: logged.name, severity: logged.severity, sinceISO: this.dateValue, sinceTime: logged.time });
+      }
+    }
+    return [...active.values()].map((a) => ({
+      name: a.name,
+      severity: a.severity,
+      since: a.sinceISO === this.dateValue ? a.sinceTime : moment(a.sinceISO).format('ddd D MMM'),
+    }));
+  }
+
+  private renderSymptoms(body: HTMLElement): boolean {
+    if (this.quickAdd === 'symptom') {
+      renderSymptomTypeQuickAdd(body, this.settings, {
+        onSave: (t: SymptomType) => void this.finishQuickAdd(() => { this.symptomTypeId = t.id; }),
+        onCancel: this.cancelQuickAdd,
+      });
+      return false;
+    }
+
+    // ── Active now: re-rate or end in one tap ──
+    const active = this.activeSymptoms();
+    if (active.length > 0) {
+      const section = body.createDiv('vital-log-modal-section vital-log-active-symptoms');
+      section.createEl('label', { text: 'Active now' });
+      for (const a of active) {
+        const row = section.createDiv('vital-log-active-symptom');
+        const info = row.createDiv('vital-log-active-symptom-info');
+        info.createSpan({ cls: 'vital-log-active-symptom-name', text: a.name });
+        info.createSpan({ cls: 'vital-log-active-symptom-meta', text: `${a.severity}/10 · since ${a.since}` });
+        const rerate = row.createEl('button', { text: 'Re-rate', cls: 'vital-log-btn mod-compact' });
+        rerate.addEventListener('click', async () => {
+          // A symptom logged before it had a type (e.g. moved from events) gets one now.
+          const before = this.settings.symptomTypes.length;
+          const type = ensureSymptomType(this.settings, a.name);
+          if (this.settings.symptomTypes.length !== before) await this.saveSettings();
+          this.symptomTypeId = type.id;
+          this.symptomSeverity = null;
+          this.render();
+        });
+        const gone = row.createEl('button', { text: 'Gone', cls: 'vital-log-btn mod-compact mod-cta' });
+        gone.addEventListener('click', () => void this.logSymptomNow(a.name, 0));
+      }
+    }
+
+    this.renderChips(body, {
+      kind: 'symptom',
+      chips: this.settings.symptomTypes
+        .filter((t) => !t.archived)
+        .map((t) => ({ id: t.id, label: t.displayName, icon: t.icon })),
+      selectedId: this.symptomTypeId,
+      onSelect: (id) => {
+        this.symptomTypeId = this.symptomTypeId === id ? '' : id;
+        this.symptomSeverity = null;
+        this.render();
+      },
+      onNew: () => this.openQuickAdd('symptom'),
+      emptyText: 'No symptoms yet.',
+    });
+
+    const type = this.settings.symptomTypes.find((t) => t.id === this.symptomTypeId);
+    if (!type) return false;
+
+    const section = body.createDiv('vital-log-modal-section');
+    section.createEl('label', {
+      text: this.symptomSeverity === null
+        ? `${type.displayName} — how bad? (0 = gone)`
+        : this.symptomSeverity === 0
+          ? `${type.displayName} — gone`
+          : `${type.displayName} — ${this.symptomSeverity}/10`,
+    });
+    const grid = section.createDiv('vital-log-symptom-grid');
+    for (let v = 0; v <= SYMPTOM_MAX; v++) {
+      const btn = grid.createEl('button', {
+        text: v === 0 ? 'Gone' : String(v),
+        cls: 'vital-log-symptom-btn' + (this.symptomSeverity === v ? ' is-selected' : '') + (v === 0 ? ' is-gone' : ''),
+        attr: { 'aria-label': v === 0 ? 'Gone' : `Severity ${v} of 10` },
+      });
+      // Tint by severity so the scale reads at a glance.
+      if (v > 0) btn.style.setProperty('--vl-severity', String(v / SYMPTOM_MAX));
+      btn.addEventListener('click', () => {
+        this.symptomSeverity = v;
+        this.render();
+      });
+    }
+    return true;
+  }
+
+  /** Log a symptom reading straight away (the "Gone" button), at the form's time. */
+  private async logSymptomNow(name: string, severity: number): Promise<void> {
+    try {
+      const date = moment(this.dateValue || undefined).toDate();
+      const file = await resolveDailyNote(this.app, this.settings, date);
+      if (!file) {
+        new Notice('Vital Log: Could not resolve daily note.');
+        return;
+      }
+      const time = /^\d{2}:\d{2}$/.test(this.timeValue) ? this.timeValue : moment().format('HH:mm');
+      await logSymptom(this.app, file, { time, name, severity }, this.settings, this.appendToNote.symptoms);
+      this.loggedSymptoms.set(`${this.dateValue}|${name.toLowerCase()}`, { name, severity, time });
+      new Notice(severity === 0 ? `${name} marked gone at ${time}` : `Logged ${name} ${severity}/10 at ${time}`);
+      this.render();
+    } catch (err) {
+      console.error('Vital Log log modal:', err);
+      if (err instanceof Error && err.name !== 'AbortError') {
+        new Notice(`Vital Log: Error logging — ${err.message}`);
+      }
+    }
+  }
+
   // ── Logging ────────────────────────────────────────────────
 
   private async rememberRecent(kind: string, id: string): Promise<void> {
@@ -739,6 +878,24 @@ export class VitalLogModal extends Modal {
         message = `Logged ${tracker.displayName}: ${this.trackerValue} at ${time}`;
         recent = ['tracker', tracker.id];
         this.trackerValue = null;
+      } else if (this.tab === 'symptoms') {
+        const type = this.settings.symptomTypes.find((t) => t.id === this.symptomTypeId);
+        if (!type) { new Notice('Vital Log: Pick a symptom.'); return; }
+        if (this.symptomSeverity === null) { new Notice('Vital Log: Pick how bad it is (0 = gone).'); return; }
+        await logSymptom(
+          this.app, file,
+          { time, name: type.displayName, severity: this.symptomSeverity, note },
+          this.settings, appendToNote
+        );
+        this.loggedSymptoms.set(`${this.dateValue}|${type.displayName.toLowerCase()}`, {
+          name: type.displayName, severity: this.symptomSeverity, time,
+        });
+        message = this.symptomSeverity === 0
+          ? `${type.displayName} marked gone at ${time}`
+          : `Logged ${type.displayName} ${this.symptomSeverity}/10 at ${time}`;
+        recent = ['symptom', type.id];
+        this.symptomTypeId = '';
+        this.symptomSeverity = null;
       } else {
         const eventType = this.settings.eventTypes.find((t) => t.id === this.eventTypeId);
         if (!eventType) { new Notice('Vital Log: Pick an event.'); return; }

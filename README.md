@@ -16,6 +16,7 @@ Structured logs land in your vault as clean YAML frontmatter, queryable by Datav
 - [Tally Counters](#tally-counters)
 - [Dashboard & Planning](#dashboard--planning)
 - [Checkbox Habits](#checkbox-habits)
+- [Symptoms](#symptoms)
 - [Life Events](#life-events)
 - [Custom Modals](#custom-modals)
 - [Embedded Modals](#embedded-modals)
@@ -248,6 +249,42 @@ morningWalk: true
 
 ---
 
+## Symptoms
+
+Log how you feel from the **Symptoms** tab of the log modal. Pick a symptom (or create one with **+ New**), rate it from 1 to 10, and log. Logging the same symptom again re-rates it; **Gone** (0) ends it.
+
+The tab opens with **Active now**: every symptom not yet marked gone, including ones that started on an earlier day, with one-tap **Re-rate** and **Gone** buttons. A symptom stays active across days until you mark it gone, for up to a week without a new reading.
+
+```yaml
+symptoms:
+  - time: "14:00"
+    name: "Headache"
+    severity: 3
+  - time: "16:10"
+    name: "Headache"
+    severity: 5
+  - time: "18:30"
+    name: "Headache"
+    severity: 0   # gone
+```
+
+In the day view, symptoms appear on the chart as bars shaded by severity, in the Timeline, and on their own **Symptoms** tab, which shows:
+
+- each symptom's span, peak, and readings that day — and for one lasting several days, which day of the episode it is, with its curve so far;
+- a **calendar** of the last 30 or 90 days (a row per symptom, each day shaded by its peak), weekly totals, and recent multi-day **episodes**.
+
+The **Insights** tab reports:
+
+- symptoms that tend to begin within a few hours of a dose (e.g. "Headache after Vyvanse: began within 6h of a dose on 6 of 9 days, and on 1 of 12 days without it");
+- symptoms that tend to begin the **next day** after something — a substance taken, a regular one missed, an event, or a late time marker such as bed time;
+- tracker averages on symptom days.
+
+Fix or delete a logged symptom (or event) from **View History**.
+
+Manage symptom types, the default after-dose window, storage, and the note template in **Settings → Vital Log → Symptoms**. Give a substance its own window under **Library → Vitamins** (e.g. longer for a long-acting medication). To turn an existing event type into a symptom, use **Move to symptoms** next to it in **Settings → Events**: logged events of that type move into the symptoms list, with severity 1–5 becoming 2–10.
+
+---
+
 ## Life Events
 
 Log one-off events such as illness, travel, or rest days from the **calendar-clock ribbon icon** or the **Log Event** command, which open the Events tab of the log modal. Each event records a time, severity from 1–5, and an optional note. Add a new event type with **+ New**.
@@ -384,6 +421,7 @@ Tabs:
 - **Timeline** — everything in time order, grouped by part of the day.
 - **Substances** — daily totals and times per substance, plus packs and stacks.
 - **Trackers** — readings and stats per tracker, counters, and habits.
+- **Symptoms** — each symptom's span, peak, and readings, including ones carried in from earlier days.
 - **Events** — events with their severity.
 - **Time** — the day's Time Tracker sessions, when the Management Tracker plugin is installed: start–end, title, what each counts toward, area and tags, and minutes, with the day's total in the header. Click a session to edit it; on this tab **+** opens the Time Tracker. Sessions also show as rows in the Timeline and shaded bands on the Chart.
 - **Week** — a heatmap of one tracker by hour across the last 7, 14, or 30 days.
@@ -395,7 +433,7 @@ Every line is optional:
 
 | Line | Effect |
 |---|---|
-| a tab name | Tab to open on: `chart`, `timeline`, `substances`, `trackers`, `events`, `time`, `week`, `insights` |
+| a tab name | Tab to open on: `chart`, `timeline`, `substances`, `trackers`, `symptoms`, `events`, `time`, `week`, `insights` |
 | any other text | Header title (default `Day`) |
 | `+` / `-` | Collapsible, starting open / collapsed |
 | `tabs: chart, timeline` | Which tabs to show, in that order |
@@ -511,11 +549,20 @@ Other plugins can reach Vital Log at `app.plugins.plugins['vital-log']?.api`. Ch
 | `log(command, opts?)` / `logText(text, opts?)` | 1 | Logs through the same code the modals use |
 | `help()` | 1 | Human-readable list of what can be logged |
 | `renderDay(el, { date, tab?, tabs?, title? }, component)` | 2 | Draws the day viewer for `date` (`YYYY-MM-DD`) into `el`; its listeners end when `component` unloads. A day with no note shows an empty state. |
+| symptoms in `describe()`, `parseCommand`, `log` | 3 | `headache 5`, `headache gone`, or `/symptom headache 3 @14:00` log a 0–10 reading |
+| `timeline(date)` | 4 | Everything logged on `date` (`YYYY-MM-DD`), in time order — the items the day view's Timeline tab draws: `{ kind, name, time, icon?, value?, unit?, severity?, note? }[]`. Synchronous; empty when the day has no note. `session` items are Management Tracker's own sessions. |
+| `describe().symptoms[].icon`, `describe().dayTabs` | 4 | Symptom icons, and the day view's tab ids for `renderDay` |
 
 ```ts
 const vl = app.plugins.plugins['vital-log']?.api;
 if (vl?.version >= 2) {
   vl.renderDay(containerEl, { date: '2026-10-07', tab: 'chart' }, this); // `this`: a Component, e.g. your view
+}
+if (vl?.version >= 4) {
+  for (const entry of vl.timeline('2026-10-07')) {
+    if (entry.kind === 'session') continue; // already yours, if you're Management Tracker
+    console.log(entry.time, entry.kind, entry.name, entry.value ?? entry.severity ?? '');
+  }
 }
 ```
 

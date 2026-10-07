@@ -98,6 +98,23 @@ export class Vault {
   }
 }
 
+/**
+ * Minimal stand-in for Obsidian's MetadataCache: frontmatter parsed on demand
+ * from the in-memory vault, so cache readers see writes immediately.
+ */
+export class MetadataCache {
+  constructor(private vault: Vault) {}
+
+  getFileCache(file: TFile): { frontmatter?: Record<string, unknown> } | null {
+    const content = this.vault.raw(file.path);
+    const match = /^---\n([\s\S]*?)\n?---/.exec(content);
+    if (!match) return {};
+    const parsed = load(match[1]);
+    return typeof parsed === 'object' && parsed !== null ? { frontmatter: parsed as Record<string, unknown> } : {};
+  }
+}
+
 export class App {
   vault = new Vault();
+  metadataCache = new MetadataCache(this.vault);
 }

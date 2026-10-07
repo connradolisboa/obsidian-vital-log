@@ -6,7 +6,7 @@
 // back; saving settings is the caller's job.
 // ============================================================
 
-import type { EventType, Pack, Stack, StackItemType, VitalLogSettings, Vitamin } from './types';
+import type { EventType, Pack, Stack, StackItemType, SymptomType, VitalLogSettings, Vitamin } from './types';
 import { attachFieldError, initInlineForm, requireValue } from './formUI';
 import { createIconField } from './iconPicker';
 import { allKeyOwners, uniquePropertyKey, validatePropertyKey } from './validation';
@@ -283,6 +283,41 @@ export function renderEventTypeQuickAdd(
     const eventType: EventType = { id: newId(), displayName: name, ...(icon ? { icon } : {}) };
     settings.eventTypes.push(eventType);
     cb.onSave(eventType);
+  };
+
+  formActions(form, save, cb.onCancel);
+}
+
+// ── Symptom type ─────────────────────────────────────────────
+
+export function renderSymptomTypeQuickAdd(
+  container: HTMLElement,
+  settings: VitalLogSettings,
+  cb: QuickAddCallbacks<SymptomType>
+): void {
+  const form = formShell(container, 'New symptom');
+
+  const nameRow = form.createDiv('vital-log-form-row');
+  nameRow.createEl('label', { text: 'Name' });
+  const nameInput = nameRow.createEl('input', { type: 'text', placeholder: 'e.g. Headache, Nausea…' });
+  const nameError = attachFieldError(nameRow, nameInput);
+
+  const iconRow = form.createDiv('vital-log-form-row');
+  iconRow.createEl('label', { text: 'Icon (optional)' });
+  const iconInput = createIconField(iconRow, { placeholder: 'e.g. brain' });
+
+  const save = (): void => {
+    if (!requireValue(nameInput, nameError, 'Give the symptom a name.')) return;
+    const name = nameInput.value.trim();
+    if (nameTaken(settings.symptomTypes, name)) {
+      nameError.show(`"${name}" already exists.`);
+      nameInput.focus();
+      return;
+    }
+    const icon = iconInput.value.trim();
+    const symptomType: SymptomType = { id: newId(), displayName: name, ...(icon ? { icon } : {}) };
+    settings.symptomTypes.push(symptomType);
+    cb.onSave(symptomType);
   };
 
   formActions(form, save, cb.onCancel);

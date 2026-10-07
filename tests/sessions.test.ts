@@ -66,11 +66,11 @@ describe('getManagementApi', () => {
 });
 
 describe('public API renderDay', () => {
-  it('is exposed at version 2 and forwards to the viewer', () => {
+  it('is exposed (since version 2) and forwards to the viewer', () => {
     const renderDay = vi.fn();
     const api = createVitalLogApi(new App() as never, () => DEFAULT_SETTINGS, renderDay);
-    expect(VITAL_LOG_API_VERSION).toBe(2);
-    expect(api.version).toBe(2);
+    expect(VITAL_LOG_API_VERSION).toBeGreaterThanOrEqual(2);
+    expect(api.version).toBe(VITAL_LOG_API_VERSION);
     const el = {} as HTMLElement;
     const component = {} as never;
     api.renderDay(el, { date: '2026-10-07', tab: 'time' }, component);

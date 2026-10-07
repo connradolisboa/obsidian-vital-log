@@ -383,3 +383,114 @@ describe('log', () => {
     expect(app.vault.raw('Daily/2026-08-27.md')).toContain('14:30');
   });
 });
+
+// ── Symptoms (version 3) ─────────────────────────────────────
+
+describe('symptoms', () => {
+  const withSymptoms: Partial<VitalLogSettings> = {
+    symptomTypes: [
+      { id: 's1', displayName: 'Headache' },
+      { id: 's2', displayName: 'Nausea', archived: true },
+    ],
+  };
+
+  it('parses a severity and a note', () => {
+    expect(parsed('headache 6 behind the eyes', withSymptoms)).toEqual({
+      kind: 'symptom', symptomId: 's1', severity: 6,
+      time: undefined, date: undefined, dayOffset: undefined, note: 'behind the eyes',
+    });
+  });
+
+  it('reads "gone" as 0', () => {
+    expect(parsed('headache gone', withSymptoms)).toMatchObject({ kind: 'symptom', severity: 0 });
+    expect(parsed('/symptom headache over @18:30', withSymptoms)).toMatchObject({ severity: 0, time: '18:30' });
+  });
+
+  it('rejects a missing or out-of-range severity', () => {
+    expect(failed('headache', withSymptoms).message).toContain('0–10');
+    expect(failed('headache 12', withSymptoms).message).toContain('0–10');
+  });
+
+  it('ignores archived symptoms and scopes the /symptom prefix', () => {
+    expect(failed('nausea 3', withSymptoms).reason).toBe('no-match');
+    expect(failed('/symptom ritalin 10', withSymptoms).message).toContain('symptom');
+  });
+
+  it('lists symptoms in describe()', () => {
+    expect(api(withSymptoms).api.describe().symptoms).toEqual([
+      expect.objectContaining({ kind: 'symptom', id: 's1', displayName: 'Headache', min: 0, max: 10 }),
+    ]);
+  });
+
+  it('logs a reading into the daily note', async () => {
+    const { app, api: vl } = api(withSymptoms);
+    const result = await vl.logText('headache 4', { date: new Date('2026-08-27T14:30:00') });
+    expect(result).toMatchObject({ ok: true, summary: 'Headache 4/10 @ 14:30 → 2026-08-27' });
+    expect(await fm(app, 'Daily/2026-08-27.md')).toMatchObject({
+      symptoms: [{ time: '14:30', name: 'Headache', severity: 4 }],
+    });
+  });
+});
+
+// ── timeline() and describe() additions (version 4) ──────────
+
+describe('timeline', () => {
+  const extra: Partial<VitalLogSettings> = {
+    symptomTypes: [{ id: 's1', displayName: 'Headache', icon: 'brain' }],
+    eventTypes: [{ id: 'e1', displayName: 'Travel', icon: 'plane' }],
+  };
+
+  it('returns the day as structured entries in time order', () => {
+    const { app, api: vl } = api(extra);
+    app.vault.create('Daily/2026-08-27.md', [
+      '---',
+      'Ritalin:',
+      '  - { time: "09:00", amount: 10, unit: mg }',
+      'moodLog:',
+      '  - { time: "08:00", mood: 4, note: rested }',
+      'symptoms:',
+      '  - { time: "14:00", name: Headache, severity: 5 }',
+      'events:',
+      '  - { time: "18:00", name: Travel, severity: 2 }',
+      '---',
+      '',
+    ].join('\n'));
+
+    expect(vl.timeline('2026-08-27')).toEqual([
+      { kind: 'tracker', name: 'Mood', time: '08:00', icon: 'activity', value: 4, note: 'rested' },
+      { kind: 'substance', name: 'Ritalin', time: '09:00', icon: 'pill', value: 10, unit: 'mg' },
+      { kind: 'symptom', name: 'Headache', time: '14:00', icon: 'brain', severity: 5 },
+      { kind: 'event', name: 'Travel', time: '18:00', icon: 'plane', severity: 2 },
+    ]);
+  });
+
+  it('includes a symptom carried in from an earlier day, untimed', () => {
+    const { app, api: vl } = api(extra);
+    app.vault.create('Daily/2026-08-26.md', '---\nsymptoms:\n  - { time: "20:00", name: Headache, severity: 6 }\n---\n');
+    app.vault.create('Daily/2026-08-27.md', '---\nmoodLog:\n  - { time: "08:00", mood: 3 }\n---\n');
+
+    expect(vl.timeline('2026-08-27')[0]).toEqual({
+      kind: 'symptom', name: 'Headache', time: null, icon: 'brain', severity: 6,
+      note: 'Carried over from an earlier day',
+    });
+  });
+
+  it('is empty for a day without a note or a bad date', () => {
+    const { api: vl } = api(extra);
+    expect(vl.timeline('2026-08-27')).toEqual([]);
+    expect(vl.timeline('2026-02-31')).toEqual([]);
+    expect(vl.timeline('yesterday')).toEqual([]);
+  });
+});
+
+describe('describe (version 4)', () => {
+  it('gives symptoms their icon and lists the day tabs', () => {
+    const catalogue = api({ symptomTypes: [{ id: 's1', displayName: 'Headache' }] }).api.describe();
+    expect(catalogue.symptoms[0]).toMatchObject({
+      id: 's1', displayName: 'Headache', propertyKey: 'symptoms', icon: 'thermometer', max: 10,
+    });
+    expect(catalogue.dayTabs).toEqual([
+      'chart', 'timeline', 'substances', 'trackers', 'symptoms', 'events', 'time', 'week', 'insights',
+    ]);
+  });
+});

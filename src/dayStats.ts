@@ -114,6 +114,12 @@ export function findInsights(logs: DayLog[], trackers: Metric[], limit = 8): Ins
     splits.push({ subject: name, matches: (l) => l.doses.some((d) => d.name === name) });
   }
 
+  const symptomNames = new Set(logs.flatMap((l) => l.symptoms.map((s) => s.name.toLowerCase())));
+  for (const name of symptomNames) {
+    const label = logs.flatMap((l) => l.symptoms).find((s) => s.name.toLowerCase() === name)?.name ?? name;
+    splits.push({ subject: `${label} (symptom)`, matches: (l) => l.symptoms.some((s) => s.name.toLowerCase() === name) });
+  }
+
   const eventNames = new Set(logs.flatMap((l) => l.events.map((e) => e.name.toLowerCase())));
   for (const name of eventNames) {
     const label = logs.flatMap((l) => l.events).find((e) => e.name.toLowerCase() === name)?.name ?? name;
@@ -162,4 +168,80 @@ export function findInsights(logs: DayLog[], trackers: Metric[], limit = 8): Ins
     .sort((a, b) => b.weight - a.weight)
     .slice(0, limit)
     .map(({ weight: _w, ...rest }) => rest);
+}
+
+// ── Symptoms after doses ─────────────────────────────────────
+
+export interface DoseLink {
+  substance: string;
+  symptom: string;
+  windowHours: number;
+  /** Days the substance was taken (with a time). */
+  doseDays: number;
+  /** …of which the symptom began within the window after a dose. */
+  doseHits: number;
+  /** Days without the substance. */
+  otherDays: number;
+  /** …of which the symptom began at all. */
+  otherHits: number;
+}
+
+/** Fewest days with a dose, and dose-day onsets, before a link is worth showing. */
+export const MIN_DOSE_DAYS = 3;
+export const MIN_DOSE_HITS = 2;
+
+/**
+ * For each substance and symptom: how often the symptom began within the
+ * substance's window after a dose, against how often it began on days
+ * without that substance. Only onsets count — a symptom carried in from an
+ * earlier day didn't begin that day. Strongest differences first.
+ *
+ * @param window hours, either one for all substances or per substance name
+ */
+export function symptomsAfterDoses(
+  logs: DayLog[],
+  window: number | ((substance: string) => number),
+  limit = 6
+): DoseLink[] {
+  const windowOf = typeof window === 'number' ? () => window : window;
+  const substances = new Set(logs.flatMap((l) => l.doses.map((d) => d.name)));
+  const symptomNames = new Set(logs.flatMap((l) => l.symptoms.map((s) => s.name.toLowerCase())));
+  const links: (DoseLink & { lift: number })[] = [];
+
+  for (const substance of substances) {
+    const windowHours = windowOf(substance);
+    const windowMinutes = windowHours * 60;
+    for (const symptomKey of symptomNames) {
+      let doseDays = 0, doseHits = 0, otherDays = 0, otherHits = 0;
+      let label = symptomKey;
+      for (const log of logs) {
+        const onsetDay = log.symptoms.find((s) => s.name.toLowerCase() === symptomKey && s.carriedIn === null);
+        if (onsetDay) label = onsetDay.name;
+        const onset = minutesOf(onsetDay?.startTime ?? null);
+        const doseTimes = log.doses
+          .filter((d) => d.name === substance)
+          .map((d) => minutesOf(d.time))
+          .filter((m): m is number => m !== null);
+
+        if (log.doses.some((d) => d.name === substance)) {
+          if (doseTimes.length === 0) continue; // taken, but untimed: can't judge the window
+          doseDays++;
+          if (onset !== null && doseTimes.some((t) => onset >= t && onset - t <= windowMinutes)) doseHits++;
+        } else {
+          otherDays++;
+          if (onsetDay) otherHits++;
+        }
+      }
+      if (doseDays < MIN_DOSE_DAYS || doseHits < MIN_DOSE_HITS || otherDays < MIN_DAYS_PER_SIDE) continue;
+      const lift = doseHits / doseDays - otherHits / otherDays;
+      // Only report when dose days clearly stand out.
+      if (lift < 0.2) continue;
+      links.push({ substance, symptom: label, windowHours, doseDays, doseHits, otherDays, otherHits, lift });
+    }
+  }
+
+  return links
+    .sort((a, b) => b.lift - a.lift)
+    .slice(0, limit)
+    .map(({ lift: _l, ...rest }) => rest);
 }
