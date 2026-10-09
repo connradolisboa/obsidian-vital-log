@@ -902,7 +902,7 @@ function renderEmbedFieldInput(
       const textarea = container.createEl('textarea', {
         placeholder: field.description || '',
       });
-      textarea.addClass('vital-log-embed-field-input vital-log-embed-field-textarea');
+      textarea.addClass('vital-log-embed-field-input', 'vital-log-embed-field-textarea');
       textarea.value = typeof value === 'string' ? value : '';
       textarea.rows = 2;
       textarea.addEventListener('blur', () => void persist(textarea.value || null));
