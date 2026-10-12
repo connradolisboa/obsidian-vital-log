@@ -15,6 +15,7 @@
 //   2 — renderDay: draw the day viewer for any date into another plugin's view
 //   3 — symptoms: describe() lists them; "headache 5" / "headache gone" log them
 //   4 — timeline(date); describe() adds symptom icons and dayTabs
+//   5 — forms(), formStatus(form, path), renderForm(el, { form, path }, component)
 // ============================================================
 
 import { logicalDay } from './dayBoundary';
@@ -30,7 +31,7 @@ import { dayLogFor } from './dayHistory';
 import { timeline as dayTimeline } from './dayLog';
 import { DAY_TABS } from './dayTabs';
 
-export const VITAL_LOG_API_VERSION = 4;
+export const VITAL_LOG_API_VERSION = 5;
 
 // ── Public types ─────────────────────────────────────────────
 
@@ -150,6 +151,34 @@ export interface RenderDayOptions {
 
 export type RenderDay = (el: HTMLElement, opts: RenderDayOptions, component: Component) => void;
 
+/** A custom modal, as a form other plugins can show (since version 5). */
+export interface FormInfo {
+  id: string;
+  name: string;
+  icon: string;
+  /** Its note path template; empty for a modal that writes to the current note. */
+  notePath: string;
+  /** Its fields; `key` is `parentKey.propertyKey` for a nested one. */
+  fields: Array<{ key: string; name: string; type: string }>;
+}
+
+/** Which of a form's fields a note has filled in (since version 5). */
+export interface FormStatus {
+  filled: string[];
+  empty: string[];
+}
+
+export interface RenderFormOptions {
+  /** The form's id or name. */
+  form: string;
+  /** The note to show and write to. It must exist; it is never created. */
+  path: string;
+  /** Fold under its header. */
+  collapsible?: boolean;
+}
+
+export type RenderForm = (el: HTMLElement, opts: RenderFormOptions, component: Component) => void;
+
 export interface VitalLogApi {
   version: number;
   describe(): Catalogue;
@@ -170,6 +199,12 @@ export interface VitalLogApi {
    * A day with no daily note shows an empty state.
    */
   renderDay: RenderDay;
+  /** The custom modals that are not archived, as forms (since version 5). */
+  forms(): FormInfo[];
+  /** Which fields of a form a note has filled, from the metadata cache; null without the form or the note (since version 5). */
+  formStatus(form: string, path: string): FormStatus | null;
+  /** Draw a form for one note, writing to that note only (since version 5). */
+  renderForm: RenderForm;
 }
 
 // ── Factory ──────────────────────────────────────────────────
@@ -182,7 +217,8 @@ export interface VitalLogApi {
 export function createVitalLogApi(
   app: App,
   getSettings: () => VitalLogSettings,
-  renderDay: RenderDay = () => {}
+  renderDay: RenderDay = () => {},
+  renderForm: RenderForm = () => {}
 ): VitalLogApi {
   return {
     version: VITAL_LOG_API_VERSION,
@@ -199,10 +235,53 @@ export function createVitalLogApi(
     help: () => help(getSettings()),
     timeline: (date: string) => timelineOn(app, getSettings(), date),
     renderDay,
+    forms: () => formsOf(getSettings()),
+    formStatus: (form: string, path: string) => formStatusOf(app, getSettings(), form, path),
+    renderForm,
   };
 }
 
 // ── describe / help ──────────────────────────────────────────
+
+// ── Forms ────────────────────────────────────────────────────
+
+const fieldKey = (f: { propertyKey: string; parentKey?: string }) => (f.parentKey ? `${f.parentKey}.${f.propertyKey}` : f.propertyKey);
+
+export function formsOf(settings: VitalLogSettings): FormInfo[] {
+  return settings.customModals.filter((m) => !m.archived).map((m) => ({
+    id: m.id,
+    name: m.displayName,
+    icon: m.icon,
+    notePath: m.notePath,
+    fields: m.items.flatMap((item) => (item.type === 'field'
+      ? [{ key: fieldKey(item.field), name: item.field.displayName, type: item.field.fieldType }]
+      : [])),
+  }));
+}
+
+/** A value counts as filled unless it is missing, empty text or an empty list. */
+function isFilled(value: unknown): boolean {
+  if (value === undefined || value === null) return false;
+  if (typeof value === 'string') return value.trim() !== '';
+  if (Array.isArray(value)) return value.length > 0;
+  return true;
+}
+
+export function formStatusOf(app: App, settings: VitalLogSettings, form: string, path: string): FormStatus | null {
+  const config = settings.customModals.find((m) => m.id === form) ?? settings.customModals.find((m) => m.displayName.toLowerCase() === form.toLowerCase());
+  const file = app.vault.getAbstractFileByPath(path);
+  if (!config || !(file instanceof TFile)) return null;
+  const fm = (app.metadataCache.getFileCache(file)?.frontmatter ?? {}) as Record<string, unknown>;
+  const out: FormStatus = { filled: [], empty: [] };
+  for (const item of config.items) {
+    if (item.type !== 'field') continue;
+    const f = item.field;
+    const parent = f.parentKey ? fm[f.parentKey] : fm;
+    const value = parent && typeof parent === 'object' ? (parent as Record<string, unknown>)[f.propertyKey] : undefined;
+    (isFilled(value) ? out.filled : out.empty).push(fieldKey(f));
+  }
+  return out;
+}
 
 function describe(settings: VitalLogSettings): Catalogue {
   return {

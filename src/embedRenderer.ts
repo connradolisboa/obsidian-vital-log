@@ -20,7 +20,7 @@
 //   -         — collapsible, starts collapsed (closed by default)
 // ============================================================
 
-import { App, MarkdownRenderChild, Notice, setIcon, TFile } from 'obsidian';
+import { App, MarkdownRenderChild, Notice, setIcon, TFile, type Component } from 'obsidian';
 import type VitalLogPlugin from '../main';
 import type { TallyCounterConfig, TrackerConfig, CustomField, CustomButtonConfig, CustomModalConfig, CustomModalItem, VitalLogSettings } from './types';
 import { seriesMetrics, scalarMetrics } from './types';
@@ -85,6 +85,29 @@ function describeElement(target: EventTarget | Element | null): string {
   if (!(target instanceof Element)) return 'nothing';
   const cls = typeof target.className === 'string' ? target.className.trim().split(/\s+/).slice(0, 2).join('.') : '';
   return `<${target.tagName.toLowerCase()}${cls ? '.' + cls : ''}>`;
+}
+
+/**
+ * Draw a custom modal's form for one note, as its embed would, for another
+ * plugin (API `renderForm`). It writes to that note only; a note that does
+ * not exist is reported, never created.
+ */
+export function renderFormForNote(plugin: VitalLogPlugin, el: HTMLElement, form: string, path: string, collapsible: boolean, component: Component): void {
+  const config = findForm(plugin.settings.customModals, form);
+  shieldFromEditor(el);
+  const draw = () => {
+    void renderEmbed(plugin, el, config?.displayName ?? form, false, collapsible, true, path, () => draw(), path);
+  };
+  draw();
+  // Values written elsewhere (the modal, the note) show up here too.
+  component.registerEvent(plugin.app.metadataCache.on('changed', (file) => {
+    if (file.path === path && !el.contains(document.activeElement)) draw();
+  }));
+}
+
+/** A custom modal by id, or by name ignoring case. */
+export function findForm(modals: CustomModalConfig[], form: string): CustomModalConfig | undefined {
+  return modals.find((m) => m.id === form) ?? modals.find((m) => m.displayName.toLowerCase() === form.toLowerCase());
 }
 
 export function registerEmbedRenderer(plugin: VitalLogPlugin): void {
@@ -172,7 +195,13 @@ function resolveEmbedTarget(
   app: App,
   modalConfig: CustomModalConfig,
   sourcePath?: string,
+  forcedPath?: string,
 ): { file: TFile | null; followsActiveNote: boolean } {
+  // Another plugin drawing the form for a given note (API `renderForm`) names it.
+  if (forcedPath) {
+    const forced = app.vault.getAbstractFileByPath(forcedPath);
+    return { file: forced instanceof TFile ? forced : null, followsActiveNote: false };
+  }
   const sourceFile = sourcePath ? app.vault.getAbstractFileByPath(sourcePath) : null;
 
   if (!modalConfig.notePath.trim()) {
@@ -198,6 +227,7 @@ async function renderEmbed(
   defaultOpen = true,
   sourcePath?: string,
   redraw?: () => void,
+  forcedPath?: string,
 ): Promise<{ followsActiveNote: boolean; targetPath: string | null }> {
   container.empty();
   container.addClass('vital-log-embed');
@@ -229,7 +259,7 @@ async function renderEmbed(
   // Keep snapshots fresh so embeds survive tracker/tally deletion.
   await syncSnapshots(plugin, modalConfig);
 
-  const { file: targetNote, followsActiveNote } = resolveEmbedTarget(app, modalConfig, sourcePath);
+  const { file: targetNote, followsActiveNote } = resolveEmbedTarget(app, modalConfig, sourcePath, forcedPath);
   const result = { followsActiveNote, targetPath: targetNote?.path ?? null };
 
   const fm: Record<string, unknown> = targetNote
@@ -297,6 +327,12 @@ async function renderEmbed(
   }
 
   const bodyEl = container.createDiv('vital-log-embed-body');
+
+  // A named note that does not exist: never create one just to show the form.
+  if (!targetNote && forcedPath) {
+    bodyEl.createDiv({ cls: 'vital-log-embed-empty', text: 'This note does not exist yet.' });
+    return result;
+  }
 
   // Current-note mode with nothing open: say so rather than render dead controls.
   if (!targetNote && !modalConfig.notePath.trim()) {

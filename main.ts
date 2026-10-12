@@ -23,7 +23,7 @@ import { HistoryModal } from './src/historyModal';
 import { ManageModal } from './src/manageModal';
 import { CustomLogModal } from './src/customLogModal';
 import { CustomModalChooser } from './src/customModalChooser';
-import { registerEmbedRenderer } from './src/embedRenderer';
+import { registerEmbedRenderer, renderFormForNote } from './src/embedRenderer';
 import { registerInlineRenderers, buildInlineEditorExtension } from './src/inlineRenderer';
 import { registerMobileKeyboard } from './src/mobileKeyboard';
 import { DashboardView, VIEW_TYPE_VITAL_DASHBOARD } from './src/dashboardView';
@@ -44,7 +44,8 @@ export default class VitalLogPlugin extends Plugin {
   readonly api: VitalLogApi = createVitalLogApi(
     this.app,
     () => this.settings,
-    (el, opts, component) => renderDayView(this, el, opts, component)
+    (el, opts, component) => renderDayView(this, el, opts, component),
+    (el, opts, component) => renderFormForNote(this, el, opts.form, opts.path, !!opts.collapsible, component)
   );
 
   // Track dynamically registered command IDs so we can unregister on change

@@ -559,6 +559,9 @@ Other plugins can reach Vital Log at `app.plugins.plugins['vital-log']?.api`. Ch
 | symptoms in `describe()`, `parseCommand`, `log` | 3 | `headache 5`, `headache gone`, or `/symptom headache 3 @14:00` log a 0–10 reading |
 | `timeline(date)` | 4 | Everything logged on `date` (`YYYY-MM-DD`), in time order — the items the day view's Timeline tab draws: `{ kind, name, time, icon?, value?, unit?, severity?, note? }[]`. Synchronous; empty when the day has no note. `session` items are Management Tracker's own sessions. |
 | `describe().symptoms[].icon`, `describe().dayTabs` | 4 | Symptom icons, and the day view's tab ids for `renderDay` |
+| `forms()` | 5 | The custom modals that are not archived, as forms: id, name, icon, note path and fields (`parentKey.propertyKey` for nested ones) |
+| `formStatus(form, path)` | 5 | Which of a form's fields a note has filled and which are empty, from the metadata cache; `null` without the form or the note |
+| `renderForm(el, { form, path, collapsible? }, component)` | 5 | Draws a form for that note, as its embed would, writing to that note only. A note that does not exist is reported, never created |
 
 ```ts
 const vl = app.plugins.plugins['vital-log']?.api;
