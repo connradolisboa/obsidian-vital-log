@@ -9,6 +9,7 @@
 // so notes from before a mode switch still show up.
 // ============================================================
 
+import { isLateNight } from './dayBoundary';
 import type { Metric, VitalLogSettings } from './types';
 import type { MtSession } from './managementTracker';
 import { formatMinutes } from './managementTracker';
@@ -138,11 +139,13 @@ function num(v: unknown): number | null {
   return typeof v === 'number' && !isNaN(v) ? v : null;
 }
 
+/** Untimed first, then by time; late-night times (before the day end) after 23:59. */
 function byTime<T extends { time: string | null }>(a: T, b: T): number {
   if (a.time === b.time) return 0;
   if (a.time === null) return -1;
   if (b.time === null) return 1;
-  return a.time.localeCompare(b.time);
+  const late = (t: string) => (isLateNight(t) ? '1' : '0') + t;
+  return late(a.time).localeCompare(late(b.time));
 }
 
 /**

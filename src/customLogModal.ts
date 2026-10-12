@@ -4,6 +4,7 @@
 // counters, writing/updating frontmatter on any note.
 // ============================================================
 
+import { logicalDay } from './dayBoundary';
 import { App, Modal, Notice, TFile, setIcon } from 'obsidian';
 import type {
   VitalLogSettings,
@@ -84,7 +85,7 @@ export class CustomLogModal extends Modal {
         this.sourceFilePath = active.path;
       }
     }
-    this.selectedDate = date ?? new Date();
+    this.selectedDate = date ?? logicalDay();
   }
 
   async onOpen(): Promise<void> {

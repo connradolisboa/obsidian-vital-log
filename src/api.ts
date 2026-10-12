@@ -17,6 +17,7 @@
 //   4 — timeline(date); describe() adds symptom icons and dayTabs
 // ============================================================
 
+import { logicalDay } from './dayBoundary';
 import { App, TFile } from 'obsidian';
 import type { Component } from 'obsidian';
 import type { Metric, SymptomType, VitalLogSettings, Vitamin } from './types';
@@ -733,7 +734,8 @@ async function log(
   opts?: LogOpts
 ): Promise<LogResult> {
   const base = opts?.date ?? new Date();
-  const targetDate = resolveTargetDate(command, base);
+  // The note follows the day as the user counts it; the time stays the clock's.
+  const targetDate = resolveTargetDate(command, logicalDay(base));
   const time = command.time ?? formatTime(base);
 
   let file: TFile | null;

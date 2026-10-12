@@ -36,6 +36,10 @@ export interface ManagementApi {
   onChange(callback: () => void): () => void;
   editSession(notePath: string, id: string): boolean;
   openTimeTracker(where?: 'tab' | 'sidebar'): void;
+  /** When a day ends, `HH:mm` (since version 2). */
+  dayEndsAt?(): string;
+  /** Today as Management Tracker counts days, `YYYY-MM-DD` (since version 2). */
+  today?(): string;
 }
 
 /** The API when Management Tracker is enabled and new enough, else null. */

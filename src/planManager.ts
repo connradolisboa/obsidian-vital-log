@@ -7,6 +7,7 @@
 // past dates keep whatever goal was in effect then.
 // ============================================================
 
+import { logicalDay } from './dayBoundary';
 import type {
   VitalLogSettings,
   TrackerGoalPlan,
@@ -24,8 +25,9 @@ export function toISODate(date: Date): string {
   return `${y}-${m}-${d}`;
 }
 
+/** Today as the user counts days: the day before until the day end. */
 export function todayISO(): string {
-  return toISODate(new Date());
+  return toISODate(logicalDay());
 }
 
 /** Parse "YYYY-MM-DD" as a local-time Date at midnight. */

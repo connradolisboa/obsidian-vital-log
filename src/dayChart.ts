@@ -9,6 +9,7 @@
 // re-laid out when the container width changes.
 // ============================================================
 
+import { dayEndMinutes, dayMinutes } from './dayBoundary';
 import type { DayLog } from './dayLog';
 import type { ChartPoint } from './dayStats';
 import { formatMinutes } from './managementTracker';
@@ -64,13 +65,19 @@ export function clockMinutes(time: string): number | null {
  * sparse morning doesn't stretch to fill the width, widened to include any
  * early or late entry (and `now`, for today's note).
  */
-export function hourRange(minutes: number[]): [number, number] {
+export function hourRange(minutes: number[], lastHour: number = 24 + Math.ceil(dayEndMinutes() / 60)): [number, number] {
   if (minutes.length === 0) return [6, 22];
   const lo = Math.min(...minutes);
   const hi = Math.max(...minutes);
   const start = Math.min(6, Math.floor(lo / 60));
-  const end = Math.min(24, Math.max(22, Math.ceil((hi + 1) / 60)));
+  const end = Math.min(lastHour, Math.max(22, Math.ceil((hi + 1) / 60)));
   return [start, end];
+}
+
+/** Where a time sits on the day's axis: late-night times (before the day end) after 24:00. */
+function chartMinutes(time: string | null): number | null {
+  const m = minutesOf(time);
+  return m === null ? null : dayMinutes(m);
 }
 
 /**
@@ -131,9 +138,10 @@ export function renderDayChart(container: HTMLElement, log: DayLog, opts: DayCha
     if (tracker.trackerType === 'minutes') continue;
     const points: TrackerSeries['points'] = [];
     for (const r of readings) {
-      const minutes = minutesOf(r.time);
+      const minutes = chartMinutes(r.time);
       if (minutes !== null) points.push({ minutes, value: r.value, note: r.note });
     }
+    points.sort((a, b) => a.minutes - b.minutes);
     if (points.length === 0) continue;
     series.push({
       id: tracker.id,
@@ -146,16 +154,16 @@ export function renderDayChart(container: HTMLElement, log: DayLog, opts: DayCha
   }
 
   const doses = log.doses
-    .map((d) => ({ ...d, minutes: minutesOf(d.time) }))
+    .map((d) => ({ ...d, minutes: chartMinutes(d.time) }))
     .filter((d): d is typeof d & Mark => d.minutes !== null)
     .sort((a, b) => a.minutes - b.minutes);
 
   const events = log.events
-    .map((e) => ({ ...e, minutes: minutesOf(e.time) }))
+    .map((e) => ({ ...e, minutes: chartMinutes(e.time) }))
     .filter((e): e is typeof e & Mark => e.minutes !== null);
 
   const markers = log.markers
-    .map((m) => ({ ...m, minutes: minutesOf(m.time) }))
+    .map((m) => ({ ...m, minutes: chartMinutes(m.time) }))
     .filter((m): m is typeof m & Mark => m.minutes !== null);
 
   // Substances and events share the dot lane, so they stack around each other.
@@ -188,9 +196,11 @@ export function renderDayChart(container: HTMLElement, log: DayLog, opts: DayCha
 
   const sessions = log.sessions
     .map((s) => {
-      const start = minutesOf(s.time);
-      const end = clockMinutes(s.end);
-      return start === null || end === null ? null : { ...s, start, stop: Math.min(end, 24 * 60) };
+      const start = chartMinutes(s.time);
+      const clockEnd = clockMinutes(s.end);
+      // A late-night session moves past 24:00 with its start.
+      const end = start === null || clockEnd === null ? null : start >= 24 * 60 ? clockEnd + 24 * 60 : clockEnd;
+      return start === null || end === null ? null : { ...s, start, stop: Math.min(end, (24 + Math.ceil(dayEndMinutes() / 60)) * 60) };
     })
     .filter((s): s is NonNullable<typeof s> => s !== null && s.stop > s.start);
 
@@ -202,7 +212,7 @@ export function renderDayChart(container: HTMLElement, log: DayLog, opts: DayCha
     const points: { minutes: number | null; severity: number }[] = [];
     if (sym.carriedIn !== null) points.push({ minutes: null, severity: sym.carriedIn });
     for (const r of sym.readings) {
-      const m = minutesOf(r.time);
+      const m = chartMinutes(r.time);
       if (m !== null) points.push({ minutes: m, severity: r.severity });
     }
     const stretches: SymptomStretch[] = [];

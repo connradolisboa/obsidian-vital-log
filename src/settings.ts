@@ -2,6 +2,7 @@
 // Vital Log — Settings Tab
 // ============================================================
 
+import { sharedDayEnd } from './dayBoundary';
 import { App, Notice, PluginSettingTab, Setting, setIcon, TFile } from 'obsidian';
 import type VitalLogPlugin from '../main';
 import type { CustomModalConfig, CustomField, CustomFieldType, TallyCounterConfig, TrackerConfig, Metric, CustomModalItem, CustomButtonConfig, MirrorConditionalPin, StatType, ScheduleItem, ScheduleKind, Frequency, EventType } from './types';
@@ -209,6 +210,26 @@ export class VitalLogSettingTab extends PluginSettingTab {
       );
     el.appendChild(pathError);
     showPathTokenError(this.plugin.settings.dailyNotePath);
+
+    // When a day ends: Management Tracker's setting wins when it shares one.
+    const shared = sharedDayEnd();
+    const dayEnd = new Setting(el).setName('A day ends at');
+    if (shared !== null) {
+      dayEnd.setDesc(`Follows Management Tracker: a day ends at ${shared === '00:00' ? 'midnight' : shared}. Change it in Management Tracker's settings.`);
+    } else {
+      dayEnd
+        .setDesc('Until this time, logs and forms still go to the day before, so a late night is not a new day. Entries keep their real time.')
+        .addDropdown((d) => {
+          const current = this.plugin.settings.dayEndsAt || '00:00';
+          const options = Array.from({ length: 13 }, (_v, i) => `${String(Math.floor(i / 2)).padStart(2, '0')}:${i % 2 ? '30' : '00'}`);
+          if (!options.includes(current)) options.push(current);
+          for (const time of options) d.addOption(time, time === '00:00' ? 'Midnight' : time);
+          d.setValue(current).onChange(async (v) => {
+            this.plugin.settings.dayEndsAt = v;
+            await this.plugin.saveSettings();
+          });
+        });
+    }
 
     const tokenDetails = el.createEl('details', { cls: 'vital-log-token-details' });
     tokenDetails.createEl('summary', { text: 'Supported tokens' });

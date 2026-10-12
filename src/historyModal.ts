@@ -4,6 +4,7 @@
 // Delegates all file I/O to yamlManager.
 // ============================================================
 
+import { logicalDay } from './dayBoundary';
 import { App, Modal, Notice } from 'obsidian';
 import type {
   VitalLogSettings,
@@ -41,7 +42,7 @@ export class HistoryModal extends Modal {
     super(app);
     this.settings = settings;
     this.saveSettings = saveSettings;
-    this.selectedDate = initialDate ?? new Date();
+    this.selectedDate = initialDate ?? logicalDay();
   }
 
   onOpen(): void {

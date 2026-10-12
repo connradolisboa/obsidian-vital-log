@@ -4,6 +4,7 @@
 // creating the file and intermediate folders if absent.
 // ============================================================
 
+import { logicalDay } from './dayBoundary';
 import { App, Notice, TFile } from 'obsidian';
 import type { VitalLogSettings } from './types';
 
@@ -30,7 +31,7 @@ declare const moment: (date?: Date | string) => {
  *   {{WW}}              → ISO week number, zero-padded (01–53)
  *   {{Q}}               → quarter (1–4)
  */
-export function resolvePathTemplate(template: string, date: Date = new Date()): string {
+export function resolvePathTemplate(template: string, date: Date = logicalDay()): string {
   const m = moment(date);
 
   return template
@@ -61,7 +62,7 @@ export function resolvePathTemplate(template: string, date: Date = new Date()): 
 export async function resolveDailyNote(
   app: App,
   settings: VitalLogSettings,
-  date: Date = new Date()
+  date: Date = logicalDay()
 ): Promise<TFile | null> {
   return resolveNote(app, settings.dailyNotePath, date);
 }
@@ -74,7 +75,7 @@ export async function resolveDailyNote(
 export async function resolveNote(
   app: App,
   pathTemplate: string,
-  date: Date = new Date()
+  date: Date = logicalDay()
 ): Promise<TFile | null> {
   const resolvedPath = resolvePathTemplate(pathTemplate, date) + '.md';
 
@@ -111,7 +112,7 @@ export async function resolveNote(
 export function getNoteIfExists(
   app: App,
   pathTemplate: string,
-  date: Date = new Date()
+  date: Date = logicalDay()
 ): TFile | null {
   const resolvedPath = resolvePathTemplate(pathTemplate, date) + '.md';
   const file = app.vault.getAbstractFileByPath(resolvedPath);
@@ -124,7 +125,7 @@ export function getNoteIfExists(
 export function getDailyNoteIfExists(
   app: App,
   settings: VitalLogSettings,
-  date: Date = new Date()
+  date: Date = logicalDay()
 ): TFile | null {
   return getNoteIfExists(app, settings.dailyNotePath, date);
 }

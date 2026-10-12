@@ -40,6 +40,7 @@ export interface Stack {
 export interface VitalLogSettings {
   schemaVersion: number;     // see settingsMigrations.ts — absent in pre-versioning data.json
   dailyNotePath: string;     // template with {{YYYY}}, {{Q}}, {{YYYY-MM-DD dddd}}
+  dayEndsAt: string;         // "HH:mm": before it, logs go to the day before ("00:00" = midnight). Management Tracker's wins when it shares one.
   vitamins: Vitamin[];
   packs: Pack[];
   stacks: Stack[];
@@ -516,6 +517,7 @@ export const SEVERITY_LABELS: Record<number, string> = {
 export const DEFAULT_SETTINGS: VitalLogSettings = {
   schemaVersion: 2,
   dailyNotePath: 'Calendar/Daily/{{YYYY}}/Q{{Q}}/{{YYYY-MM-DD dddd}}',
+  dayEndsAt: '00:00',
   vitamins: [],
   packs: [],
   stacks: [],

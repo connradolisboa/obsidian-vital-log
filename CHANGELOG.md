@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **A day ends at** (Settings → General, default midnight): until that time, logs, forms and the day view still count as the day before, so a late night is not a new day. Entries keep their real time; the day chart and timeline place late-night entries after midnight. With Management Tracker 2+ installed, Vital Log follows its setting.
+
 ## 1.3.0
 
 ### Highlights

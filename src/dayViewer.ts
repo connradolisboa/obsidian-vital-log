@@ -23,6 +23,7 @@
 // re-render doesn't reset them but a fresh start uses the block's own.
 // ============================================================
 
+import { dayMinutes, logicalDay, logicalTodayISO } from './dayBoundary';
 import { Component, MarkdownRenderChild, Notice, setIcon, TFile } from 'obsidian';
 import type VitalLogPlugin from '../main';
 import { getDailyNoteIfExists, noteDateForTemplate } from './dailyNoteResolver';
@@ -455,13 +456,13 @@ async function renderViewer(viewer: Viewer): Promise<void> {
   const panel = body.createDiv('vital-log-day-panel');
   switch (state.tab) {
     case 'chart': renderChartTab(plugin, panel, log, state, noteDate, viewer.redraw); break;
-    case 'week': renderWeekTab(plugin, panel, state, noteDate ?? new Date(), viewer.redraw); break;
-    case 'insights': renderInsightsTab(plugin, panel, noteDate ?? new Date()); break;
+    case 'week': renderWeekTab(plugin, panel, state, noteDate ?? logicalDay(), viewer.redraw); break;
+    case 'insights': renderInsightsTab(plugin, panel, noteDate ?? logicalDay()); break;
     case 'time': if (mt) renderTimeTab(panel, log, mt); break;
     case 'timeline': renderTimeline(panel, log); break;
     case 'substances': renderSubstances(panel, log); break;
     case 'trackers': renderTrackers(panel, log); break;
-    case 'symptoms': renderSymptoms(plugin, panel, log, state, noteDate ?? new Date(), viewer.redraw); break;
+    case 'symptoms': renderSymptoms(plugin, panel, log, state, noteDate ?? logicalDay(), viewer.redraw); break;
     case 'events': renderEvents(panel, log); break;
   }
 }
@@ -716,8 +717,8 @@ function renderChartTab(
   noteDate: Date | null,
   rerender: () => void
 ): void {
-  const day = noteDate ?? new Date();
-  const isToday = toISODate(day) === toISODate(new Date());
+  const day = noteDate ?? logicalDay();
+  const isToday = toISODate(day) === logicalTodayISO();
 
   let compare: { label: string; byTracker: Map<string, ChartPoint[]> } | undefined;
   if (state.compare !== 'none' && log.trackers.length > 0) {
@@ -744,7 +745,7 @@ function renderChartTab(
 
   const now = new Date();
   const drawn = renderDayChart(panel, log, {
-    nowMinutes: isToday ? minutesOf(`${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')}`) ?? undefined : undefined,
+    nowMinutes: isToday ? dayMinutes(now.getHours() * 60 + now.getMinutes()) : undefined,
     compare,
   });
   if (!drawn) empty(panel, 'Nothing with a time logged yet.');
@@ -795,7 +796,7 @@ function renderWeekTab(
     grid.createDiv({ cls: 'vital-log-heatmap-hour', text: (h - startHour) % 3 === 0 ? String(h).padStart(2, '0') : '' });
   }
 
-  const todayISO = toISODate(new Date());
+  const todayISO = logicalTodayISO();
   for (const day of history) {
     grid.createDiv({
       cls: 'vital-log-heatmap-day' + (toISODate(day.date) === todayISO ? ' is-today' : ''),

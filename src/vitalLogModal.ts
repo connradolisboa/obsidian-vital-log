@@ -7,6 +7,7 @@
 // Delegates all file I/O to the managers.
 // ============================================================
 
+import { logicalDay, logicalTodayISO } from './dayBoundary';
 import { App, Modal, Notice, setIcon } from 'obsidian';
 import type { EventType, Pack, Stack, SymptomType, TrackerConfig, VitalLogSettings, Vitamin } from './types';
 import { SEVERITY_LABELS, SYMPTOM_MAX, seriesMetrics } from './types';
@@ -119,7 +120,7 @@ export class VitalLogModal extends Modal {
     this.tab = opts.tab ?? 'supplements';
     this.kind = opts.supplementKind ?? 'vitamin';
     // With a past daily note open, log to that day — it's the day being worked on.
-    this.dateValue = moment(opts.date ?? activeDailyNoteDate(app, settings) ?? undefined).format('YYYY-MM-DD');
+    this.dateValue = moment(opts.date ?? activeDailyNoteDate(app, settings) ?? logicalDay()).format('YYYY-MM-DD');
     this.timeValue = moment().format('HH:mm');
     this.appendToNote = {
       supplements: settings.appendToNoteDefault_supplements === true,
@@ -164,7 +165,7 @@ export class VitalLogModal extends Modal {
     }
 
     // Say plainly when logs will land on a day other than today.
-    const today = moment().format('YYYY-MM-DD');
+    const today = logicalTodayISO();
     if (this.dateValue && this.dateValue !== today) {
       const banner = contentEl.createDiv('vital-log-log-past');
       setIcon(banner.createSpan('vital-log-log-past-icon'), 'history');
@@ -853,7 +854,7 @@ export class VitalLogModal extends Modal {
 
   private async doLog(): Promise<void> {
     try {
-      const date = this.dateValue ? moment(this.dateValue).toDate() : new Date();
+      const date = this.dateValue ? moment(this.dateValue).toDate() : logicalDay();
       const file = await resolveDailyNote(this.app, this.settings, date);
       if (!file) {
         new Notice('Vital Log: Could not resolve daily note.');

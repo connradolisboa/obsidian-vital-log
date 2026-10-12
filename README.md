@@ -92,6 +92,13 @@ Supported tokens:
 | `{{Q}}` | Quarter (1–4) |
 | `{{WW}}` | ISO week number |
 
+**A day ends at** (same tab, default midnight) lets a late night stay part of the
+day it started: with `03:00`, a log at 01:30 still goes to the previous day's
+note, keeping its real time, and the day view places it after midnight. When
+[Management Tracker](https://github.com/connradolisboa/obsidian-management-tracker)
+is on, Vital Log follows its setting instead, so both plugins agree on what
+"today" is.
+
 ### 2. Add Vitamins (Optional)
 
 **Settings → Vital Log → Library → Vitamins → Open Manager**

@@ -32,6 +32,7 @@ import { registerDashboardEmbed } from './src/dashboardEmbed';
 import { registerDayViewer, renderDayView } from './src/dayViewer';
 import { removeCommand } from './src/internal';
 import { createVitalLogApi } from './src/api';
+import { initDayBoundary } from './src/dayBoundary';
 import type { VitalLogApi } from './src/api';
 
 export default class VitalLogPlugin extends Plugin {
@@ -80,6 +81,7 @@ export default class VitalLogPlugin extends Plugin {
 
   async onload(): Promise<void> {
     await this.loadSettings();
+    initDayBoundary(this.app, () => this.settings.dayEndsAt);
 
     // ── Settings tab ───────────────────────────────────────
     this.addSettingTab(new VitalLogSettingTab(this.app, this));
