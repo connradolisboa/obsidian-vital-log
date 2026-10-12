@@ -374,7 +374,19 @@ function visibleTabs(opts: ViewerOptions, mt: ManagementApi | null): DayTab[] {
 }
 
 async function renderViewer(viewer: Viewer): Promise<void> {
-  const { plugin, el, opts, state } = viewer;
+  const { state } = viewer;
+  const next = document.createElement('div');
+  await renderViewerContent(viewer, next);
+  // Build the replacement off-screen and swap it in once complete. Clearing
+  // the live embed first makes the note below it jump up while frontmatter
+  // changes are being parsed and rendered.
+  viewer.el.replaceChildren(...Array.from(next.childNodes));
+  viewer.el.classList.add('vital-log-embed', 'vital-log-day');
+  viewer.el.classList.toggle('vital-log-embed--collapsed', state.collapsed);
+}
+
+async function renderViewerContent(viewer: Viewer, el: HTMLElement): Promise<void> {
+  const { plugin, opts, state } = viewer;
   const { file: target, date: noteDate } = viewer.target;
   const fm = target ? await yaml.readAllFrontmatter(plugin.app, target) : {};
   // Symptoms still active from earlier days carry into this one.
@@ -387,7 +399,6 @@ async function renderViewer(viewer: Viewer): Promise<void> {
   const tabs = visibleTabs(opts, mt);
   if (tabs.length > 0 && !tabs.includes(state.tab)) state.tab = tabs[0];
 
-  el.empty();
   el.addClass('vital-log-embed', 'vital-log-day');
   el.toggleClass('vital-log-embed--collapsed', state.collapsed);
 
@@ -403,7 +414,7 @@ async function renderViewer(viewer: Viewer): Promise<void> {
     header.addEventListener('click', (e) => {
       if ((e.target as HTMLElement).closest('.vital-log-day-add')) return;
       state.collapsed = !state.collapsed;
-      el.toggleClass('vital-log-embed--collapsed', state.collapsed);
+      viewer.el.toggleClass('vital-log-embed--collapsed', state.collapsed);
       chevron.toggleClass('is-collapsed', state.collapsed);
     });
   }

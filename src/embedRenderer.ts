@@ -95,13 +95,24 @@ function describeElement(target: EventTarget | Element | null): string {
 export function renderFormForNote(plugin: VitalLogPlugin, el: HTMLElement, form: string, path: string, collapsible: boolean, component: Component): void {
   const config = findForm(plugin.settings.customModals, form);
   shieldFromEditor(el);
+  let interactedAt = 0;
+  const markInteraction = (): void => { interactedAt = Date.now(); };
+  for (const event of ['pointerdown', 'input', 'change', 'focusout']) {
+    el.addEventListener(event, markInteraction, true);
+  }
   const draw = () => {
     void renderEmbed(plugin, el, config?.displayName ?? form, false, collapsible, true, path, () => draw(), path);
   };
   draw();
   // Values written elsewhere (the modal, the note) show up here too.
   component.registerEvent(plugin.app.metadataCache.on('changed', (file) => {
-    if (file.path === path && !el.contains(document.activeElement)) draw();
+    if (file.path !== path || el.contains(document.activeElement)) return;
+    // A write from this form often completes just after its text field blurs.
+    // That value is already visible in the form; redrawing here removes the
+    // field and steals the note's scroll position. Keep external updates
+    // working, while ignoring the immediate metadata event from our own input.
+    if (Date.now() - interactedAt < 2000) return;
+    draw();
   }));
 }
 
