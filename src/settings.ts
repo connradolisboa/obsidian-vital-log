@@ -49,7 +49,7 @@ function metricTypeLabel(type: import('./types').TrackerType | undefined): strin
   }
 }
 
-type SettingsTab = 'general' | 'library' | 'metrics' | 'plan' | 'customModals' | 'symptoms' | 'events';
+type SettingsTab = 'general' | 'library' | 'metrics' | 'plan' | 'customModals' | 'symptoms' | 'events' | 'docs';
 
 export class VitalLogSettingTab extends PluginSettingTab {
   private plugin: VitalLogPlugin;
@@ -75,6 +75,7 @@ export class VitalLogSettingTab extends PluginSettingTab {
       { id: 'customModals', label: 'Custom Modals' },
       { id: 'symptoms', label: 'Symptoms' },
       { id: 'events', label: 'Events' },
+      { id: 'docs', label: 'Docs' },
     ];
 
     for (const tab of tabs) {
@@ -115,6 +116,9 @@ export class VitalLogSettingTab extends PluginSettingTab {
       case 'events':
         this.renderEventsTab(content);
         break;
+      case 'docs':
+        this.renderDocsTab(content);
+        break;
     }
   }
 
@@ -132,6 +136,42 @@ export class VitalLogSettingTab extends PluginSettingTab {
     this.containerEl
       .querySelectorAll('.vital-log-inline-form')
       .forEach((form) => form.remove());
+  }
+
+  // ── Docs tab ────────────────────────────────────────────────
+
+  private renderDocsTab(el: HTMLElement): void {
+    el.createEl('h3', { text: 'Vital Log Docs' });
+    el.createEl('p', { text: 'A practical reference for adding Vital Log blocks to notes and configuring the things those blocks display.' });
+    const search = el.createEl('input', {
+      type: 'search',
+      cls: 'vital-log-docs-search',
+      attr: { placeholder: 'Search the docs', 'aria-label': 'Search Vital Log docs' },
+    });
+    const entries: HTMLElement[] = [];
+    const entry = (title: string, description: string, example?: string): void => {
+      const details = el.createEl('details', { cls: 'vital-log-docs-entry' });
+      details.createEl('summary', { text: title });
+      details.createEl('p', { text: description });
+      if (example) details.createEl('pre').createEl('code', { text: example });
+      entries.push(details);
+    };
+
+    entry('Add a block to a note', 'In the note or template, type three backticks followed by a block name, add its options on separate lines, then close the block with three backticks. The opening fence name selects the block renderer.');
+    entry('Log a custom modal: vital-log', 'The first non-empty line is the exact name of a modal configured in Settings → Custom Modals. Following lines can be invisible, + (collapsible and open by default), or - (collapsible and closed by default).', '```vital-log\nDaily Review\n+\n```');
+    entry('Show the current day: vital-day', 'Shows the log for the date represented by the note, or follows the active note when the block is outside a daily note. A bare tab name or default: selects the initially open tab; recognized tabs include chart, timeline, substances, trackers, symptoms, events, time, week, and insights. Any other plain line sets the title. + or - controls collapsible behavior; tabs: accepts a comma-separated ordered list of tabs.', '```vital-day\nTimeline\n-\ntabs: chart, timeline, trackers, symptoms\n```');
+    entry('Show the dashboard: vital-dashboard', 'date accepts YYYY-MM-DD. range accepts YYYY-MM-DD..YYYY-MM-DD. trackers filters to a comma-separated list of tracker names. view accepts day or sparkline. With no date or range, it uses the date of the note when recognized, otherwise today. A sparkline without a range shows the last seven days.', '```vital-dashboard\nrange: 2026-10-01..2026-10-12\ntrackers: Mood, Energy\nview: sparkline\n```');
+    entry('Configure custom modals', 'Create and order fields, trackers, tally counters, buttons, headers, dividers, and sections in Settings → Custom Modals. Field types include slider, text, textarea, number, date, checkbox, dropdown, time, rating, and tags. Fields write to their configured frontmatter property; a parent property groups the value under a nested key.');
+    entry('Tracker and tally types', 'Metrics can be rating, minutes, tally, or checkbox. Rating and minutes keep timestamped entries; tally keeps one value per day and can have a target and step size. Configure each metric’s property key, display name, icon, and dashboard statistics in Settings → Metrics.');
+    entry('Daily note paths and date tokens', 'Settings → General sets the daily-note path template used for logging. Available tokens include {{YYYY}}, {{YY}}, {{MMMM}}, {{MM}}, {{DD}}, {{dddd}}, {{ddd}}, {{WW}}, {{Q}}, {{YYYY-MM}}, {{YYYY-MM-DD}}, and {{YYYY-MM-DD dddd}}. The note must resolve to the intended date for daily views and logging.', 'Calendar/Daily/{{YYYY}}/Q{{Q}}/{{YYYY-MM-DD dddd}}');
+    entry('Library, metrics, symptoms, events, and plans', 'Library holds vitamins, packs, and stacks. Metrics holds trackers and tally counters. Plan configures schedules and tracker goals. Symptoms and Events define the lists and properties used in logging and day views. The matching Settings tabs are the editors for these records.');
+    entry('Where values go', 'Vital Log writes structured values to frontmatter in the daily note selected for the date. Tracker series include timestamps; tally counters keep one daily value. A custom modal can also run in mirror mode to edit properties already present in the current note.');
+    entry('Troubleshooting', 'If an embed is empty, check that the modal name matches exactly, the block fence is spelled correctly, and the target daily-note path resolves. If a custom field does not appear, check its property key and the modal’s mirror-mode pins.');
+
+    search.addEventListener('input', () => {
+      const query = search.value.trim().toLocaleLowerCase();
+      for (const item of entries) item.hidden = Boolean(query) && !item.textContent?.toLocaleLowerCase().includes(query);
+    });
   }
 
   // ── General tab ──────────────────────────────────────────────

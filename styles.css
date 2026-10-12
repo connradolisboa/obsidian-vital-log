@@ -857,6 +857,30 @@
   margin-top: 0;
 }
 
+.vital-log-docs-search {
+  width: 100%;
+  margin: 0 0 var(--size-4-3);
+}
+
+.vital-log-docs-entry {
+  padding: var(--size-2-3) 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.vital-log-docs-entry summary {
+  cursor: pointer;
+  font-weight: var(--font-semibold);
+}
+
+.vital-log-docs-entry p {
+  color: var(--text-muted);
+}
+
+.vital-log-docs-entry pre {
+  overflow-x: auto;
+  white-space: pre;
+}
+
 .vital-log-settings-helper {
   font-size: 0.82rem;
   color: var(--text-muted);
