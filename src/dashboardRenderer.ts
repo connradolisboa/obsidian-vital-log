@@ -358,6 +358,10 @@ function scheduleItemDisplay(
       const t = checkboxMetrics(plugin.settings).find((x) => x.id === item.refId);
       return t ? { name: t.displayName, icon: t.icon } : null;
     }
+    case 'metric': {
+      const m = seriesMetrics(plugin.settings).find((x) => x.id === item.refId);
+      return m ? { name: m.displayName, icon: m.icon ?? 'activity' } : null;
+    }
   }
 }
 
@@ -398,6 +402,8 @@ function buildScheduleSection(
     } else if (item.kind === 'checkbox') {
       const t = checkboxMetrics(plugin.settings).find((x) => x.id === item.refId);
       if (t) buildCheckboxScheduleControls(plugin, row, t, fm, isToday, repaint);
+    } else if (item.kind === 'metric') {
+      // A rating or amount needs its value: logged from the log window.
     } else if (isToday && !done) {
       buildSupplementInlineLog(plugin, section, row, item, repaint);
     }

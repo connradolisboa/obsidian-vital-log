@@ -152,3 +152,15 @@ export function describeFrequency(freq: Frequency): string {
       return freq.n === 1 ? 'Every day' : `Every ${freq.n} days`;
   }
 }
+
+/** `08:00, 21:30` → sorted `HH:mm` times; null when any part isn't a time. */
+export function parseTimes(text: string): string[] | null {
+  const parts = text.split(/[,;\s]+/).map((p) => p.trim()).filter(Boolean);
+  const times: string[] = [];
+  for (const part of parts) {
+    const m = part.match(/^(\d{1,2})[:h.]?(\d{2})$/);
+    if (!m || +m[1] > 23 || +m[2] > 59) return null;
+    times.push(`${m[1].padStart(2, '0')}:${m[2]}`);
+  }
+  return [...new Set(times)].sort();
+}

@@ -76,6 +76,28 @@ export default class VitalLogPlugin extends Plugin {
     }).open();
   }
 
+  /**
+   * `obsidian://vital-log?item=<schedule id>`, from a reminder: the log
+   * window on that item, ready to log.
+   */
+  private openScheduledItem(id: string): void {
+    const item = this.settings.plannedLogs.schedule.find((s) => s.id === id);
+    if (!item) {
+      new Notice('Vital Log: that reminder is no longer in the schedule.');
+      this.openLogModal();
+      return;
+    }
+    if (item.kind === 'vitamin' || item.kind === 'pack' || item.kind === 'stack') {
+      new VitalLogModal(this.app, this.settings, () => this.saveSettings(), {
+        tab: 'supplements',
+        supplementKind: item.kind,
+        selectId: item.refId,
+      }).open();
+    } else {
+      this.openTrackerModal(item.refId);
+    }
+  }
+
   private openEventModal(): void {
     new VitalLogModal(this.app, this.settings, () => this.saveSettings(), { tab: 'events' }).open();
   }
@@ -86,6 +108,12 @@ export default class VitalLogPlugin extends Plugin {
 
     // ── Settings tab ───────────────────────────────────────
     this.addSettingTab(new VitalLogSettingTab(this.app, this));
+
+    // ── Links from reminders ───────────────────────────────
+    this.registerObsidianProtocolHandler('vital-log', (params) => {
+      if (params.item) this.openScheduledItem(params.item);
+      else this.openLogModal();
+    });
 
     // ── Ribbon icon ────────────────────────────────────────
     this.addRibbonIcon('pill', 'Vital Log: Log Supplement', () => {

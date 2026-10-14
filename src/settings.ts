@@ -7,7 +7,7 @@ import { App, Notice, PluginSettingTab, Setting, setIcon, TFile } from 'obsidian
 import type VitalLogPlugin from '../main';
 import type { CustomModalConfig, CustomField, CustomFieldType, TallyCounterConfig, TrackerConfig, Metric, CustomModalItem, CustomButtonConfig, MirrorConditionalPin, StatType, ScheduleItem, ScheduleKind, Frequency, EventType } from './types';
 import { CUSTOM_FIELD_TYPES, STAT_TYPES, STAT_LABELS, defaultPrimaryStat, defaultDisplayStats, seriesMetrics, scalarMetrics, checkboxMetrics, SEVERITY_LABELS } from './types';
-import { setGoalFromToday, getGoalPlan, todayISO, resolveGoal, describeFrequency } from './planManager';
+import { setGoalFromToday, getGoalPlan, todayISO, resolveGoal, describeFrequency, parseTimes } from './planManager';
 import { ManageModal } from './manageModal';
 import { KeyDiagnosticModal } from './keyDiagnosticModal';
 import { buildSnapshot } from './keySnapshotManager';
@@ -753,6 +753,7 @@ export class VitalLogSettingTab extends PluginSettingTab {
       case 'stack': return s.stacks.find((st) => st.id === refId)?.displayName ?? null;
       case 'tally': return scalarMetrics(s).find((t) => t.id === refId)?.displayName ?? null;
       case 'checkbox': return checkboxMetrics(s).find((t) => t.id === refId)?.displayName ?? null;
+      case 'metric': return seriesMetrics(s).find((t) => t.id === refId)?.displayName ?? null;
     }
   }
 
@@ -764,6 +765,7 @@ export class VitalLogSettingTab extends PluginSettingTab {
       case 'stack': return s.stacks.map((st) => ({ id: st.id, name: st.displayName }));
       case 'tally': return scalarMetrics(s).filter((t) => !t.archived).map((t) => ({ id: t.id, name: t.displayName }));
       case 'checkbox': return checkboxMetrics(s).filter((t) => !t.archived).map((t) => ({ id: t.id, name: t.displayName }));
+      case 'metric': return seriesMetrics(s).filter((t) => !t.archived).map((t) => ({ id: t.id, name: t.displayName }));
     }
   }
 
@@ -836,7 +838,7 @@ export class VitalLogSettingTab extends PluginSettingTab {
     // ── Schedule ──
     el.createEl('h3', { text: 'Daily Schedule' });
     el.createEl('p', {
-      text: 'Items the dashboard lists under "To take / do today" based on their frequency.',
+      text: 'Items the dashboard lists under "To take / do today" based on their frequency. With reminder times, Telegram Capture\'s relay reminds you at those times (by Telegram or ntfy) unless the item is already logged.',
       cls: 'vital-log-settings-helper',
     });
 
@@ -845,7 +847,19 @@ export class VitalLogSettingTab extends PluginSettingTab {
       const name = this.scheduleRefName(item.kind, item.refId);
       const setting = new Setting(el)
         .setName(name ?? `(missing ${item.kind})`)
-        .setDesc(`${item.kind} · ${describeFrequency(item.frequency)}`);
+        .setDesc(`${item.kind == 'metric' ? 'tracker' : item.kind} · ${describeFrequency(item.frequency)}`);
+      setting.addText((tx) => {
+        tx.setPlaceholder('Remind at, e.g. 08:00').setValue((item.times ?? []).join(', '));
+        tx.inputEl.style.width = '9rem';
+        tx.inputEl.setAttribute('aria-label', `Reminder times for ${name ?? item.kind}`);
+        tx.onChange(async (val) => {
+          const times = parseTimes(val);
+          if (times === null) return;
+          if (times.length) item.times = times;
+          else delete item.times;
+          await this.plugin.saveSettings();
+        });
+      });
       setting.addExtraButton((btn) =>
         btn.setIcon('trash').setTooltip('Remove').onClick(() => {
           void this.guarded(async () => {
@@ -877,8 +891,8 @@ export class VitalLogSettingTab extends PluginSettingTab {
     const kindRow = form.createDiv('vital-log-form-row');
     kindRow.createEl('label', { text: 'Type' });
     const kindSelect = kindRow.createEl('select');
-    const kinds: ScheduleKind[] = ['vitamin', 'pack', 'stack', 'tally', 'checkbox'];
-    for (const k of kinds) kindSelect.createEl('option', { value: k, text: k[0].toUpperCase() + k.slice(1) });
+    const kinds: ScheduleKind[] = ['vitamin', 'pack', 'stack', 'tally', 'checkbox', 'metric'];
+    for (const k of kinds) kindSelect.createEl('option', { value: k, text: k == 'metric' ? 'Tracker (rating, minutes…)' : k[0].toUpperCase() + k.slice(1) });
 
     const refRow = form.createDiv('vital-log-form-row');
     refRow.createEl('label', { text: 'Item' });
@@ -922,6 +936,11 @@ export class VitalLogSettingTab extends PluginSettingTab {
     nRow.createEl('label', { text: 'Every (days)' });
     const nInput = nRow.createEl('input', { type: 'number', value: '2' });
 
+    const timesRow = form.createDiv('vital-log-form-row');
+    timesRow.createEl('label', { text: 'Remind at' });
+    const timesInput = timesRow.createEl('input', { type: 'text', attr: { placeholder: 'e.g. 08:00, 21:30 (optional)' } });
+    const timesError = attachFieldError(timesRow, timesInput);
+
     const syncFreqUI = () => {
       const f = freqSelect.value;
       weekRow.style.display = f === 'weekdays' ? '' : 'none';
@@ -961,7 +980,14 @@ export class VitalLogSettingTab extends PluginSettingTab {
         frequency = { type: 'daily' };
       }
 
-      const item: ScheduleItem = { id: crypto.randomUUID(), kind, refId, frequency };
+      const times = parseTimes(timesInput.value);
+      if (times === null) {
+        timesError.show('Times look like 08:00, separated by commas.');
+        return;
+      }
+      timesError.clear();
+
+      const item: ScheduleItem = { id: crypto.randomUUID(), kind, refId, frequency, ...(times.length ? { times } : {}) };
       this.plugin.settings.plannedLogs.schedule.push(item);
       await this.plugin.saveSettings();
       this.display();
@@ -2920,3 +2946,4 @@ export class CustomModalEditorModal extends GuardedModal {
     initInlineForm(form, { onSave: save, onCancel: cancel });
   }
 }
+

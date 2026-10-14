@@ -363,13 +363,16 @@ export type Frequency =
   | { type: 'weekdays'; days: number[] }              // 0=Sun … 6=Sat
   | { type: 'everyNDays'; n: number; anchor: string }; // anchor = "YYYY-MM-DD"
 
-export type ScheduleKind = 'vitamin' | 'pack' | 'stack' | 'tally' | 'checkbox';
+/** `metric` is a rating, minutes or number tracker; tally and checkbox keep their own kinds. */
+export type ScheduleKind = 'vitamin' | 'pack' | 'stack' | 'tally' | 'checkbox' | 'metric';
 
 export interface ScheduleItem {
   id: string;
   kind: ScheduleKind;
-  refId: string;             // vitaminId / packId / stackId / tallyCounterId
+  refId: string;             // vitaminId / packId / stackId / tallyCounterId / metricId
   frequency: Frequency;
+  /** `HH:mm` reminder times on the days it's due; none means no reminders. */
+  times?: string[];
 }
 
 export interface PlannedLogs {

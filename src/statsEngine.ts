@@ -15,7 +15,7 @@ import type {
   StatType,
   ScheduleItem,
 } from './types';
-import { isTrackerEntry, defaultPrimaryStat, scalarMetrics, checkboxMetrics } from './types';
+import { isTrackerEntry, defaultPrimaryStat, scalarMetrics, checkboxMetrics, seriesMetrics } from './types';
 import { getNoteIfExists } from './dailyNoteResolver';
 import { readAllFrontmatter } from './yamlManager';
 import { fromISODate, resolveGoal, shiftDaysISO, todayISO } from './planManager';
@@ -137,6 +137,12 @@ export function isScheduleItemDone(
       const t = checkboxMetrics(settings).find((x) => x.id === item.refId);
       if (!t) return false;
       return readCheckboxValue(fm, t.propertyKey);
+    }
+    case 'metric': {
+      const m = seriesMetrics(settings).find((x) => x.id === item.refId);
+      if (!m) return false;
+      const value = fm[m.propertyKey];
+      return Array.isArray(value) ? value.length > 0 : value !== undefined && value !== null && value !== '';
     }
   }
 }

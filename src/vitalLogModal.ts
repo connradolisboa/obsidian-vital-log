@@ -36,6 +36,8 @@ export interface LogModalOptions {
   tab?: LogTab;
   supplementKind?: SupplementKind;
   trackerId?: string;
+  /** With `supplementKind`: the vitamin, pack or stack to start with selected. */
+  selectId?: string;
   /** Day to log to; defaults to the open daily note's day, else today. */
   date?: Date;
 }
@@ -119,6 +121,7 @@ export class VitalLogModal extends Modal {
     this.saveSettings = saveSettings;
     this.tab = opts.tab ?? 'supplements';
     this.kind = opts.supplementKind ?? 'vitamin';
+    if (opts.supplementKind && opts.selectId) this.selected[opts.supplementKind] = opts.selectId;
     // With a past daily note open, log to that day — it's the day being worked on.
     this.dateValue = moment(opts.date ?? activeDailyNoteDate(app, settings) ?? logicalDay()).format('YYYY-MM-DD');
     this.timeValue = moment().format('HH:mm');

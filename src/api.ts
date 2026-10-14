@@ -18,6 +18,8 @@
 //   5 — forms(), formStatus(form, path), renderForm(el, { form, path }, component)
 //   6 — parserSettings(): the vocabulary and PARSER_VERSION, for a parser
 //       running elsewhere (Telegram Capture's relay)
+//   7 — reminders(date), logScheduled(id, opts), link(id): scheduled items
+//       with reminder times, for the relay's reminders
 // ============================================================
 
 import { logicalDay } from './dayBoundary';
@@ -51,8 +53,11 @@ import {
 export type { ParsedLogCommand, ParseFailureReason, ParseOutcome } from './commandParser';
 export { PARSER_VERSION, commandSummary } from './commandParser';
 import { PARSER_VERSION } from './commandParser';
+import { logScheduled, scheduledReminders, type ScheduledReminder } from './scheduledReminders';
+import { fromISODate } from './planManager';
+export type { ScheduledReminder } from './scheduledReminders';
 
-export const VITAL_LOG_API_VERSION = 6;
+export const VITAL_LOG_API_VERSION = 7;
 
 // ── Public types ─────────────────────────────────────────────
 
@@ -196,6 +201,12 @@ export interface VitalLogApi {
    * the parser's version, for a copy of it running elsewhere (since version 6).
    */
   parserSettings(): ParserSettings;
+  /** Scheduled items with reminder times due on a day (`YYYY-MM-DD`, today by default), and whether each is logged (since version 7). */
+  reminders(date?: string): Promise<ScheduledReminder[]>;
+  /** Log a scheduled item as its reminder's button asks (since version 7). */
+  logScheduled(id: string, opts?: { date?: Date; value?: number }): Promise<{ ok: boolean; summary?: string; error?: string }>;
+  /** `obsidian://vital-log?…` opening the log window on that item (since version 7). */
+  link(id: string): string;
 }
 
 export interface ParserSettings {
@@ -237,6 +248,9 @@ export function createVitalLogApi(
     forms: () => formsOf(getSettings()),
     formStatus: (form: string, path: string) => formStatusOf(app, getSettings(), form, path),
     renderForm,
+    reminders: (date?: string) => scheduledReminders(app, getSettings(), date ? fromISODate(date) : undefined),
+    logScheduled: (id: string, opts?: { date?: Date; value?: number }) => logScheduled(app, getSettings(), id, opts),
+    link: (id: string) => `obsidian://vital-log?vault=${encodeURIComponent(app.vault.getName())}&item=${encodeURIComponent(id)}`,
     parserSettings: () => {
       const settings = getSettings();
       return {
