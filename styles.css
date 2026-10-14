@@ -3111,6 +3111,7 @@
 
 .vital-log-log-tab {
   flex: 1 1 0;
+  min-width: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -3157,6 +3158,7 @@
 
 .vital-log-chip {
   display: inline-flex;
+  max-width: 100%;
   align-items: center;
   gap: 0.35rem;
   min-height: 38px;
@@ -3168,6 +3170,7 @@
   color: var(--text-normal);
   font-size: 0.88rem;
   cursor: pointer;
+  overflow-wrap: anywhere;
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -3198,18 +3201,40 @@
 
 .vital-log-log-when {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.6rem;
 }
 
 .vital-log-log-when input {
   width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .vital-log-quick-add-pair {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.6rem;
+}
+
+.vital-log-quick-add-pair > * {
+  min-width: 0;
+}
+
+@media (max-width: 480px) {
+  .vital-log-log-tabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .vital-log-log-tab {
+    min-height: 44px;
+    white-space: normal;
+  }
+
+  .vital-log-log-when {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .vital-log-quick-add-hint {
@@ -3713,8 +3738,23 @@
 
 .modal.vital-log-log-modal > .modal-content {
   flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
   min-height: 0;
+  box-sizing: border-box;
+  overflow-x: hidden;
   overflow-y: auto;
+}
+
+.vital-log-log-modal .vital-log-log-body,
+.vital-log-log-modal .vital-log-modal-section {
+  min-width: 0;
+}
+
+.vital-log-log-modal .vital-log-modal-section > input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .vital-log-amount-stepper {
