@@ -240,9 +240,14 @@ async function renderEmbed(
   redraw?: () => void,
   forcedPath?: string,
 ): Promise<{ followsActiveNote: boolean; targetPath: string | null }> {
-  container.empty();
-  container.addClass('vital-log-embed');
-  if (invisible) container.addClass('vital-log-embed--invisible');
+  // Emptied just before the form is built, after the awaits below. A redraw
+  // that emptied first left the embed blank while it read the note, which
+  // collapsed the page under it and moved the scroll position.
+  const reset = (): void => {
+    container.empty();
+    container.addClass('vital-log-embed');
+    if (invisible) container.addClass('vital-log-embed--invisible');
+  };
 
   const { app, settings } = plugin;
 
@@ -252,6 +257,7 @@ async function renderEmbed(
   );
 
   if (!modalConfig) {
+    reset();
     container.createDiv({
       cls: 'vital-log-embed-error',
       text: `Vital Log: no modal named "${modalName}"`,
@@ -260,6 +266,7 @@ async function renderEmbed(
   }
 
   if (modalConfig.items.length === 0) {
+    reset();
     container.createDiv({
       cls: 'vital-log-embed-empty',
       text: 'No items in this modal.',
@@ -279,6 +286,8 @@ async function renderEmbed(
 
   const visibleItems = getMirrorFilteredItems(modalConfig, fm, settings);
   const otherProps = getOtherProps(modalConfig, fm, settings);
+
+  reset();
 
   // ── Header (hidden in invisible mode) ─────────────────────
   if (!invisible) {
